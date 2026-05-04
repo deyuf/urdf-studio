@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="$(arg robot_name)">
+  <xacro:arg name="robot_name" default="fixture_robot"/>
+  <xacro:property name="config_file" value="$(find xacro_fixture)/config/test.yaml"/>
+  <xacro:property name="limits" scope="global" value="${load_yaml(config_file)['limit']}"/>
+  <xacro:include filename="$(find xacro_fixture)/urdf/part.xacro"/>
+  <xacro:fixture_link prefix="$(arg robot_name)"/>
+  <link name="child"/>
+  <joint name="fixture_joint" type="revolute">
+    <parent link="$(arg robot_name)_base"/>
+    <child link="child"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="${limits['lower']}" upper="${limits['upper']}" effort="1" velocity="1"/>
+  </joint>
+</robot>

@@ -1,0 +1,155 @@
+{
+  "name": "urdf-studio",
+  "displayName": "URDF Studio",
+  "description": "Inspect and preview URDF and xacro robot models in VS Code.",
+  "version": "0.1.6",
+  "publisher": "deyuf",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/deyuf/urdf-studio"
+  },
+  "icon": "media/icon.png",
+  "engines": {
+    "vscode": "^1.86.0"
+  },
+  "categories": [
+    "Visualization",
+    "Other"
+  ],
+  "keywords": [
+    "urdf",
+    "xacro",
+    "ros",
+    "robot",
+    "three.js"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "urdfStudio.openPreview",
+        "title": "Open Preview",
+        "category": "URDF Studio"
+      },
+      {
+        "command": "urdfStudio.recenter",
+        "title": "Recenter",
+        "category": "URDF Studio"
+      },
+      {
+        "command": "urdfStudio.exportPose",
+        "title": "Export Pose",
+        "category": "URDF Studio"
+      },
+      {
+        "command": "urdfStudio.captureScreenshot",
+        "title": "Capture Screenshot",
+        "category": "URDF Studio"
+      }
+    ],
+    "customEditors": [
+      {
+        "viewType": "urdfStudio.preview",
+        "displayName": "URDF Studio Preview",
+        "selector": [
+          {
+            "filenamePattern": "*.urdf"
+          },
+          {
+            "filenamePattern": "*.urdf.xacro"
+          },
+          {
+            "filenamePattern": "*.xacro"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
+    "configuration": {
+      "title": "URDF Studio",
+      "properties": {
+        "urdfStudio.packageRoots": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "description": "Additional directories to scan for ROS packages that contain package.xml files."
+        },
+        "urdfStudio.defaultXacroArgs": {
+          "type": "object",
+          "default": {},
+          "description": "Default argument values used when expanding xacro files."
+        },
+        "urdfStudio.defaultRenderMode": {
+          "type": "string",
+          "enum": [
+            "visual",
+            "collision",
+            "both"
+          ],
+          "default": "visual",
+          "description": "Default geometry layer rendered when a robot is loaded."
+        },
+        "urdfStudio.upAxis": {
+          "type": "string",
+          "enum": [
+            "+X",
+            "+Y",
+            "+Z"
+          ],
+          "default": "+Z",
+          "description": "World up axis used by the preview camera."
+        },
+        "urdfStudio.semanticFiles": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "description": "Optional SRDF or YAML files used for joint groups and named states."
+        }
+      }
+    },
+    "menus": {
+      "editor/title": [
+        {
+          "command": "urdfStudio.openPreview",
+          "when": "resourceExtname == .urdf || resourceExtname == .xacro",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "compile": "npm run check-types && node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "check-types": "tsc --noEmit",
+    "package": "npm run check-types && node esbuild.mjs --production",
+    "vscode:prepublish": "npm run package",
+    "test:unit": "node esbuild.mjs --tests && node --test dist/test/*.test.cjs",
+    "test:renderer": "npm run compile && playwright test",
+    "test": "npm run test:unit",
+    "vsce:package": "npm run package && vsce package"
+  },
+  "dependencies": {
+    "@xmldom/xmldom": "^0.8.11",
+    "jsdom": "^26.1.0",
+    "three": "^0.184.0",
+    "urdf-loader": "^0.12.7",
+    "xacro-parser": "^0.3.11",
+    "yaml": "^2.8.3"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.59.1",
+    "@types/jsdom": "^21.1.7",
+    "@types/node": "^24.10.1",
+    "@types/three": "^0.184.0",
+    "@types/vscode": "^1.86.0",
+    "@vscode/test-electron": "^2.5.2",
+    "@vscode/vsce": "^3.9.1",
+    "esbuild": "^0.28.0",
+    "typescript": "^6.0.3"
+  }
+}

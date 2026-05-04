@@ -1,0 +1,11 @@
+node_modules
+src
+test
+media/*
+!media/icon.png
+test-results
+dist/test
+**/*.map
+tsconfig.json
+esbuild.mjs
+playwright.config.ts

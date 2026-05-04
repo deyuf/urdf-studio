@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>xacro_fixture</name>
+  <version>0.0.1</version>
+  <description>URDF Studio xacro fixture</description>
+  <maintainer email="noreply@example.com">URDF Studio</maintainer>
+  <license>MIT</license>
+</package>
