@@ -2,7 +2,7 @@
   "name": "urdf-studio",
   "displayName": "URDF Studio",
   "description": "Inspect and preview URDF and xacro robot models in VS Code.",
-  "version": "0.1.6",
+  "version": "0.1.8",
   "publisher": "deyuf",
   "license": "MIT",
   "repository": {

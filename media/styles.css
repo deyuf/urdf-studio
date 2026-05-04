@@ -54,6 +54,7 @@ button.primary:hover {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   height: 100%;
+  min-width: 0;
 }
 
 .toolbar {
@@ -67,12 +68,23 @@ button.primary:hover {
   background: var(--vscode-sideBar-background);
   min-height: 36px;
   box-sizing: border-box;
+  min-width: 0;
 }
 
 /* Pin the last toolbar group (Save Pose) so it always takes the right edge
    of the LAST line, even after wrapping. */
 .toolbar > .toolbar-group:last-of-type {
   margin-left: auto;
+  flex: 1 1 auto;
+  max-width: 100%;
+  justify-content: flex-end;
+}
+
+.toolbar label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
 }
 
 .title {
@@ -88,10 +100,12 @@ button.primary:hover {
 .toolbar-group {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 4px;
   padding-left: 8px;
   border-left: 1px solid var(--vscode-panel-border);
   flex: 0 0 auto;
+  min-width: 0;
 }
 
 .toolbar-spacer {
@@ -101,8 +115,10 @@ button.primary:hover {
 
 .workspace {
   display: grid;
-  grid-template-columns: minmax(360px, 1fr) 390px;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 390px);
   min-height: 0;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .viewport-wrap {
@@ -142,8 +158,10 @@ button.primary:hover {
   display: grid;
   grid-template-rows: 34px minmax(0, 1fr);
   min-width: 0;
+  min-height: 0;
   border-left: 1px solid var(--vscode-panel-border);
   background: var(--vscode-sideBar-background);
+  overflow: hidden;
 }
 
 .tabs {
@@ -179,6 +197,19 @@ button.primary:hover {
 .panel.active {
   display: block;
 }
+
+@media (max-width: 900px) {
+  .workspace {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(220px, 1fr) minmax(240px, 45%);
+  }
+
+  .side {
+    border-left: 0;
+    border-top: 1px solid var(--vscode-panel-border);
+  }
+}
+
 
 .summary {
   display: grid;
