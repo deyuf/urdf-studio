@@ -1,10 +1,12 @@
 import * as vscode from 'vscode';
 import path from 'node:path';
+import { promises as fs } from 'node:fs';
 import { discoverPackages } from './core/packageMap';
 import { renderRobotDocument, setLogger } from './core/xacro';
 import { analyzeUrdf } from './core/urdfAnalysis';
-import { loadSemanticMetadata } from './core/srdf';
-import type { PackageMap, PreviewState, StudioDiagnostic } from './core/types';
+import { loadSemanticMetadata, mergeDisableCollisionsIntoSrdf, parseSrdf } from './core/srdf';
+import type { DisableCollisionEntry, PackageMap, PoseBookmark, PreviewState, RobotMetadata, StudioDiagnostic } from './core/types';
+import { registerLanguageFeatures } from './languageFeatures';
 
 const VIEW_TYPE = 'urdfStudio.preview';
 
@@ -22,6 +24,12 @@ interface ActivePreview {
   document: UrdfDocument;
   panel: vscode.WebviewPanel;
   xacroArgs: Record<string, unknown>;
+  watcher: vscode.FileSystemWatcher | undefined;
+  watchedFiles: Set<string>;
+  reloadTimer: ReturnType<typeof setTimeout> | undefined;
+  metadata?: RobotMetadata;
+  semanticSourceFile?: string;
+  pendingState?: { pose: Record<string, number>; camera?: PreviewState['camera'] };
 }
 
 class UrdfDocument implements vscode.CustomDocument {
@@ -57,14 +65,14 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
     const preview: ActivePreview = {
       document,
       panel: webviewPanel,
-      xacroArgs: this.getDefaultXacroArgs()
+      xacroArgs: this.getDefaultXacroArgs(),
+      watcher: undefined,
+      watchedFiles: new Set(),
+      reloadTimer: undefined
     };
     this.previews.add(preview);
     this.activePreview = preview;
 
-    // Discover packages up front so we can set localResourceRoots once.
-    // Mutating webview.options after the webview has loaded forces a full reload
-    // (causing the visible flicker on first load).
     const config = vscode.workspace.getConfiguration('urdfStudio');
     const packageRoots = this.packageRoots(config);
     let initialPackages: PackageMap = {};
@@ -73,9 +81,6 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
     } catch {
       initialPackages = {};
     }
-    // Also include the URDF file's own directory hierarchy so that meshes
-    // referenced via relative paths or package:// URIs that resolve to the
-    // same tree are accessible without a later webview.options mutation.
     const initialRoots = this.localResourceRoots(initialPackages, document.uri);
 
     webviewPanel.webview.options = {
@@ -90,6 +95,10 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
       }
     });
     webviewPanel.onDidDispose(() => {
+      preview.watcher?.dispose();
+      if (preview.reloadTimer) {
+        clearTimeout(preview.reloadTimer);
+      }
       this.previews.delete(preview);
       if (this.activePreview === preview) {
         this.activePreview = Array.from(this.previews).at(-1);
@@ -110,6 +119,18 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
           await this.savePreviewState(document.uri, { pose: message.pose, camera: message.camera });
           void vscode.window.setStatusBarMessage('URDF Studio pose saved.', 2500);
           break;
+        case 'requestSaveBookmark':
+          await this.saveBookmark(document.uri, message.name, message.pose, message.camera);
+          await this.broadcastBookmarks(preview);
+          break;
+        case 'requestDeleteBookmark':
+          await this.deleteBookmark(document.uri, message.name);
+          await this.broadcastBookmarks(preview);
+          break;
+        case 'requestRenameBookmark':
+          await this.renameBookmark(document.uri, message.from, message.to);
+          await this.broadcastBookmarks(preview);
+          break;
         case 'exportPoseResult':
           await this.openPoseExport(document.uri, message.pose, message.camera);
           break;
@@ -121,6 +142,12 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
             `URDF Studio: ${message.linkCount ?? 0} links, ${message.jointCount ?? 0} joints, ${message.movableJointCount ?? 0} movable.`,
             4000
           );
+          break;
+        case 'requestWriteDisableCollisions':
+          await this.writeDisableCollisions(preview, message.entries ?? []);
+          break;
+        case 'poseSnapshot':
+          this.capturePoseSnapshot(preview, message.pose ?? {}, message.camera);
           break;
         default:
           break;
@@ -137,13 +164,22 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
     await vscode.commands.executeCommand('vscode.openWith', uri, VIEW_TYPE);
   }
 
-  postCommand(type: 'recenter' | 'exportPose' | 'captureScreenshot'): void {
+  postCommand(type: 'recenter' | 'exportPose' | 'captureScreenshot' | 'sampleReachability'): void {
     const preview = this.activePreview;
     if (!preview) {
       void vscode.window.showInformationMessage('Open a URDF Studio preview first.');
       return;
     }
     void preview.panel.webview.postMessage({ type });
+  }
+
+  getActiveMetadata(uri: vscode.Uri): RobotMetadata | undefined {
+    for (const preview of this.previews) {
+      if (preview.document.uri.toString() === uri.toString()) {
+        return preview.metadata;
+      }
+    }
+    return undefined;
   }
 
   private async loadIntoWebview(preview: ActivePreview): Promise<void> {
@@ -160,9 +196,6 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
     const config = vscode.workspace.getConfiguration('urdfStudio');
     const packageRoots = this.packageRoots(config);
     const packages = await discoverPackages(packageRoots);
-    // NEVER re-assign webview.options here; doing so reloads the webview
-    // and causes a visible flash.  The initial roots set in resolveCustomEditor
-    // already include packages + the URDF directory tree.
 
     log(`Loading: ${preview.document.uri.fsPath}`);
     const rendered = await renderRobotDocument(preview.document.uri.fsPath, packages, preview.xacroArgs);
@@ -171,6 +204,14 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
     const semantic = await loadSemanticMetadata(semanticFiles, packages);
     const diagnostics = [...rendered.diagnostics, ...metadata.diagnostics, ...semantic.diagnostics];
     this.updateDiagnostics(preview.document.uri, diagnostics);
+
+    preview.metadata = metadata;
+    preview.semanticSourceFile = semantic.sourceFile;
+
+    this.refreshWatcher(preview, [preview.document.uri.fsPath, ...rendered.includedFiles]);
+
+    const savedState = preview.pendingState ?? this.getPreviewState(preview.document.uri);
+    preview.pendingState = undefined;
 
     await preview.panel.webview.postMessage({
       type: 'loadRobot',
@@ -190,8 +231,50 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
         renderMode: config.get<string>('defaultRenderMode', 'visual'),
         upAxis: config.get<string>('upAxis', '+Z')
       },
-      savedState: this.getPreviewState(preview.document.uri)
+      savedState,
+      bookmarks: this.getBookmarks(preview.document.uri)
     });
+  }
+
+  private refreshWatcher(preview: ActivePreview, filePaths: string[]): void {
+    const wantedFiles = new Set(filePaths.filter(Boolean).map(filePath => path.resolve(filePath)));
+    if (preview.watchedFiles.size === wantedFiles.size && Array.from(wantedFiles).every(file => preview.watchedFiles.has(file))) {
+      return;
+    }
+    preview.watcher?.dispose();
+    preview.watchedFiles = wantedFiles;
+    if (wantedFiles.size === 0) {
+      preview.watcher = undefined;
+      return;
+    }
+    const pattern = `{${Array.from(wantedFiles).map(escapeBraces).join(',')}}`;
+    const watcher = vscode.workspace.createFileSystemWatcher(pattern, false, false, false);
+    const triggerReload = (uri: vscode.Uri) => {
+      if (!preview.watchedFiles.has(path.resolve(uri.fsPath))) {
+        return;
+      }
+      this.scheduleReload(preview, 'changed');
+    };
+    watcher.onDidChange(triggerReload);
+    watcher.onDidCreate(triggerReload);
+    watcher.onDidDelete(triggerReload);
+    preview.watcher = watcher;
+  }
+
+  private scheduleReload(preview: ActivePreview, _reason: string): void {
+    if (preview.reloadTimer) {
+      clearTimeout(preview.reloadTimer);
+    }
+    preview.reloadTimer = setTimeout(() => {
+      preview.reloadTimer = undefined;
+      void preview.panel.webview.postMessage({ type: 'requestPoseSnapshot' });
+      // The webview will reply with `poseSnapshot`; we capture it and reload.
+    }, 200);
+  }
+
+  private capturePoseSnapshot(preview: ActivePreview, pose: Record<string, number>, camera: PreviewState['camera']): void {
+    preview.pendingState = { pose, camera };
+    void this.loadIntoWebview(preview);
   }
 
   private renderHtml(webview: vscode.Webview): string {
@@ -257,12 +340,9 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
       const uri = vscode.Uri.file(entry.path);
       roots.set(uri.toString(), uri);
     }
-    // Walk up from the URDF file's directory so that meshes referenced via
-    // relative paths are always accessible.
     if (documentUri) {
       let dir = path.dirname(documentUri.fsPath);
       const parsed = path.parse(dir);
-      // Add up to 4 ancestor directories (covers typical ROS workspace layouts).
       for (let i = 0; i < 4 && dir !== parsed.root; i++) {
         const uri = vscode.Uri.file(dir);
         roots.set(uri.toString(), uri);
@@ -311,12 +391,59 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
     return `urdfStudio.previewState:${uri.toString()}`;
   }
 
+  private bookmarksKey(uri: vscode.Uri): string {
+    return `urdfStudio.bookmarks:${uri.toString()}`;
+  }
+
   private getPreviewState(uri: vscode.Uri): PreviewState | undefined {
     return this.context.workspaceState.get<PreviewState>(this.stateKey(uri));
   }
 
   private async savePreviewState(uri: vscode.Uri, state: PreviewState): Promise<void> {
     await this.context.workspaceState.update(this.stateKey(uri), state);
+  }
+
+  private getBookmarks(uri: vscode.Uri): PoseBookmark[] {
+    return this.context.workspaceState.get<PoseBookmark[]>(this.bookmarksKey(uri), []);
+  }
+
+  private async setBookmarks(uri: vscode.Uri, bookmarks: PoseBookmark[]): Promise<void> {
+    await this.context.workspaceState.update(this.bookmarksKey(uri), bookmarks);
+  }
+
+  private async saveBookmark(uri: vscode.Uri, name: string, pose: Record<string, number>, camera?: PreviewState['camera']): Promise<void> {
+    const trimmed = String(name ?? '').trim();
+    if (!trimmed) {
+      return;
+    }
+    const bookmarks = this.getBookmarks(uri).filter(bookmark => bookmark.name !== trimmed);
+    bookmarks.push({ name: trimmed, pose: pose ?? {}, camera, createdAt: new Date().toISOString() });
+    bookmarks.sort((a, b) => a.name.localeCompare(b.name));
+    await this.setBookmarks(uri, bookmarks);
+    void vscode.window.setStatusBarMessage(`URDF Studio bookmark "${trimmed}" saved.`, 2500);
+  }
+
+  private async deleteBookmark(uri: vscode.Uri, name: string): Promise<void> {
+    const trimmed = String(name ?? '').trim();
+    const bookmarks = this.getBookmarks(uri).filter(bookmark => bookmark.name !== trimmed);
+    await this.setBookmarks(uri, bookmarks);
+  }
+
+  private async renameBookmark(uri: vscode.Uri, from: string, to: string): Promise<void> {
+    const fromTrimmed = String(from ?? '').trim();
+    const toTrimmed = String(to ?? '').trim();
+    if (!fromTrimmed || !toTrimmed || fromTrimmed === toTrimmed) {
+      return;
+    }
+    const bookmarks = this.getBookmarks(uri).map(bookmark => bookmark.name === fromTrimmed ? { ...bookmark, name: toTrimmed } : bookmark);
+    await this.setBookmarks(uri, bookmarks);
+  }
+
+  private async broadcastBookmarks(preview: ActivePreview): Promise<void> {
+    await preview.panel.webview.postMessage({
+      type: 'bookmarksUpdated',
+      bookmarks: this.getBookmarks(preview.document.uri)
+    });
   }
 
   private async openPoseExport(uri: vscode.Uri, pose: unknown, camera: unknown): Promise<void> {
@@ -346,6 +473,59 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
     await vscode.workspace.fs.writeFile(out, bytes);
     void vscode.window.showInformationMessage(`URDF Studio screenshot saved: ${vscode.workspace.asRelativePath(out)}`);
   }
+
+  private async writeDisableCollisions(preview: ActivePreview, entries: DisableCollisionEntry[]): Promise<void> {
+    if (!Array.isArray(entries) || entries.length === 0) {
+      void vscode.window.showInformationMessage('No collision pairs to write.');
+      return;
+    }
+
+    let target = preview.semanticSourceFile;
+    if (!target) {
+      const selection = await vscode.window.showSaveDialog({
+        title: 'Save SRDF',
+        filters: { SRDF: ['srdf'] },
+        defaultUri: vscode.Uri.file(path.join(path.dirname(preview.document.uri.fsPath), `${path.basename(preview.document.uri.fsPath, path.extname(preview.document.uri.fsPath))}.srdf`))
+      });
+      if (!selection) {
+        return;
+      }
+      target = selection.fsPath;
+      const robotName = preview.metadata?.robotName ?? 'robot';
+      await fs.writeFile(target, `<?xml version="1.0"?>\n<robot name="${escapeXmlText(robotName)}">\n</robot>\n`, 'utf8');
+    }
+
+    let content: string;
+    try {
+      content = await fs.readFile(target, 'utf8');
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Cannot read SRDF: ${String(error)}`);
+      return;
+    }
+
+    const result = mergeDisableCollisionsIntoSrdf(content, entries);
+    if (result.added === 0) {
+      void vscode.window.showInformationMessage('All collision pairs are already disabled.');
+      return;
+    }
+    await fs.writeFile(target, result.srdf, 'utf8');
+    void vscode.window.showInformationMessage(`Wrote ${result.added} disable_collisions to ${vscode.workspace.asRelativePath(target)}.`);
+
+    // Re-parse to refresh on the renderer.
+    const parsed = parseSrdf(await fs.readFile(target, 'utf8'), target);
+    void preview.panel.webview.postMessage({
+      type: 'disableCollisionsUpdated',
+      disableCollisions: parsed.disableCollisions
+    });
+  }
+}
+
+function escapeBraces(filePath: string): string {
+  return filePath.replace(/[{}]/g, '\\$&');
+}
+
+function escapeXmlText(value: string): string {
+  return value.replace(/[&<>"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[char] as string));
 }
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -368,8 +548,11 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('urdfStudio.openPreview', () => provider.openPreviewForActiveEditor()),
     vscode.commands.registerCommand('urdfStudio.recenter', () => provider.postCommand('recenter')),
     vscode.commands.registerCommand('urdfStudio.exportPose', () => provider.postCommand('exportPose')),
-    vscode.commands.registerCommand('urdfStudio.captureScreenshot', () => provider.postCommand('captureScreenshot'))
+    vscode.commands.registerCommand('urdfStudio.captureScreenshot', () => provider.postCommand('captureScreenshot')),
+    vscode.commands.registerCommand('urdfStudio.sampleReachability', () => provider.postCommand('sampleReachability'))
   );
+
+  registerLanguageFeatures(context);
 }
 
 export function deactivate(): void {}
@@ -382,4 +565,3 @@ function createNonce(): string {
   }
   return nonce;
 }
-

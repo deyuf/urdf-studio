@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import YAML from 'yaml';
 import { directChildren, parseXml } from './xml';
-import type { PackageMap, SemanticGroup, SemanticMetadata, SemanticState, StudioDiagnostic } from './types';
+import type { DisableCollisionEntry, PackageMap, SemanticGroup, SemanticMetadata, SemanticState, StudioDiagnostic } from './types';
 
 interface RawGroup {
   joints: string[];
@@ -13,7 +13,9 @@ export async function loadSemanticMetadata(files: string[], packages: PackageMap
   const discoveredFiles = files.length > 0 ? files : await findDefaultSemanticFiles(packages);
   const groups = new Map<string, SemanticGroup>();
   const states: SemanticState[] = [];
+  const disableCollisions: DisableCollisionEntry[] = [];
   const diagnostics: StudioDiagnostic[] = [];
+  let sourceFile: string | undefined;
 
   for (const file of discoveredFiles) {
     const extension = path.extname(file).toLowerCase();
@@ -25,7 +27,11 @@ export async function loadSemanticMetadata(files: string[], packages: PackageMap
           groups.set(group.name, group);
         }
         states.push(...parsed.states);
+        disableCollisions.push(...parsed.disableCollisions);
         diagnostics.push(...parsed.diagnostics);
+        if (!sourceFile) {
+          sourceFile = file;
+        }
       } else if (extension === '.yaml' || extension === '.yml') {
         const parsed = parseInitialPositionsYaml(content, file);
         states.push(...parsed.states);
@@ -39,6 +45,8 @@ export async function loadSemanticMetadata(files: string[], packages: PackageMap
   return {
     groups: Array.from(groups.values()),
     states,
+    disableCollisions,
+    sourceFile,
     diagnostics
   };
 }
@@ -49,7 +57,7 @@ export function parseSrdf(content: string, file = 'model.srdf'): SemanticMetadat
   try {
     doc = parseXml(content, file);
   } catch (error) {
-    return { groups: [], states: [], diagnostics: [{ severity: 'error', message: String(error), code: 'srdf.parse', file }] };
+    return { groups: [], states: [], disableCollisions: [], diagnostics: [{ severity: 'error', message: String(error), code: 'srdf.parse', file }] };
   }
 
   const rawGroups = new Map<string, RawGroup>();
@@ -99,7 +107,21 @@ export function parseSrdf(content: string, file = 'model.srdf'): SemanticMetadat
     states.push({ name, group, joints });
   }
 
-  return { groups, states, diagnostics };
+  const disableCollisions: DisableCollisionEntry[] = [];
+  for (const entry of directChildren(doc.documentElement, 'disable_collisions')) {
+    const link1 = entry.getAttribute('link1')?.trim();
+    const link2 = entry.getAttribute('link2')?.trim();
+    if (!link1 || !link2) {
+      continue;
+    }
+    disableCollisions.push({
+      link1,
+      link2,
+      reason: entry.getAttribute('reason')?.trim() || undefined
+    });
+  }
+
+  return { groups, states, disableCollisions, diagnostics };
 }
 
 function parseInitialPositionsYaml(content: string, file: string): Pick<SemanticMetadata, 'states' | 'diagnostics'> {
@@ -143,3 +165,59 @@ function isString(value: string | undefined): value is string {
   return typeof value === 'string' && value.length > 0;
 }
 
+export function buildDisableCollisionsXml(entries: DisableCollisionEntry[]): string {
+  return entries
+    .map(entry => `  <disable_collisions link1="${escapeXmlAttr(entry.link1)}" link2="${escapeXmlAttr(entry.link2)}"${entry.reason ? ` reason="${escapeXmlAttr(entry.reason)}"` : ''}/>`)
+    .join('\n');
+}
+
+function escapeXmlAttr(value: string): string {
+  return value.replace(/[&<>"']/g, char => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&apos;'
+  }[char] as string));
+}
+
+export function mergeDisableCollisionsIntoSrdf(content: string, entries: DisableCollisionEntry[]): { srdf: string; added: number } {
+  if (entries.length === 0) {
+    return { srdf: content, added: 0 };
+  }
+
+  const existing = new Set<string>();
+  // Collect existing disable_collisions to avoid duplicates.
+  const existingRegex = /<disable_collisions\s+([^/>]*)\/>/g;
+  let match: RegExpExecArray | null;
+  while ((match = existingRegex.exec(content)) !== null) {
+    const attrs = match[1];
+    const a = /link1="([^"]+)"/.exec(attrs)?.[1];
+    const b = /link2="([^"]+)"/.exec(attrs)?.[1];
+    if (a && b) {
+      existing.add(canonicalPair(a, b));
+    }
+  }
+
+  const newEntries = entries.filter(entry => !existing.has(canonicalPair(entry.link1, entry.link2)));
+  if (newEntries.length === 0) {
+    return { srdf: content, added: 0 };
+  }
+
+  const xml = buildDisableCollisionsXml(newEntries);
+  const closeTag = /<\/robot>\s*$/m;
+  if (closeTag.test(content)) {
+    return {
+      srdf: content.replace(closeTag, `${xml}\n</robot>\n`),
+      added: newEntries.length
+    };
+  }
+  return {
+    srdf: `${content.trimEnd()}\n${xml}\n`,
+    added: newEntries.length
+  };
+}
+
+function canonicalPair(a: string, b: string): string {
+  return a < b ? `${a}|${b}` : `${b}|${a}`;
+}

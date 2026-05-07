@@ -52,9 +52,34 @@ button.primary:hover {
 
 .shell {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   height: 100%;
   min-width: 0;
+}
+
+.subtoolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  background: var(--vscode-sideBar-background);
+  font-size: 12px;
+  min-height: 26px;
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+.subtoolbar label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.subtoolbar #collide-hud {
+  margin-left: auto;
 }
 
 .toolbar {
@@ -71,12 +96,13 @@ button.primary:hover {
   min-width: 0;
 }
 
-/* Pin the last toolbar group (Save Pose) so it always takes the right edge
-   of the LAST line, even after wrapping. */
-.toolbar > .toolbar-group:last-of-type {
+/* Pin the rightmost toolbar group so it always takes the right edge of the
+   LAST line, even after wrapping.  Allow it to shrink so its rightmost
+   button never gets clipped past the viewport. */
+.toolbar-group-end {
   margin-left: auto;
-  flex: 1 1 auto;
-  max-width: 100%;
+  flex: 0 1 auto;
+  min-width: 0;
   justify-content: flex-end;
 }
 
@@ -166,7 +192,7 @@ button.primary:hover {
 
 .tabs {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   border-bottom: 1px solid var(--vscode-panel-border);
 }
 
@@ -371,6 +397,57 @@ summary {
 
 .muted {
   color: var(--vscode-descriptionForeground);
+}
+
+.joint-filter {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.joint-filter input[type='search'] {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 4px 6px;
+}
+
+.tool-block {
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+  margin-bottom: 12px;
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 6px;
+}
+
+.tool-block label {
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.tool-block button {
+  justify-self: start;
+}
+
+.srdf-results {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 220px;
+  overflow: auto;
+  font-size: 12px;
+}
+
+.srdf-results li {
+  padding: 2px 0;
+}
+
+#bookmark-select {
+  max-width: 140px;
 }
 
 @media (max-width: 980px) {

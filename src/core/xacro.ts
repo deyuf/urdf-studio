@@ -26,6 +26,7 @@ export async function renderRobotDocument(
       format: 'urdf',
       urdf: content,
       xacroArgs: extractXacroArgs(content),
+      includedFiles: [],
       diagnostics: []
     };
   }
@@ -40,6 +41,7 @@ export async function renderXacroFile(
   xacroArguments: Record<string, unknown>
 ): Promise<RenderedRobotDocument> {
   const diagnostics: StudioDiagnostic[] = [];
+  const includedFiles = new Set<string>();
   const window = new JSDOM('<root/>', { contentType: 'text/xml' }).window;
   const previousDomParser = (globalThis as { DOMParser?: typeof window.DOMParser }).DOMParser;
   const previousXmlSerializer = (globalThis as { XMLSerializer?: typeof window.XMLSerializer }).XMLSerializer;
@@ -47,13 +49,14 @@ export async function renderXacroFile(
   (globalThis as { XMLSerializer?: typeof window.XMLSerializer }).XMLSerializer = window.XMLSerializer;
 
   try {
-    const xml = await parseXacroWithRecovery(sourcePath, content, packages, xacroArguments, diagnostics);
+    const xml = await parseXacroWithRecovery(sourcePath, content, packages, xacroArguments, diagnostics, includedFiles);
     const serializer = new window.XMLSerializer();
     return {
       sourcePath,
       format: 'xacro',
       urdf: serializer.serializeToString(xml),
       xacroArgs: extractXacroArgs(content),
+      includedFiles: Array.from(includedFiles),
       diagnostics
     };
   } catch (error) {
@@ -70,6 +73,7 @@ export async function renderXacroFile(
       format: 'xacro',
       urdf: content,
       xacroArgs: extractXacroArgs(content),
+      includedFiles: Array.from(includedFiles),
       diagnostics
     };
   } finally {
@@ -84,14 +88,15 @@ async function parseXacroWithRecovery(
   content: string,
   packages: PackageMap,
   xacroArguments: Record<string, unknown>,
-  diagnostics: StudioDiagnostic[]
+  diagnostics: StudioDiagnostic[],
+  includedFiles: Set<string>
 ): Promise<Document> {
   const skippedExpressions = new Set<string>();
 
   for (let attempt = 0; attempt <= MAX_XACRO_RECOVERY_ATTEMPTS; attempt += 1) {
     const attemptDiagnostics: StudioDiagnostic[] = [];
     try {
-      const parser = createXacroParser(sourcePath, packages, xacroArguments, attemptDiagnostics, skippedExpressions);
+      const parser = createXacroParser(sourcePath, packages, xacroArguments, attemptDiagnostics, skippedExpressions, includedFiles);
       const sanitizedContent = sanitizeXacroContent(content, skippedExpressions);
       const xml = await parser.parse(sanitizedContent);
       diagnostics.push(...attemptDiagnostics);
@@ -124,7 +129,8 @@ function createXacroParser(
   packages: PackageMap,
   xacroArguments: Record<string, unknown>,
   diagnostics: StudioDiagnostic[],
-  skippedExpressions: ReadonlySet<string>
+  skippedExpressions: ReadonlySet<string>,
+  includedFiles: Set<string>
 ): XacroParser {
   const parser = new XacroParser();
   parser.inOrder = true;
@@ -133,6 +139,11 @@ function createXacroParser(
   parser.workingPath = `${path.dirname(sourcePath)}${path.sep}`;
   parser.arguments = stringifyArgs(xacroArguments);
   parser.getFileContents = async includePath => {
+    try {
+      includedFiles.add(path.resolve(includePath));
+    } catch {
+      // ignore unresolvable paths
+    }
     const includeContent = await fs.readFile(includePath, 'utf8');
     return sanitizeXacroContent(includeContent, skippedExpressions);
   };
@@ -157,6 +168,7 @@ function createXacroParser(
   const functions = parserWithExpressions.expressionParser.functions;
   functions.load_yaml = (yamlPath: string) => {
     const resolvedPath = path.isAbsolute(yamlPath) ? yamlPath : path.resolve(path.dirname(sourcePath), yamlPath);
+    includedFiles.add(resolvedPath);
     return YAML.parse(readFileSync(resolvedPath, 'utf8'));
   };
   functions.bool = (value: unknown) => value === true || value === 'true' || value === 1 || value === '1';

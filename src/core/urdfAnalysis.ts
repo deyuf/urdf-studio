@@ -2,7 +2,10 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { directChildren, firstDirectChild, lineForNeedle, parseXml, readNumber, readVector } from './xml';
 import { resolveModelUriToFile } from './packageMap';
-import type { JointInfo, LinkInfo, LinkTreeNode, PackageMap, RobotMetadata, StudioDiagnostic } from './types';
+import { inertiaEigenvalues } from './inertia';
+import type { InertialInfo, JointInfo, LinkInfo, LinkTreeNode, MimicInfo, PackageMap, RobotMetadata, StudioDiagnostic } from './types';
+
+export { inertiaEigenvalues, ellipsoidSemiAxes } from './inertia';
 
 const MOVABLE_JOINT_TYPES = new Set(['revolute', 'continuous', 'prismatic', 'floating', 'planar']);
 
@@ -22,6 +25,7 @@ export function analyzeUrdf(urdf: string, sourcePath: string, packages: PackageM
   const joints: Record<string, JointInfo> = {};
   const childToParentJoint = new Map<string, string>();
   const parentToChildren = new Map<string, Array<{ joint: string; child: string }>>();
+  let totalMass = 0;
 
   for (const link of directChildren(robot, 'link')) {
     const name = link.getAttribute('name')?.trim();
@@ -32,9 +36,14 @@ export function analyzeUrdf(urdf: string, sourcePath: string, packages: PackageM
     if (links[name]) {
       diagnostics.push({ severity: 'error', message: `Duplicate link "${name}".`, code: 'link.duplicate', target: name, file: sourcePath, line: lineForNeedle(urdf, `<link name="${name}"`) });
     }
+    const inertial = parseInertial(link, name, sourcePath, diagnostics);
+    if (inertial) {
+      totalMass += inertial.mass;
+    }
     links[name] = {
       name,
       childJoints: [],
+      inertial,
       line: lineForNeedle(urdf, `<link name="${name}"`)
     };
   }
@@ -54,6 +63,7 @@ export function analyzeUrdf(urdf: string, sourcePath: string, packages: PackageM
     const child = firstDirectChild(joint, 'child')?.getAttribute('link')?.trim();
     const axis = readVector(firstDirectChild(joint, 'axis')?.getAttribute('xyz'), [1, 0, 0]);
     const limitElement = firstDirectChild(joint, 'limit');
+    const mimic = parseMimic(joint);
     const info: JointInfo = {
       name,
       type,
@@ -66,6 +76,7 @@ export function analyzeUrdf(urdf: string, sourcePath: string, packages: PackageM
         effort: readNumber(limitElement?.getAttribute('effort')),
         velocity: readNumber(limitElement?.getAttribute('velocity'))
       },
+      mimic,
       line: lineForNeedle(urdf, `<joint name="${name}"`)
     };
     joints[name] = info;
@@ -95,11 +106,17 @@ export function analyzeUrdf(urdf: string, sourcePath: string, packages: PackageM
       }
     }
 
-    if ((type === 'revolute' || type === 'prismatic') && (info.limit.lower === undefined || info.limit.upper === undefined)) {
+    if ((type === 'revolute' || type === 'prismatic') && !mimic && (info.limit.lower === undefined || info.limit.upper === undefined)) {
       diagnostics.push({ severity: 'warning', message: `Movable joint "${name}" is missing lower or upper limits.`, code: 'joint.limitMissing', target: name, file: sourcePath, line: info.line });
     }
     if (info.limit.lower !== undefined && info.limit.upper !== undefined && info.limit.lower > info.limit.upper) {
       diagnostics.push({ severity: 'error', message: `Joint "${name}" lower limit is greater than upper limit.`, code: 'joint.limitInvalid', target: name, file: sourcePath, line: info.line });
+    }
+  }
+
+  for (const joint of Object.values(joints)) {
+    if (joint.mimic && !joints[joint.mimic.joint]) {
+      diagnostics.push({ severity: 'warning', message: `Joint "${joint.name}" mimics unknown joint "${joint.mimic.joint}".`, code: 'joint.mimicMissing', target: joint.name, file: sourcePath, line: joint.line });
     }
   }
 
@@ -144,7 +161,7 @@ export function analyzeUrdf(urdf: string, sourcePath: string, packages: PackageM
     ? rootLinks.map(rootLink => buildTree(rootLink, parentToChildren, new Set()))
     : Object.keys(links).slice(0, 1).map(rootLink => buildTree(rootLink, parentToChildren, new Set()));
   const movableJointNames = Object.values(joints)
-    .filter(joint => MOVABLE_JOINT_TYPES.has(joint.type))
+    .filter(joint => MOVABLE_JOINT_TYPES.has(joint.type) && !joint.mimic)
     .map(joint => joint.name);
 
   return {
@@ -162,7 +179,67 @@ export function analyzeUrdf(urdf: string, sourcePath: string, packages: PackageM
     rootLinks,
     movableJointNames,
     tree,
+    totalMass,
     diagnostics
+  };
+}
+
+function parseMimic(jointElement: Element): MimicInfo | undefined {
+  const mimicElement = firstDirectChild(jointElement, 'mimic');
+  if (!mimicElement) {
+    return undefined;
+  }
+  const joint = mimicElement.getAttribute('joint')?.trim();
+  if (!joint) {
+    return undefined;
+  }
+  const multiplier = readNumber(mimicElement.getAttribute('multiplier'));
+  const offset = readNumber(mimicElement.getAttribute('offset'));
+  return {
+    joint,
+    multiplier: multiplier ?? 1,
+    offset: offset ?? 0
+  };
+}
+
+function parseInertial(linkElement: Element, linkName: string, sourcePath: string, diagnostics: StudioDiagnostic[]): InertialInfo | undefined {
+  const inertial = firstDirectChild(linkElement, 'inertial');
+  if (!inertial) {
+    return undefined;
+  }
+  const mass = readNumber(firstDirectChild(inertial, 'mass')?.getAttribute('value'));
+  const origin = firstDirectChild(inertial, 'origin');
+  const inertia = firstDirectChild(inertial, 'inertia');
+  if (mass === undefined || mass <= 0) {
+    diagnostics.push({ severity: 'warning', message: `Link "${linkName}" has missing or non-positive mass.`, code: 'inertial.massInvalid', target: linkName, file: sourcePath });
+  }
+  if (!inertia) {
+    diagnostics.push({ severity: 'warning', message: `Link "${linkName}" inertial has no <inertia> tensor.`, code: 'inertial.tensorMissing', target: linkName, file: sourcePath });
+  }
+  const ixx = readNumber(inertia?.getAttribute('ixx')) ?? 0;
+  const ixy = readNumber(inertia?.getAttribute('ixy')) ?? 0;
+  const ixz = readNumber(inertia?.getAttribute('ixz')) ?? 0;
+  const iyy = readNumber(inertia?.getAttribute('iyy')) ?? 0;
+  const iyz = readNumber(inertia?.getAttribute('iyz')) ?? 0;
+  const izz = readNumber(inertia?.getAttribute('izz')) ?? 0;
+
+  if (mass !== undefined && mass > 0 && inertia) {
+    const eigenvalues = inertiaEigenvalues({ ixx, ixy, ixz, iyy, iyz, izz });
+    if (eigenvalues.some(value => value <= 0)) {
+      diagnostics.push({ severity: 'warning', message: `Link "${linkName}" inertia tensor is not positive-definite.`, code: 'inertial.notPositiveDefinite', target: linkName, file: sourcePath });
+    }
+  }
+
+  return {
+    mass: mass ?? 0,
+    origin: readVector(origin?.getAttribute('xyz'), [0, 0, 0]),
+    rotation: readVector(origin?.getAttribute('rpy'), [0, 0, 0]),
+    ixx,
+    ixy,
+    ixz,
+    iyy,
+    iyz,
+    izz
   };
 }
 
@@ -176,6 +253,7 @@ function emptyMetadata(message: string, file: string): RobotMetadata {
     rootLinks: [],
     movableJointNames: [],
     tree: [],
+    totalMass: 0,
     diagnostics: [{ severity: 'error', message, code: 'xml.parse', file }]
   };
 }
@@ -231,4 +309,3 @@ function detectCycles(
 
   return diagnostics;
 }
-

@@ -24,6 +24,12 @@ export interface JointLimit {
   velocity?: number;
 }
 
+export interface MimicInfo {
+  joint: string;
+  multiplier: number;
+  offset: number;
+}
+
 export interface JointInfo {
   name: string;
   type: string;
@@ -31,6 +37,7 @@ export interface JointInfo {
   child?: string;
   axis: [number, number, number];
   limit: JointLimit;
+  mimic?: MimicInfo;
   line?: number;
 }
 
@@ -44,10 +51,23 @@ export interface MeshInfo {
   line?: number;
 }
 
+export interface InertialInfo {
+  mass: number;
+  origin: [number, number, number];
+  rotation: [number, number, number];
+  ixx: number;
+  ixy: number;
+  ixz: number;
+  iyy: number;
+  iyz: number;
+  izz: number;
+}
+
 export interface LinkInfo {
   name: string;
   parentJoint?: string;
   childJoints: string[];
+  inertial?: InertialInfo;
   line?: number;
 }
 
@@ -72,6 +92,7 @@ export interface RobotMetadata {
   rootLinks: string[];
   movableJointNames: string[];
   tree: LinkTreeNode[];
+  totalMass: number;
   diagnostics: StudioDiagnostic[];
 }
 
@@ -86,9 +107,17 @@ export interface SemanticState {
   joints: Record<string, number>;
 }
 
+export interface DisableCollisionEntry {
+  link1: string;
+  link2: string;
+  reason?: string;
+}
+
 export interface SemanticMetadata {
   groups: SemanticGroup[];
   states: SemanticState[];
+  disableCollisions: DisableCollisionEntry[];
+  sourceFile?: string;
   diagnostics: StudioDiagnostic[];
 }
 
@@ -98,9 +127,18 @@ export interface CameraSnapshot {
   up: [number, number, number];
 }
 
+export interface PoseBookmark {
+  name: string;
+  pose: Record<string, number>;
+  camera?: CameraSnapshot;
+  createdAt: string;
+}
+
 export interface PreviewState {
   pose?: Record<string, number>;
   camera?: CameraSnapshot;
+  bookmarks?: PoseBookmark[];
+  activeBookmark?: string;
 }
 
 export interface XacroArgument {
@@ -113,6 +151,6 @@ export interface RenderedRobotDocument {
   format: 'urdf' | 'xacro';
   urdf: string;
   xacroArgs: XacroArgument[];
+  includedFiles: string[];
   diagnostics: StudioDiagnostic[];
 }
-

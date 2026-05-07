@@ -2,7 +2,7 @@
   "name": "urdf-studio",
   "displayName": "URDF Studio",
   "description": "Inspect and preview URDF and xacro robot models in VS Code.",
-  "version": "0.1.9",
+  "version": "0.2.0",
   "publisher": "deyuf",
   "license": "MIT",
   "repository": {
@@ -45,6 +45,11 @@
       {
         "command": "urdfStudio.captureScreenshot",
         "title": "Capture Screenshot",
+        "category": "URDF Studio"
+      },
+      {
+        "command": "urdfStudio.sampleReachability",
+        "title": "Sample Reachability Cloud",
         "category": "URDF Studio"
       }
     ],
@@ -137,6 +142,7 @@
     "@xmldom/xmldom": "^0.8.11",
     "jsdom": "^26.1.0",
     "three": "^0.184.0",
+    "three-mesh-bvh": "^0.7.8",
     "urdf-loader": "^0.12.7",
     "xacro-parser": "^0.3.11",
     "yaml": "^2.8.3"
