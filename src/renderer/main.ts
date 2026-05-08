@@ -810,8 +810,11 @@ function selectLink(linkName: string | undefined): void {
     selectedBox = undefined;
   }
   if (linkName && robot?.links?.[linkName]) {
-    selectedBox = new THREE.BoxHelper(robot.links[linkName], 0xffd866);
-    scene.add(selectedBox);
+    const visualGroup = (robot.visual as Record<string, Object3D> | undefined)?.[linkName];
+    if (visualGroup) {
+      selectedBox = new THREE.BoxHelper(visualGroup, 0xffd866);
+      scene.add(selectedBox);
+    }
     vscode.postMessage({ type: 'selectionChanged', link: linkName, joint: currentData?.metadata.links[linkName]?.parentJoint });
   }
   renderInspector();
