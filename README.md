@@ -60,7 +60,14 @@ Toggle **wireframe** mode to inspect mesh topology. Show or hide the **grid** an
 
 ### 🌲 Link Tree & Inspector
 
-Browse the full kinematic tree in a collapsible hierarchy. Click any link in the tree or directly in the 3D viewport to inspect it — view parent/child joints, joint type, axis, limits, and associated meshes.
+Browse the full kinematic tree in a collapsible hierarchy. Click any link in the tree or directly in the 3D viewport to inspect it — selected links are highlighted with a tight bounding box around the link's own visual mesh, and the inspector shows parent/child joints, joint type, axis, limits, mass, center of mass, and associated meshes.
+
+The side panel is organised into tabs: **Joints**, **Inspector**, **Checks**, **Links**, and **Tools**.
+
+### 🧭 TF Frames & Inertia Overlays
+
+- **Frames** — overlay per-link TF axes for the selected link only or for every link, useful for debugging joint origins and link orientations.
+- **Inertia** — visualize each link's inertia ellipsoid and center of mass alongside the geometry, computed from the URDF `<inertial>` tags.
 
 ### 🩺 Model Diagnostics
 
@@ -77,9 +84,18 @@ Diagnostics also appear in the **Checks** panel inside the preview for quick tri
 
 Load SRDF or YAML semantic files to define **joint groups** and **named states** (e.g., "home", "ready", "tucked"). Apply named states with a single click to pose the robot instantly.
 
-### 💾 Pose Save & Export
+### 🛠️ SRDF Authoring — Disable Collisions
+
+From the **Tools** tab, run a Monte-Carlo sampling pass over the joint space to find link pairs that **never collide** in any sampled pose. The result can be written directly into an SRDF file as `<disable_collisions>` entries — the standard input MoveIt expects for self-collision filtering.
+
+### 🎯 Reachability Cloud
+
+Pick a tip link and a sample count, and the **Tools** tab generates a workspace point cloud by sampling random joint configurations and recording the tip's world position. Useful for visualizing reach envelopes or comparing arm designs.
+
+### 💾 Pose Save, Bookmarks & Export
 
 - **Save Pose** — persists the current joint configuration and camera so it's restored on next open.
+- **Bookmarks** — save any pose under a name (e.g. "ready", "tucked") and reapply it from the toolbar dropdown.
 - **Export Pose** — opens a JSON document with the full joint pose and camera snapshot for use in launch files or configuration.
 
 ### 📸 Screenshot Capture
@@ -99,6 +115,15 @@ Loads common robotics mesh formats out of the box:
 
 Set the world up axis to **+X**, **+Y**, or **+Z** depending on your robot's coordinate convention. The grid, camera, and orbit controls adjust automatically.
 
+### 🧠 Language Services for URDF & Xacro
+
+Beyond the 3D preview, URDF Studio registers editor language features for `.urdf`, `.urdf.xacro`, and `.xacro` files:
+
+- **Hover** — see joint/link details and resolved mesh paths inline.
+- **Go to Definition / Find References** — jump between joint `parent`/`child` references and their link declarations.
+- **Document Symbols / Outline** — links and joints listed in the breadcrumb and outline view.
+- **CodeLens & Quick Fixes** — actionable hints for common authoring issues.
+
 ---
 
 ## Quick Start
@@ -117,6 +142,7 @@ Set the world up axis to **+X**, **+Y**, or **+Z** depending on your robot's coo
 | `URDF Studio: Recenter` | Reset the camera to frame the robot |
 | `URDF Studio: Export Pose` | Export current joint pose as JSON |
 | `URDF Studio: Capture Screenshot` | Save a PNG screenshot of the viewport |
+| `URDF Studio: Sample Reachability Cloud` | Sample random joint poses and visualize the tip workspace |
 
 ---
 
