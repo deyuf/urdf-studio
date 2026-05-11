@@ -167,21 +167,4 @@
     <circle cx="200" cy="64" r="11" fill="none" stroke="#0A0B22" stroke-width="2"/>
     <circle cx="200" cy="64" r="3" fill="#fff" opacity="0.85"/>
   </g>
-
-  <!-- ========== COORDINATE TRIAD (X red, Y green, Z blue) ========== -->
-  <g stroke-linecap="round" stroke-width="3">
-    <!-- Z up (blue) -->
-    <line x1="42" y1="218" x2="42" y2="194" stroke="#5BD4FF"/>
-    <polygon points="42,188 37,196 47,196" fill="#5BD4FF"/>
-    <!-- X right (red) -->
-    <line x1="42" y1="218" x2="66" y2="218" stroke="#FF6B7A"/>
-    <polygon points="72,218 64,213 64,223" fill="#FF6B7A"/>
-    <!-- Y depth (green) -->
-    <line x1="42" y1="218" x2="28" y2="232" stroke="#5DE8A0"/>
-    <polygon points="23,237 33,234 26,227" fill="#5DE8A0"/>
-  </g>
-
-  <!-- Origin sphere at the triad: subtle outer halo + bright core -->
-  <circle cx="42" cy="218" r="5" fill="#fff" opacity="0.18"/>
-  <circle cx="42" cy="218" r="2.8" fill="#fff"/>
 </svg>
