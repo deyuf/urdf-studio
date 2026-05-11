@@ -55,8 +55,9 @@
       <stop offset="100%" stop-color="#C8217A"/>
     </radialGradient>
 
-    <!-- Soft glow filter -->
-    <filter id="softGlow" x="-30%" y="-30%" width="160%" height="160%">
+    <!-- Soft glow filter — userSpaceOnUse so vertical primitives with zero-width
+         bbox (e.g. the column) don't get clipped to a thin strip. -->
+    <filter id="softGlow" filterUnits="userSpaceOnUse" x="0" y="0" width="256" height="256">
       <feGaussianBlur stdDeviation="4" result="blur"/>
       <feMerge>
         <feMergeNode in="blur"/>
@@ -65,7 +66,7 @@
     </filter>
 
     <!-- Stronger glow for joints/tip -->
-    <filter id="hotGlow" x="-60%" y="-60%" width="220%" height="220%">
+    <filter id="hotGlow" filterUnits="userSpaceOnUse" x="0" y="0" width="256" height="256">
       <feGaussianBlur stdDeviation="6" result="blur"/>
       <feMerge>
         <feMergeNode in="blur"/>
@@ -74,7 +75,7 @@
     </filter>
 
     <!-- Soft shadow (just blur, used under base) -->
-    <filter id="shadowBlur" x="-50%" y="-50%" width="200%" height="200%">
+    <filter id="shadowBlur" filterUnits="userSpaceOnUse" x="0" y="0" width="256" height="256">
       <feGaussianBlur stdDeviation="3"/>
     </filter>
   </defs>
@@ -113,13 +114,13 @@
   <line x1="112" y1="204" x2="112" y2="213" stroke="#7B8CFF" stroke-width="0.8" opacity="0.25"/>
 
   <!-- ========== COLUMN (Link 1) — unified capsule style ========== -->
-  <!-- Drawn BEFORE the disc top so its rounded bottom is hidden inside the base -->
+  <!-- Drawn BEFORE the disc top so its rounded bottom is hidden inside the base.
+       Rendered as a rounded rect (not a vertical line) so the gradient and filter
+       have a non-degenerate bounding box. -->
   <g filter="url(#softGlow)">
-    <line x1="84" y1="140" x2="84" y2="200"
-          stroke="url(#linkGrad)" stroke-width="22" stroke-linecap="round"/>
+    <rect x="73" y="129" width="22" height="82" rx="11" ry="11" fill="url(#linkGrad)"/>
     <!-- Highlight stripe on left side -->
-    <line x1="78" y1="146" x2="78" y2="194"
-          stroke="#fff" stroke-width="3" stroke-linecap="round" opacity="0.28"/>
+    <rect x="75" y="138" width="3" height="56" rx="1.5" ry="1.5" fill="#fff" opacity="0.28"/>
   </g>
 
   <!-- Cylinder top disc — covers column's round bottom, making column "root into" base -->
