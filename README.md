@@ -34,6 +34,10 @@
 
 A full Three.js viewport embedded in VS Code with orbit, pan, and zoom controls. Supports preset camera angles (**Front**, **Right**, **Top**, **Iso**) and a one-click **Fit** to frame the entire robot.
 
+![URDF Studio viewer with Franka Research 3 loaded](media/screenshots/viewer-joints.png)
+
+*The 3D viewport with a Franka Research 3 loaded; toolbar, joints panel, and link/joint counts on the right.*
+
 ### 🤖 URDF & Xacro Support
 
 Opens `.urdf`, `.urdf.xacro`, and `.xacro` files natively as a custom editor. Xacro files are expanded on-the-fly with full argument support — edit xacro args and hit **Reload xacro** to see changes instantly.
