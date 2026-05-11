@@ -34,6 +34,10 @@
 
 A full Three.js viewport embedded in VS Code with orbit, pan, and zoom controls. Supports preset camera angles (**Front**, **Right**, **Top**, **Iso**) and a one-click **Fit** to frame the entire robot.
 
+![URDF Studio viewer with Franka Research 3 loaded](media/screenshots/viewer-joints.png)
+
+*The 3D viewport with a Franka Research 3 loaded; toolbar, joints panel, and link/joint counts on the right.*
+
 ### 🤖 URDF & Xacro Support
 
 Opens `.urdf`, `.urdf.xacro`, and `.xacro` files natively as a custom editor. Xacro files are expanded on-the-fly with full argument support — edit xacro args and hit **Reload xacro** to see changes instantly.
@@ -58,11 +62,19 @@ Switch between three geometry layers:
 
 Toggle **wireframe** mode to inspect mesh topology. Show or hide the **grid** and **axes** helpers.
 
+![Collision render mode for Franka FR3](media/screenshots/render-collision.png)
+
+*Collision-only render mode — FR3's self-collision primitives (capsules and cylinders) replace the detailed visual meshes.*
+
 ### 🌲 Link Tree & Inspector
 
 Browse the full kinematic tree in a collapsible hierarchy. Click any link in the tree or directly in the 3D viewport to inspect it — selected links are highlighted with a tight bounding box around the link's own visual mesh, and the inspector shows parent/child joints, joint type, axis, limits, mass, center of mass, and associated meshes.
 
 The side panel is organised into tabs: **Joints**, **Inspector**, **Checks**, **Links**, and **Tools**.
+
+![Inspector with fr3_link4 selected](media/screenshots/inspector-selected.png)
+
+*Selecting `fr3_link4` highlights just that link's visual mesh with a tight yellow box; the inspector panel shows its parent joint, axis, limits, child joints, and mesh paths.*
 
 ### 🧭 TF Frames & Inertia Overlays
 
