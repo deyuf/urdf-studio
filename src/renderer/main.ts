@@ -810,9 +810,21 @@ function selectLink(linkName: string | undefined): void {
     selectedBox = undefined;
   }
   if (linkName && robot?.links?.[linkName]) {
-    const visualGroup = (robot.visual as Record<string, Object3D> | undefined)?.[linkName];
-    if (visualGroup) {
-      selectedBox = new THREE.BoxHelper(visualGroup, 0xffd866);
+    // urdf-loader keys robot.visual by <visual name="..."> attribute, which is
+    // optional and frequently omitted (e.g. Franka FR3 has none). Find the
+    // link's direct URDFVisual children so the box hugs only this link's own
+    // visual meshes, not descendant links' geometry.
+    const link = robot.links[linkName] as Object3D;
+    const visualChildren = link.children.filter(child => (child as { isURDFVisual?: boolean }).isURDFVisual);
+    if (visualChildren.length === 1) {
+      selectedBox = new THREE.BoxHelper(visualChildren[0], 0xffd866);
+      scene.add(selectedBox);
+    } else if (visualChildren.length > 1) {
+      // Multiple <visual> per link: anchor BoxHelper at the link itself but
+      // hide collision/sub-link children so the box ignores them. Simpler than
+      // unioning bounds each frame and rare enough in practice (FR3 doesn't
+      // hit this branch).
+      selectedBox = new THREE.BoxHelper(link, 0xffd866);
       scene.add(selectedBox);
     }
     vscode.postMessage({ type: 'selectionChanged', link: linkName, joint: currentData?.metadata.links[linkName]?.parentJoint });

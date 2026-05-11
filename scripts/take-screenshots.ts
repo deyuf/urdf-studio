@@ -138,13 +138,49 @@ async function main(): Promise<void> {
       }, { n: name, v: value });
     }
     await page.waitForTimeout(400);
-    await page.evaluate(() => (window as any).studioDebug?.fit?.());
+    await page.locator('#fit').click();
     await page.waitForTimeout(300);
 
-    // Main view: full UI with joints panel active
+    const waitForHudIdle = async () => {
+      await page.waitForFunction(() => {
+        const hud = document.getElementById('hud');
+        return !hud || !/Loading/i.test(hud.textContent ?? '');
+      }, { timeout: 30000 });
+      await page.waitForTimeout(400);
+    };
+
+    const refit = async () => {
+      await page.locator('#fit').click();
+      await page.waitForTimeout(250);
+    };
+
+    // 1) Main view: full UI with joints panel active
     await page.locator('[data-tab="joints"]').click();
-    await page.waitForTimeout(300);
+    await refit();
     await page.screenshot({ path: path.join(outputDir, 'viewer-joints.png'), fullPage: false });
+
+    // 2) Inspector with selected link + yellow BoxHelper hugging only that link's visual
+    await page.locator('[data-tab="links"]').click();
+    await page.waitForTimeout(200);
+    await page.evaluate(() => {
+      document.querySelectorAll('#panel-links details').forEach(d => (d as HTMLDetailsElement).open = true);
+    });
+    const linkButton = page.locator('[data-link="fr3_link4"]').first();
+    if (await linkButton.count()) {
+      await linkButton.click();
+      await page.waitForTimeout(300);
+      await page.locator('[data-tab="inspector"]').click();
+      await refit();
+      await page.screenshot({ path: path.join(outputDir, 'inspector-selected.png'), fullPage: false });
+    }
+
+    // 3) Collision render mode — last because the visual→collision toggle triggers a
+    // re-load whose mesh cache invalidation prevents visual meshes from reappearing.
+    await page.locator('[data-tab="joints"]').click();
+    await page.locator('#render-mode').selectOption('collision');
+    await waitForHudIdle();
+    await refit();
+    await page.screenshot({ path: path.join(outputDir, 'render-collision.png'), fullPage: false });
 
     await context.close();
   } finally {
