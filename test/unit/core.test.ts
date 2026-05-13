@@ -12,7 +12,7 @@ import {
   parseSrdf,
   loadSemanticMetadata
 } from '../../src/core/srdf';
-import { renderRobotDocument } from '../../src/core/xacro';
+import { applyXacroCompatibilityRewrites, renderRobotDocument } from '../../src/core/xacro';
 
 // `__dirname` after esbuild bundling resolves to dist/test, so we anchor
 // fixtures to the project root via process.cwd() (npm runs tests from there).
@@ -242,6 +242,103 @@ test('renderRobotDocument tracks included files for hot reload watcher', async (
   assert.ok(includedNames.includes('part.xacro'), `expected part.xacro in includedFiles, got ${includedNames.join(',')}`);
   // It should also pick up the YAML loaded via load_yaml.
   assert.ok(includedNames.some(name => name.endsWith('.yaml')), `expected a YAML included file, got ${includedNames.join(',')}`);
+});
+
+// =============================================================================
+// xacro: source-text compatibility rewrites for ROS-flavoured constructs
+// =============================================================================
+
+test('applyXacroCompatibilityRewrites strips ROS Jade `:=^` pass-through defaults', () => {
+  const src = '<xacro:macro name="m" params="name ee_inertials:=^">child</xacro:macro>';
+  const out = applyXacroCompatibilityRewrites(src);
+  assert.match(out, /params="name"/);
+  assert.ok(!/:=\^/.test(out), `expected :=^ to be stripped, got ${out}`);
+});
+
+test('applyXacroCompatibilityRewrites rewrites Python ternary inside ${} via __pytruthy__', () => {
+  const out = applyXacroCompatibilityRewrites(`\${prefix + '_' if prefix else ''}`);
+  assert.match(out, /__pytruthy__\(\s*prefix\s*\)/);
+  assert.ok(!/\bif\b.*\belse\b/.test(out), `Python ternary should be rewritten, got ${out}`);
+});
+
+test('applyXacroCompatibilityRewrites rewrites Python `**` power operator to pow()', () => {
+  const out = applyXacroCompatibilityRewrites('${1./12 * mass * (3 * radius**2 + h**2)}');
+  assert.match(out, /pow\(radius,\s*2\)/);
+  assert.match(out, /pow\(h,\s*2\)/);
+});
+
+test('applyXacroCompatibilityRewrites strips xacro. namespace from function calls', () => {
+  const out = applyXacroCompatibilityRewrites(`\${xacro.load_yaml('/tmp/a.yaml')}`);
+  assert.match(out, /load_yaml\(/);
+  assert.ok(!/xacro\.load_yaml/.test(out), `expected xacro. prefix stripped, got ${out}`);
+});
+
+test('applyXacroCompatibilityRewrites rewrites `.split(sep)[N]` to split_n helper', () => {
+  const out = applyXacroCompatibilityRewrites(`\${xyz.split(' ')[0]}`);
+  assert.match(out, /split_n\(xyz,\s*' ',\s*0\)/);
+});
+
+test('applyXacroCompatibilityRewrites rewrites Python list slice notation', () => {
+  const fromOut = applyXacroCompatibilityRewrites('${items[1:]}');
+  const toOut = applyXacroCompatibilityRewrites('${items[:2]}');
+  const rangeOut = applyXacroCompatibilityRewrites('${items[1:3]}');
+  assert.match(fromOut, /slice_from\(items,\s*1\)/);
+  assert.match(toOut, /slice_to\(items,\s*2\)/);
+  assert.match(rangeOut, /slice_range\(items,\s*1,\s*3\)/);
+});
+
+test('renderRobotDocument expands ROS-style xacro with YAML, ternary and dict access', async () => {
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'urdfstudio-ros-xacro-'));
+  try {
+    const pkgPath = path.join(tmpDir, 'pkg');
+    await fs.mkdir(path.join(pkgPath, 'urdf'), { recursive: true });
+    await fs.writeFile(
+      path.join(pkgPath, 'package.xml'),
+      '<package format="3"><name>ros_xacro</name></package>',
+      'utf8'
+    );
+    await fs.writeFile(
+      path.join(pkgPath, 'inertials.yaml'),
+      'base:\n  mass: 2.5\n  inertia:\n    xx: 0.01\n    yy: 0.02\n    zz: 0.03\n',
+      'utf8'
+    );
+    const xacroPath = path.join(pkgPath, 'urdf', 'robot.urdf.xacro');
+    await fs.writeFile(
+      xacroPath,
+      `<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="t">
+  <xacro:property name="no_prefix" value="false"/>
+  <xacro:property name="inertials" value="\${xacro.load_yaml('$(find ros_xacro)/inertials.yaml')}"/>
+  <xacro:property name="prefix" value="\${'' if no_prefix else 'r_'}"/>
+  <xacro:macro name="add_link" params="name inertials:=^">
+    <xacro:property name="li" value="\${inertials[name]}" lazy_eval="false"/>
+    <link name="\${prefix}\${name}">
+      <inertial>
+        <mass value="\${li['mass']}"/>
+        <inertia ixx="\${li['inertia']['xx']}" ixy="0" ixz="0"
+                 iyy="\${li['inertia']['yy']}" iyz="0"
+                 izz="\${li['inertia']['zz']}"/>
+      </inertial>
+    </link>
+  </xacro:macro>
+  <xacro:add_link name="base"/>
+</robot>`,
+      'utf8'
+    );
+    const result = await renderRobotDocument(
+      xacroPath,
+      { ros_xacro: { name: 'ros_xacro', path: pkgPath, packageXml: path.join(pkgPath, 'package.xml') } },
+      {}
+    );
+    const errors = result.diagnostics.filter(d => d.severity === 'error');
+    assert.deepEqual(errors, [], `expected no errors, got ${JSON.stringify(result.diagnostics)}`);
+    assert.match(result.urdf, /<link name="r_base">/);
+    assert.match(result.urdf, /<mass value="2\.5"\/>/);
+    assert.match(result.urdf, /ixx="0\.01"/);
+    assert.match(result.urdf, /izz="0\.03"/);
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  }
 });
 
 test('renderRobotDocument exposes empty includedFiles for plain URDF', async () => {

@@ -2,7 +2,7 @@ import { promises as fs, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { JSDOM } from 'jsdom';
 import YAML from 'yaml';
-import { XacroParser } from 'xacro-parser';
+import { XacroParser } from '../vendor/xacro-parser/XacroParser.js';
 import type { PackageMap, RenderedRobotDocument, StudioDiagnostic, XacroArgument } from './types';
 
 type LogFn = (message: string) => void;
@@ -97,7 +97,7 @@ async function parseXacroWithRecovery(
     const attemptDiagnostics: StudioDiagnostic[] = [];
     try {
       const parser = createXacroParser(sourcePath, packages, xacroArguments, attemptDiagnostics, skippedExpressions, includedFiles);
-      const sanitizedContent = sanitizeXacroContent(content, skippedExpressions);
+      const sanitizedContent = sanitizeXacroContent(applyXacroCompatibilityRewrites(content), skippedExpressions);
       const xml = await parser.parse(sanitizedContent);
       diagnostics.push(...attemptDiagnostics);
       return xml;
@@ -145,7 +145,7 @@ function createXacroParser(
       // ignore unresolvable paths
     }
     const includeContent = await fs.readFile(includePath, 'utf8');
-    return sanitizeXacroContent(includeContent, skippedExpressions);
+    return sanitizeXacroContent(applyXacroCompatibilityRewrites(includeContent), skippedExpressions);
   };
   parser.rospackCommands = ((command: string, ...args: string[]) => {
     if (command === 'find' || command === 'find-pkg-share') {
@@ -169,12 +169,67 @@ function createXacroParser(
   functions.load_yaml = (yamlPath: string) => {
     const resolvedPath = path.isAbsolute(yamlPath) ? yamlPath : path.resolve(path.dirname(sourcePath), yamlPath);
     includedFiles.add(resolvedPath);
-    return YAML.parse(readFileSync(resolvedPath, 'utf8'));
+    // Tolerate duplicate keys — some real-world ROS packages (e.g. franka fp3's
+    // inertials.yaml) ship YAML with repeated keys, and Python's loader accepts
+    // them silently. The last entry wins.
+    return YAML.parse(readFileSync(resolvedPath, 'utf8'), { uniqueKeys: false });
   };
   functions.bool = (value: unknown) => value === true || value === 'true' || value === 1 || value === '1';
   functions.float = (value: unknown) => Number(value);
   functions.int = (value: unknown) => Math.trunc(Number(value));
   functions.str = (value: unknown) => String(value);
+  functions.warning = (message: unknown) => {
+    logFn(`xacro.warning: ${String(message)}`);
+    return '';
+  };
+  functions.error = (message: unknown) => {
+    logFn(`xacro.error: ${String(message)}`);
+    return '';
+  };
+  functions.message = (message: unknown) => {
+    logFn(`xacro.message: ${String(message)}`);
+    return '';
+  };
+  functions.split_n = (value: unknown, separator: unknown, index: unknown) => {
+    const parts = String(value).split(String(separator));
+    const i = Number(index);
+    return Number.isFinite(i) ? parts[i] : '';
+  };
+  functions.slice_from = (value: unknown, start: unknown) => {
+    if (Array.isArray(value)) {
+      return value.slice(Number(start));
+    }
+    return String(value).slice(Number(start));
+  };
+  functions.slice_to = (value: unknown, end: unknown) => {
+    if (Array.isArray(value)) {
+      return value.slice(0, Number(end));
+    }
+    return String(value).slice(0, Number(end));
+  };
+  functions.slice_range = (value: unknown, start: unknown, end: unknown) => {
+    if (Array.isArray(value)) {
+      return value.slice(Number(start), Number(end));
+    }
+    return String(value).slice(Number(start), Number(end));
+  };
+  functions.fatal = (message: unknown) => {
+    logFn(`xacro.fatal: ${String(message)}`);
+    throw new Error(`xacro.fatal: ${String(message)}`);
+  };
+  functions.__pytruthy__ = (value: unknown) => {
+    if (value === null || value === undefined || value === false) {
+      return false;
+    }
+    if (typeof value === 'string') {
+      const lowered = value.toLowerCase();
+      return lowered !== '' && lowered !== 'false' && lowered !== '0';
+    }
+    if (typeof value === 'number') {
+      return value !== 0 && !Number.isNaN(value);
+    }
+    return true;
+  };
 
   return parser;
 }
@@ -185,6 +240,101 @@ function sanitizeXacroContent(content: string, skippedExpressions: ReadonlySet<s
     sanitized = sanitized.split(expression).join('');
   }
   return sanitized;
+}
+
+// xacro-parser does not implement three constructs that ROS xacro accepts:
+//   1) ROS Jade pass-through `param:=^` / `param:=^|default` macro defaults
+//   2) Python ternary `X if cond else Y`
+//   3) Python power operator `a ** b`
+// We translate them on the source text before handing it to the library so the
+// franka_description and similar ROS packages render without manual edits.
+export function applyXacroCompatibilityRewrites(content: string): string {
+  return rewriteListSlice(
+    rewriteStringSplit(
+      rewritePowerOperator(
+        rewritePythonTernary(
+          stripXacroNamespace(stripCaretMacroDefaults(content))
+        )
+      )
+    )
+  );
+}
+
+function rewriteListSlice(content: string): string {
+  // Translate Python slice notation `list[a:b]`, `list[a:]`, `list[:b]` to
+  // helper function calls. expr-eval doesn't understand the `:` inside `[]`.
+  return content.replace(/\$\{([^{}]*)\}/g, (_match, expression: string) => {
+    let rewritten = expression;
+    rewritten = rewritten.replace(
+      /([A-Za-z_]\w*)\s*\[\s*(\d+)\s*:\s*(\d+)\s*\]/g,
+      'slice_range($1, $2, $3)'
+    );
+    rewritten = rewritten.replace(
+      /([A-Za-z_]\w*)\s*\[\s*(\d+)\s*:\s*\]/g,
+      'slice_from($1, $2)'
+    );
+    rewritten = rewritten.replace(
+      /([A-Za-z_]\w*)\s*\[\s*:\s*(\d+)\s*\]/g,
+      'slice_to($1, $2)'
+    );
+    return `\${${rewritten}}`;
+  });
+}
+
+function rewriteStringSplit(content: string): string {
+  // Translate Python-style `<id>.split(<sep>)[N]` to a flat function call.
+  // expr-eval-fork rejects method calls on member access, so we route this
+  // through a `split_n` helper registered on the expression parser.
+  return content.replace(/\$\{([^{}]*)\}/g, (_match, expression: string) => {
+    const rewritten = expression.replace(
+      /([A-Za-z_]\w*)\s*\.split\s*\(([^)]*)\)\s*\[\s*(\d+)\s*\]/g,
+      'split_n($1, $2, $3)'
+    );
+    return `\${${rewritten}}`;
+  });
+}
+
+function stripXacroNamespace(content: string): string {
+  return content.replace(/\$\{([^{}]*)\}/g, (_match, expression: string) => {
+    const rewritten = expression.replace(/\bxacro\.([A-Za-z_]\w*)/g, '$1');
+    return `\${${rewritten}}`;
+  });
+}
+
+function stripCaretMacroDefaults(content: string): string {
+  return content.replace(/\bparams\s*=\s*"([^"]*)"/g, (_match, params: string) => {
+    const tokens = params.match(/[^\s']+(?:'[^']*')?/g) ?? [];
+    const kept = tokens.filter(token => !/:?=\s*\^/.test(token));
+    return `params="${kept.join(' ')}"`;
+  });
+}
+
+function rewritePythonTernary(content: string): string {
+  return content.replace(/\$\{([^{}]*)\}/g, (_match, expression: string) => {
+    let current = expression;
+    let prev: string;
+    do {
+      prev = current;
+      // Wrap the condition with `__pytruthy__` so strings like "false"/"0" are
+      // treated as falsy the same way Python xacro evaluates them — JS would
+      // otherwise see them as truthy non-empty strings.
+      current = current.replace(
+        /^(.+?)\s+if\s+(.+?)\s+else\s+(.+)$/,
+        '(__pytruthy__($2) ? ($1) : ($3))'
+      );
+    } while (current !== prev);
+    return `\${${current}}`;
+  });
+}
+
+function rewritePowerOperator(content: string): string {
+  return content.replace(/\$\{([^{}]*)\}/g, (_match, expression: string) => {
+    const rewritten = expression.replace(
+      /([A-Za-z_]\w*|\d+(?:\.\d+)?)\s*\*\*\s*([A-Za-z_]\w*|\d+(?:\.\d+)?)/g,
+      'pow($1,$2)'
+    );
+    return `\${${rewritten}}`;
+  });
 }
 
 function extractFailedExpression(message: string): string | undefined {
