@@ -1,0 +1,74 @@
+name: Publish to VS Code Marketplace
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Publish even if package.json version is unchanged'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Type-check
+        run: npm run check-types
+
+      - name: Unit tests
+        run: npm run test:unit
+
+      - name: Detect version change
+        id: version
+        run: |
+          current=$(node -p "require('./package.json').version")
+          previous=$(git show HEAD~1:package.json 2>/dev/null | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).version" 2>/dev/null || echo "")
+          echo "current=$current" >> "$GITHUB_OUTPUT"
+          echo "previous=$previous" >> "$GITHUB_OUTPUT"
+          force='${{ github.event.inputs.force }}'
+          if [ "$current" != "$previous" ] || [ "$force" = "true" ]; then
+            echo "should_publish=true" >> "$GITHUB_OUTPUT"
+            echo "Version $previous -> $current (force=$force) — will publish."
+          else
+            echo "should_publish=false" >> "$GITHUB_OUTPUT"
+            echo "Version unchanged at $current — skipping publish."
+          fi
+
+      - name: Package .vsix
+        if: steps.version.outputs.should_publish == 'true'
+        run: npx --yes @vscode/vsce package --out urdf-studio-${{ steps.version.outputs.current }}.vsix
+
+      - name: Publish to Marketplace
+        if: steps.version.outputs.should_publish == 'true'
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: npx --yes @vscode/vsce publish --packagePath urdf-studio-${{ steps.version.outputs.current }}.vsix
+
+      - name: Create GitHub Release
+        if: steps.version.outputs.should_publish == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.current }}
+          name: v${{ steps.version.outputs.current }}
+          generate_release_notes: true
+          files: urdf-studio-${{ steps.version.outputs.current }}.vsix

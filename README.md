@@ -186,6 +186,23 @@ npm run test:renderer   # Run Playwright renderer tests
 
 ---
 
+## Releasing
+
+Publishing to the VS Code Marketplace is automated by [`.github/workflows/publish.yml`](.github/workflows/publish.yml). On every push to `main` the workflow:
+
+1. Runs `check-types` and `test:unit` as a gate.
+2. Compares `package.json` `version` against the previous commit.
+3. If the version changed, packages a `.vsix`, publishes it via `vsce publish`, and creates a matching `v<version>` GitHub release with the `.vsix` attached.
+4. If the version is unchanged, skips publish (re-publishing the same version is rejected by the Marketplace anyway).
+
+Cutting a release is therefore just **bump `version` in `package.json` and merge to `main`**. To force a re-run without a version bump, dispatch the workflow manually with the `force` input set to `true`.
+
+### One-time setup
+
+The workflow needs a `VSCE_PAT` repository secret containing an Azure DevOps Personal Access Token for the `deyuf` publisher with **Marketplace → Manage** scope. Create the token at https://dev.azure.com → User settings → Personal access tokens, then add it under **Settings → Secrets and variables → Actions → New repository secret**.
+
+---
+
 ## License
 
 [MIT](LICENSE)
