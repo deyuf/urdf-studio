@@ -5,88 +5,74 @@ order: 40
 
 # Releasing
 
-URDF Studio's three artifacts ship through three channels, all of them
-gated on CI:
+URDF Studio's three artifacts ship through one consolidated pipeline
+in `.github/workflows/release.yml`:
 
 - The **VS Code extension** publishes to the Marketplace.
 - The **web app** auto-deploys to Cloudflare Pages.
 - The **docs site** auto-deploys to GitHub Pages.
 
-All three workflows are downstream of `ci.yml` and require it to have
-finished successfully on the same commit. A failing CI run blocks
-everything.
+All three jobs depend on the `test` job at the top of the same workflow
+via `needs:` — a failing test job blocks everything downstream.
 
-## Release pipeline
+## Pipeline
 
 ```
-push to main
-   │
-   ▼
-ci.yml  (type-check + unit + Playwright)
-   │
-   ├── on success ──▶ deploy-web.yml  (Cloudflare Pages)
-   │                       │
-   │                       └─────────────┐
-   ├── on success ──▶ publish.yml ◀──────┤
-   │                  (skips if version unchanged)
-   │                       │             │
-   │                       └─────────────┤
-   │                                     ▼
-   │                          deploy-docs.yml
-   │                          (waits for both upstream
-   │                           workflows to be green on
-   │                           the same SHA, then ships
-   │                           docs to GitHub Pages)
+test  (always)
+  │     ├─ type-check
+  │     ├─ unit tests (24)
+  │     ├─ Playwright (21)
+  │     └─ uploads dist-web artifact (main only)
+  │
+  ├─ needs test ──▶ deploy-web ──┐
+  │                              ├──▶ deploy-docs
+  ├─ needs test ──▶ publish ─────┘
+  │                  (skips if version unchanged)
 ```
 
 ## VS Code Marketplace
 
-`publish.yml` runs as a downstream of `ci.yml` via `workflow_run`:
+The `publish` job:
 
-1. A push to `main` triggers `ci.yml`.
-2. When CI finishes with `conclusion: success`, GitHub fires a
-   `workflow_run` event on the same SHA.
-3. `publish.yml` checks out that SHA and compares
-   `package.json#version` against the previous commit.
-4. If the version changed (or `force=true` was passed via manual
-   `workflow_dispatch`), it packages a `.vsix`, publishes it via
-   `vsce publish`, and creates a matching `v<version>` GitHub release
-   with the `.vsix` attached.
-5. If the version is unchanged, it skips publish silently.
+1. Checks out the same commit `test` verified (the job's `needs: test`
+   guarantees it).
+2. Compares `package.json#version` against `HEAD~1:package.json`.
+3. If the version changed (or `force_publish=true` via manual dispatch),
+   packages a `.vsix`, publishes via `vsce publish`, and creates a
+   matching `v<version>` GitHub release with the `.vsix` attached.
+4. If the version is unchanged, the job runs but the publish steps are
+   skipped silently (`if:` on each).
 
 ### To cut a release
 
-Bump `version` in `package.json`, commit, push to `main`. Wait for CI
-to go green; publish follows automatically.
+Bump `version` in `package.json`, commit, push to `main`. Wait for the
+`test` job to go green; `publish` runs immediately after.
 
 ### One-time setup
 
-The workflow needs a `VSCE_PAT` repository secret — an Azure DevOps
-Personal Access Token for the `deyuf` publisher with **Marketplace →
-Manage** scope.
+`VSCE_PAT` repository secret — an Azure DevOps Personal Access Token
+for the `deyuf` publisher with **Marketplace → Manage** scope.
 
 ## Web app
 
-`deploy-web.yml` follows the same pattern: triggers after `ci.yml`
-succeeds, checks out the verified SHA, runs `npm run web:build`,
-ensures the Pages project exists, and calls
+The `deploy-web` job downloads the `web-build` artifact from `test`,
+verifies the output, checks that the Cloudflare Pages project exists
+(via REST API, not by parsing wrangler), and calls
 `wrangler pages deploy dist-web --project-name=urdf-studio --branch=main`.
 
-Required secrets: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`.
+Required secrets: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`. See
+[deployment.html](./deployment.html) for token-scope details.
 
 ## Docs site
 
-`deploy-docs.yml` listens to both `deploy-web.yml` and `publish.yml`
-completion. When fired, it queries the GitHub API for the other
-workflow's status on the same SHA — if either has not yet completed,
-the job exits and waits for the next trigger. When both are finished
-and green, it builds `dist-web/docs/` and uploads it as the Pages
-artifact.
+The `deploy-docs` job has `needs: [deploy-web, publish]`. Both must
+succeed before docs deploy. The job downloads the same `web-build`
+artifact, uploads `dist-web/docs/` to GitHub Pages, and calls
+`actions/deploy-pages`.
 
 ### One-time setup
 
-In **Settings → Pages**, set **Source** to **GitHub Actions**. After
-that, the workflow handles everything.
+In **Settings → Pages**, set **Source** to **GitHub Actions**.
 
 ## Branch previews
 
