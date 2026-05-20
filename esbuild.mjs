@@ -124,7 +124,8 @@ async function serveWeb() {
     port: 5173,
     host: '127.0.0.1'
   });
-  console.log(`URDF Studio web dev server: http://${result.host}:${result.port}`);
+  const host = result.host || '127.0.0.1';
+  console.log(`URDF Studio web dev server: http://${host}:${result.port}`);
 }
 
 async function main() {

@@ -184,6 +184,27 @@ npm run test:unit       # Run unit tests
 npm run test:renderer   # Run Playwright renderer tests
 ```
 
+### Web build (Cloudflare Pages)
+
+The same codebase also builds a static web app that runs entirely in the
+browser via the File System Access API. Useful for sharing previews
+without VS Code.
+
+```bash
+npm run web:dev      # http://127.0.0.1:5173 with file watching
+npm run web:build    # produces dist-web/
+```
+
+To deploy to Cloudflare Pages, either:
+
+- **Git integration:** point the project at this repo, set build command
+  to `npm run web:build` and output directory to `dist-web`.
+- **Wrangler CLI:** `npx wrangler pages deploy dist-web --project-name urdf-studio`.
+
+The output is a fully static SPA — no backend, no Workers required. The
+Open Folder button uses File System Access API on Chromium-based
+browsers; Safari and mobile fall back to a `webkitdirectory` file picker.
+
 ---
 
 ## Releasing
