@@ -42,7 +42,11 @@ export class AppShell {
     }
     topbar.innerHTML = `
       <div class="topbar-row">
-        <div class="brand">URDF Studio <span class="brand-tag">Web</span></div>
+        <div class="brand">
+          <img src="./icon.png" alt="" class="brand-icon" width="28" height="28">
+          URDF Studio
+          <span class="brand-tag">Web</span>
+        </div>
         <div class="topbar-actions">
           <button id="open-directory" class="primary" title="Open a ROS package folder">Open Folder</button>
           <button id="open-files" class="ghost" title="Fallback if your browser does not support folder picker">Pick Files</button>

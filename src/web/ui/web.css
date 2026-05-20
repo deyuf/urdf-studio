@@ -171,16 +171,20 @@ body::before {
   color: var(--us-fg);
 }
 
-.brand::before {
-  content: '';
-  display: inline-block;
-  width: 22px;
-  height: 22px;
+.brand-icon {
+  width: 28px;
+  height: 28px;
   border-radius: var(--us-radius-sm);
-  background:
-    radial-gradient(circle at 30% 30%, #4285f4 0%, #1a73e8 45%, #185abc 100%);
-  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.15);
+  display: block;
   flex-shrink: 0;
+  /* Tiny rim so the icon doesn't blend into the topbar bg. */
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06);
+}
+
+@media (prefers-color-scheme: dark) {
+  .brand-icon {
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
+  }
 }
 
 .brand-tag {
