@@ -92,6 +92,35 @@ test.describe('web shell', () => {
     await expect(page.locator('#hud')).toContainText(/Waiting for robot/i);
   });
 
+  test('onboarding tour appears on first visit, advances, and stays dismissed', async ({ page, context }) => {
+    // Fresh context — no localStorage carry-over from previous tests.
+    await context.clearCookies();
+    await page.goto(server.url);
+
+    const dialog = page.locator('dialog.onboarding');
+    await expect(dialog).toBeVisible();
+    await expect(dialog.locator('h2')).toContainText('Welcome');
+
+    // Advance through every step.
+    for (let i = 0; i < 3; i++) {
+      await dialog.locator('[data-action="next"]').click();
+      await expect(dialog.locator('.onboarding-step')).toContainText(`Step ${i + 2} of`);
+    }
+
+    // Final step → Get started closes the dialog.
+    await dialog.locator('[data-action="next"]').click();
+    await expect(dialog).toBeHidden();
+
+    // Reloading the page should NOT re-show it — the seen flag is persisted.
+    await page.reload();
+    await expect(page.locator('#topbar')).toBeVisible();
+    await expect(dialog).toBeHidden();
+
+    // The help button re-opens it.
+    await page.locator('#help-btn').click();
+    await expect(dialog).toBeVisible();
+  });
+
   test('reloading the same model does not leak blob URLs', async ({ page, browserName }) => {
     test.skip(browserName !== 'chromium', 'Headless Firefox does not honour webkitdirectory in CI.');
 

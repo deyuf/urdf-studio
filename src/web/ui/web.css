@@ -210,3 +210,104 @@ dialog#settings-dialog select {
 #app .shell {
   height: 100%;
 }
+
+/* ===== Onboarding tour ===== */
+
+dialog.onboarding {
+  border: none;
+  border-radius: 10px;
+  padding: 0;
+  width: min(520px, 92vw);
+  background: var(--vscode-editorWidget-background);
+  color: var(--vscode-foreground);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+}
+
+dialog.onboarding::backdrop {
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(2px);
+}
+
+.onboarding-card {
+  padding: 24px 26px 18px;
+}
+
+.onboarding-step {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--vscode-textLink-foreground);
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.onboarding-card h2 {
+  margin: 0 0 10px;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.onboarding-card p {
+  margin: 0 0 12px;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.onboarding-card p code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  background: rgba(127, 127, 127, 0.18);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+.onboarding-card a {
+  color: var(--vscode-textLink-foreground);
+}
+
+.onboarding-hint {
+  font-size: 12.5px;
+  color: var(--vscode-foreground);
+  opacity: 0.7;
+  border-left: 3px solid var(--vscode-button-background);
+  padding: 4px 10px;
+  margin-top: 12px;
+}
+
+.onboarding-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--vscode-panel-border);
+}
+
+.onboarding-dots {
+  display: flex;
+  gap: 6px;
+}
+
+.onboarding-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--vscode-panel-border);
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.onboarding-dot.active {
+  background: var(--vscode-button-background);
+}
+
+.onboarding-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.onboarding-actions button[disabled] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

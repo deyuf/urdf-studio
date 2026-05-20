@@ -6,6 +6,7 @@ import { setActiveVfs } from '../ioBrowser';
 import { getSettings, saveSettings, type UserSettings } from '../storage';
 import type { BrowserVfs } from '../vfs/types';
 import type { WebHost, HostStatus } from '../host';
+import { mountOnboarding, shouldShowOnboarding } from './onboarding';
 
 const URDF_PATTERNS = /\.(urdf|xacro|urdf\.xacro)$/i;
 
@@ -18,12 +19,17 @@ declare global {
 export class AppShell {
   private vfs: BrowserVfs | null = null;
   private currentFile: string | null = null;
+  private readonly onboarding = mountOnboarding();
 
   constructor(private readonly host: WebHost) {
     this.render();
     this.host.setListeners({
       onStatus: status => this.renderStatus(status)
     });
+    if (shouldShowOnboarding()) {
+      // Defer to the next frame so the topbar finishes laying out first.
+      requestAnimationFrame(() => this.onboarding.open());
+    }
   }
 
   private render(): void {
@@ -41,6 +47,7 @@ export class AppShell {
             <option value="">No folder loaded</option>
           </select>
           <a id="docs-link" class="ghost-link" href="./docs/" title="Open documentation" target="_blank" rel="noopener">Docs</a>
+          <button id="help-btn" class="ghost" aria-label="Show onboarding tour" title="Show the onboarding tour">?</button>
           <button id="settings-btn" class="ghost" aria-label="Settings">⚙</button>
         </div>
       </div>
@@ -90,6 +97,7 @@ export class AppShell {
     const fileInput = document.getElementById('file-input') as HTMLInputElement;
     const fileSelect = document.getElementById('file-select') as HTMLSelectElement;
     const settingsBtn = document.getElementById('settings-btn') as HTMLButtonElement;
+    const helpBtn = document.getElementById('help-btn') as HTMLButtonElement;
 
     if (!window.showDirectoryPicker) {
       openBtn.disabled = true;
@@ -111,6 +119,7 @@ export class AppShell {
       }
     });
     settingsBtn.addEventListener('click', () => this.openSettings());
+    helpBtn.addEventListener('click', () => this.onboarding.open());
   }
 
   private async handleOpenDirectory(): Promise<void> {
