@@ -313,6 +313,7 @@ function bindChrome(): void {
   qs<HTMLSelectElement>('#labels-mode').addEventListener('change', event => {
     labelsMode = (event.target as HTMLSelectElement).value as LabelsMode;
     labelsOverlay?.setMode(labelsMode);
+    publishTestState();
     dirty = true;
   });
   qs('#save-pose').addEventListener('click', () => {
@@ -1191,6 +1192,13 @@ interface TestState {
   selfCollisionEnabled: boolean;
   reachabilityPointCount: number;
   jointAngles: Record<string, number>;
+  labelsMode: LabelsMode;
+  visibleJointLabels: number;
+  visibleLinkLabels: number;
+  totalLabels: number;
+  measureMode: boolean;
+  measurePointCount: number;
+  measureDistance: number | null;
 }
 
 function publishTestState(): void {
@@ -1207,6 +1215,12 @@ function publishTestState(): void {
       jointAngles[name] = Number(robot?.joints?.[name]?.angle ?? 0);
     }
   }
+  const visibleJointLabels = labelsOverlay?.visibleCount('joint') ?? 0;
+  const visibleLinkLabels = labelsOverlay?.visibleCount('link') ?? 0;
+  const totalLabels = labelsOverlay?.totalCount() ?? 0;
+  const measureDistance = measurePoints.length === 2
+    ? measurePoints[0].distanceTo(measurePoints[1])
+    : null;
   (window as unknown as { __urdfStudio?: TestState }).__urdfStudio = {
     framesMode,
     visibleLinkAxes,
@@ -1214,7 +1228,14 @@ function publishTestState(): void {
     inertiaVisible,
     selfCollisionEnabled,
     reachabilityPointCount,
-    jointAngles
+    jointAngles,
+    labelsMode,
+    visibleJointLabels,
+    visibleLinkLabels,
+    totalLabels,
+    measureMode,
+    measurePointCount: measurePoints.length,
+    measureDistance
   };
 }
 
@@ -1701,6 +1722,7 @@ function buildLabels(): void {
     labelsOverlay.addLink(linkName, robot.links[linkName] as THREE.Object3D);
   }
   labelsOverlay.setMode(labelsMode);
+  publishTestState();
 }
 
 // =============================================================================
@@ -1785,6 +1807,7 @@ function clearMeasurement(): void {
 }
 
 function refreshMeasureUi(): void {
+  publishTestState();
   const toggle = document.getElementById('measure-toggle');
   if (toggle) {
     toggle.textContent = measureMode

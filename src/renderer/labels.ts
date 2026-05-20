@@ -38,6 +38,20 @@ export class LabelsOverlay {
     return this.mode;
   }
 
+  visibleCount(kind: 'joint' | 'link'): number {
+    let count = 0;
+    for (const entry of this.entries.values()) {
+      if (entry.kind === kind && entry.object.visible) {
+        count += 1;
+      }
+    }
+    return count;
+  }
+
+  totalCount(): number {
+    return this.entries.size;
+  }
+
   clear(): void {
     for (const entry of this.entries.values()) {
       entry.object.parent?.remove(entry.object);
