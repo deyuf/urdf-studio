@@ -11,17 +11,37 @@ Pages is the reference deploy, but any static host that supports
 
 ## CI workflows
 
-`.github/workflows/` ships three workflows. The split is intentional:
+`.github/workflows/` ships five workflows. The split is intentional:
 
 - **Tests** run on every branch — feature branches included.
-- **Deploy** and **publish** are restricted to `main`. Nothing is shipped to
-  Cloudflare or the Marketplace from a feature branch automatically.
+- **Deploys** and **publishes** are restricted to `main` *and* gated on
+  CI success on the same commit. Nothing ships unless tests pass.
+- **Docs** deploy to GitHub Pages only after both the web app deploy
+  and the Marketplace publish have completed successfully.
 
 | Workflow | Trigger | Effect |
 |---|---|---|
 | `ci.yml` | Every push and PR | Type-check, unit tests, Playwright. |
-| `deploy-web.yml` | Push to `main` (or manual dispatch on `main`) | Deploy production to Cloudflare Pages. Hard-gated to `main`. |
-| `preview-web.yml` | Manual dispatch only | Ad-hoc preview deploy for a feature branch. Pass the branch name as an input; Cloudflare serves it under `<branch>.urdf-studio.pages.dev`. |
+| `deploy-web.yml` | `workflow_run` after CI succeeds on `main` (or manual dispatch on `main`) | Deploy production to Cloudflare Pages. |
+| `publish.yml` | `workflow_run` after CI succeeds on `main` (or manual dispatch on `main`) | Publish `.vsix` to the Marketplace when `package.json#version` changes. |
+| `deploy-docs.yml` | `workflow_run` after `deploy-web` *and* `publish` both succeed on `main` (or manual dispatch) | Build docs and publish to GitHub Pages. |
+| `preview-web.yml` | Manual dispatch only | Ad-hoc preview deploy for a feature branch. |
+
+The dependency chain on a push to `main` is:
+
+```
+ci.yml
+  └─ on success ──▶ deploy-web.yml ──┐
+                                     ├─▶ deploy-docs.yml
+  └─ on success ──▶ publish.yml ─────┘
+                    (skips if version unchanged)
+```
+
+`deploy-docs.yml` listens to both `deploy-web.yml` and `publish.yml`
+completions. When triggered by one, it consults the GitHub API for the
+other workflow's status on the same SHA; if the other hasn't finished
+yet, the job exits cleanly and waits for the next trigger. When both are
+finished and green, it builds the docs and ships them.
 
 Required GitHub secrets:
 
@@ -103,16 +123,33 @@ Manual checks in the browser:
 - The welcome tour shows on a fresh profile, persists after dismissing.
 - Loading a folder doesn't surface any console errors.
 
+## GitHub Pages docs
+
+The docs site is also published to GitHub Pages at
+`https://<owner>.github.io/<repo>/` via `deploy-docs.yml`. Two
+prerequisites are one-time:
+
+1. **Settings → Pages → Build and deployment → Source: GitHub Actions.**
+   No branch / folder selection; the workflow uploads the artifact.
+2. Ensure the workflow has `pages: write` and `id-token: write`
+   permissions (already declared at workflow scope).
+
+The deploy fires automatically after every production cycle on `main`:
+when both `deploy-web` and `publish` have completed successfully on the
+same commit, `deploy-docs` checks out that commit, runs
+`npm run docs:build`, and uploads `dist-web/docs/` as the Pages
+artifact.
+
 ## Hosting elsewhere
 
 The build produces a plain static directory. To host on:
 
 - **Netlify** — drag-drop `dist-web/`, or connect Git with build
   `npm run web:build`, publish directory `dist-web`.
-- **GitHub Pages** — push `dist-web/` to a `gh-pages` branch.
+- **GitHub Pages** — already automated via `deploy-docs.yml`.
 - **Vercel** — same as Netlify; uses `vercel.json` for headers.
 - **Nginx / Caddy** — serve `dist-web/` as a static root; copy
   `_headers` content into the server config.
 
-The only constraint is HTTPS — File System Access API refuses to
-authenticate on plain HTTP.
+The only constraint for the **web app** (not the docs) is HTTPS — File
+System Access API refuses to authenticate on plain HTTP.
