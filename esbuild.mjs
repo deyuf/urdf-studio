@@ -35,6 +35,7 @@ async function copyWebAssets() {
   await copyFile('public/index.html', 'dist-web/index.html');
   await copyFile('media/styles.css', 'dist-web/styles.css');
   await copyFile('src/web/ui/web.css', 'dist-web/web.css');
+  await copyFile('media/icon.png', 'dist-web/icon.png');
   await copyFile('public/_headers', 'dist-web/_headers').catch(() => undefined);
 }
 

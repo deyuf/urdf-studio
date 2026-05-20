@@ -248,7 +248,10 @@ function renderPrevNext(flatPages, currentPage) {
 }
 
 function layout({ title, sidebar, toc, body, pager, depth }) {
-  const cssHref = `${'../'.repeat(depth)}docs.css`;
+  const upPrefix = '../'.repeat(depth);
+  const cssHref = `${upPrefix}docs.css`;
+  const iconHref = `${upPrefix}icon.png`;
+  const indexHref = `${upPrefix}index.html`;
   const appHref = `${'../'.repeat(depth + 1)}`;
   const ghHref = 'https://github.com/deyuf/urdf-studio';
   return `<!DOCTYPE html>
@@ -257,7 +260,10 @@ function layout({ title, sidebar, toc, body, pager, depth }) {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#1a73e8">
   <title>${escapeHtml(title)} · URDF Studio</title>
+  <link rel="icon" type="image/png" href="${iconHref}">
+  <link rel="apple-touch-icon" href="${iconHref}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
@@ -265,8 +271,8 @@ function layout({ title, sidebar, toc, body, pager, depth }) {
 </head>
 <body>
   <header class="docs-header">
-    <a class="docs-brand" href="${cssHref.replace('docs.css', 'index.html')}">
-      <span class="docs-brand-mark" aria-hidden="true"></span>
+    <a class="docs-brand" href="${indexHref}">
+      <img class="docs-brand-mark" src="${iconHref}" alt="" width="28" height="28">
       URDF&nbsp;Studio
     </a>
     <nav class="docs-nav-top">
@@ -327,6 +333,12 @@ async function build() {
 
   // Static assets.
   await copyFile(path.join(SRC, 'docs.css'), path.join(OUT, 'docs.css'));
+  // The docs pages reference ../icon.png at depth 0 (i.e. /icon.png at the
+  // dist-web/docs root). When deployed to GitHub Pages, the docs subtree is
+  // the site root, so the file has to exist alongside the docs themselves.
+  await copyFile(path.join(REPO, 'media', 'icon.png'), path.join(OUT, '..', 'icon.png'))
+    .catch(() => undefined);
+  await copyFile(path.join(REPO, 'media', 'icon.png'), path.join(OUT, 'icon.png'));
 
   console.log(`Built ${built} doc pages → ${path.relative(REPO, OUT)}/`);
 }
