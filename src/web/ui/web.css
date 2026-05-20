@@ -435,6 +435,12 @@ textarea {
   font-weight: 500;
   /* Bumped from 13px so labels read clearly against the 48px row. */
   font-size: 14px;
+  /* The renderer's media/styles.css forces `button { height: 28px }`,
+     which clamps this tab to 28px regardless of padding. Override with
+     `height: auto` so the padding below actually controls the tab's
+     vertical extent — without this, the active underline below ends up
+     drawn through the label. */
+  height: auto;
   /* Asymmetric vertical padding leaves a clear 6px gap between the
      label baseline and the underline. */
   padding: 14px 16px 12px;
