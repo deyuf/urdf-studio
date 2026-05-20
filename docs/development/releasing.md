@@ -72,7 +72,12 @@ artifact, uploads `dist-web/docs/` to GitHub Pages, and calls
 
 ### One-time setup
 
-In **Settings → Pages**, set **Source** to **GitHub Actions**.
+The workflow tries to enable Pages itself with
+`actions/configure-pages@v5` (`enablement: true`). If your repo's
+Workflow permissions allow it, no manual step is needed.
+
+Otherwise, in **Settings → Pages**, set **Source** to **GitHub
+Actions**. One-time toggle, all subsequent deploys are automatic.
 
 ## Branch previews
 
