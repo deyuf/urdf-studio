@@ -1,9 +1,11 @@
 name: CI
 
+# Tests run on every branch push and every PR — feature branches included.
+# Production deploy and Marketplace publish workflows are gated to main only;
+# see deploy-web.yml and publish.yml.
 on:
   pull_request:
   push:
-    branches: [main]
   workflow_dispatch:
 
 concurrency:

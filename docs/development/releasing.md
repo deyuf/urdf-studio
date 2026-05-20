@@ -51,13 +51,14 @@ Every push to `main` that touches `src/`, `docs/`, `public/`, `media/`,
 
 No version bump needed; the deploy is identified by the commit SHA.
 
-## PR previews
+## Branch previews
 
-Opening a PR also deploys a preview to `pr-<n>.urdf-studio.pages.dev`
-via `preview-web.yml`. The URL is sticky-commented on the PR.
+Cloudflare Pages does not auto-deploy from non-main branches. To preview
+a feature branch, run `preview-web.yml` manually:
 
-Useful for:
+1. **Actions → Preview web app on Cloudflare Pages → Run workflow**.
+2. Optionally enter a branch name (defaults to the workflow ref).
 
-- Reviewing visual changes before merging.
-- Showing a fix in context to whoever opened the issue.
-- Running QA against a candidate branch without touching production.
+The preview is served at `<branch-slug>.urdf-studio.pages.dev` and is
+not promoted to production. Useful for reviewing visual changes or
+running QA without merging to `main`.

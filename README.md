@@ -70,50 +70,63 @@ Full docs: **<https://urdf.deyuf.org/docs/>**.
 
 ## How it looks
 
-<table>
-  <tr>
-    <td width="50%" align="center">
-      <img src="media/screenshots-web/01-welcome.png" alt="Onboarding tour" width="100%">
-      <br>
-      <sub><strong>Onboarding tour</strong> — 4 steps, dismissable, ? button re-opens.</sub>
-    </td>
-    <td width="50%" align="center">
-      <img src="media/screenshots-web/06-fr3-dark.png" alt="Dark theme" width="100%">
-      <br>
-      <sub><strong>Dark theme</strong> auto-follows OS color scheme.</sub>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" align="center">
-      <img src="media/screenshots-web/04-checks.png" alt="Checks panel" width="100%">
-      <br>
-      <sub><strong>Checks panel</strong> — every diagnostic the analyzer found.</sub>
-    </td>
-    <td width="50%" align="center">
-      <img src="media/screenshots-web/05-inspector.png" alt="Inspector" width="100%">
-      <br>
-      <sub><strong>Inspector</strong> — joints, mass, CoM, inertia, mesh paths.</sub>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" align="center">
-      <img src="media/screenshots-web/08-docs-overview.png" alt="Docs overview" width="100%">
-      <br>
-      <sub><strong>Docs site</strong> — three-column, sidebar groups, in-page TOC.</sub>
-    </td>
-    <td width="50%" align="center">
-      <img src="media/screenshots-web/10-docs-diagnostics.png" alt="Docs diagnostics catalog" width="100%">
-      <br>
-      <sub><strong>Diagnostic catalog</strong> — every check, code, severity.</sub>
-    </td>
-  </tr>
-</table>
+### Onboarding tour
 
-> Visual language is inspired by [ai.google](https://ai.google) — Google
-> Sans typography, soft elevation, generous spacing, a deep-blue accent,
-> and a subtle radial gradient backdrop.
+<img src="media/screenshots-web/01-welcome.png" alt="Welcome dialog with a 4-step tour">
 
----
+The first visit shows a four-step tour explaining what the app does, how
+to open a folder, where the joint controls live, and how to save your
+work. It dismisses itself after the last step; the **?** button in the
+topbar re-opens it at any time. The dismissed state is remembered per
+browser profile.
+
+### Dark theme
+
+<img src="media/screenshots-web/06-fr3-dark.png" alt="Franka FR3 in dark mode">
+
+Light / dark theme follows `prefers-color-scheme`. The viewport
+background, panel chrome, side bar, and gradient backdrop all swap
+together; no per-component overrides. The Franka FR3 above is loaded
+from a local `franka_description` checkout with two joints flexed.
+
+### Checks panel
+
+<img src="media/screenshots-web/04-checks.png" alt="Checks panel with diagnostics">
+
+Every parse error, malformed inertia, missing mesh, or invalid joint
+limit shows up in the **Checks** tab. Each diagnostic has a severity
+(`error` / `warning` / `info`), a stable code, and an optional file
+line. In the VS Code build the same items also appear in the Problems
+panel.
+
+### Inspector
+
+<img src="media/screenshots-web/05-inspector.png" alt="Inspector tab showing link details">
+
+Click any link in the viewport or in the **Links** tree to populate the
+Inspector. It shows the parent and child joints with type/axis/limits,
+mass, center of mass, the full inertia tensor with eigenvalues, and the
+resolved absolute paths of every visual and collision mesh referenced
+by that link. The selected link gets a tight yellow bounding box on
+its own visual geometry.
+
+### Docs site
+
+<img src="media/screenshots-web/08-docs-overview.png" alt="Documentation site landing">
+
+The same Cloudflare Pages deployment serves the documentation at
+`/docs/`. Three-column layout: section-grouped sidebar on the left, the
+article in the middle, an in-page "On this page" TOC on the right.
+Sidebar groups stay sticky while you scroll.
+
+### Diagnostic catalog
+
+<img src="media/screenshots-web/10-docs-diagnostics.png" alt="Documentation page listing every diagnostic code">
+
+The diagnostics page in the docs enumerates every check by stable code,
+groups them by category (XML / xacro, tree structure, joints, meshes,
+inertial, semantic), and explains what triggers each one and how to
+silence it. Useful as a reference when authoring a URDF.
 
 ## Features
 

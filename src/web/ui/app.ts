@@ -7,6 +7,7 @@ import { getSettings, saveSettings, type UserSettings } from '../storage';
 import type { BrowserVfs } from '../vfs/types';
 import type { WebHost, HostStatus } from '../host';
 import { mountOnboarding, shouldShowOnboarding } from './onboarding';
+import { mountToast } from './toast';
 
 const URDF_PATTERNS = /\.(urdf|xacro|urdf\.xacro)$/i;
 
@@ -20,11 +21,13 @@ export class AppShell {
   private vfs: BrowserVfs | null = null;
   private currentFile: string | null = null;
   private readonly onboarding = mountOnboarding();
+  private readonly toast = mountToast();
 
   constructor(private readonly host: WebHost) {
     this.render();
     this.host.setListeners({
-      onStatus: status => this.renderStatus(status)
+      onStatus: status => this.renderStatus(status),
+      onToast: toast => this.toast.push(toast)
     });
     if (shouldShowOnboarding()) {
       // Defer to the next frame so the topbar finishes laying out first.
@@ -85,7 +88,7 @@ export class AppShell {
             <textarea name="semanticFiles" rows="3" spellcheck="false"></textarea>
           </label>
           <div class="dialog-actions">
-            <button value="cancel" type="reset" formnovalidate>Cancel</button>
+            <button value="cancel" formnovalidate>Cancel</button>
             <button value="save" id="settings-save" class="primary">Save</button>
           </div>
         </form>
@@ -139,7 +142,9 @@ export class AppShell {
       if ((error as DOMException)?.name === 'AbortError') {
         return;
       }
-      this.renderStatus({ type: 'error', message: `Could not open folder: ${String(error)}` });
+      const detail = error instanceof Error ? error.message : String(error);
+      this.renderStatus({ type: 'error', message: 'Could not open folder.' });
+      this.toast.push({ kind: 'error', message: 'Could not open folder', detail });
     }
   }
 
@@ -149,7 +154,9 @@ export class AppShell {
       const vfs = new FileListVfs(files);
       this.setVfs(vfs);
     } catch (error) {
-      this.renderStatus({ type: 'error', message: `Could not load files: ${String(error)}` });
+      const detail = error instanceof Error ? error.message : String(error);
+      this.renderStatus({ type: 'error', message: 'Could not load files.' });
+      this.toast.push({ kind: 'error', message: 'Could not load files', detail });
     }
   }
 

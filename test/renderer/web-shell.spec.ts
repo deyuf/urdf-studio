@@ -7,6 +7,7 @@ const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const DIST_WEB = path.join(REPO_ROOT, 'dist-web');
 const FIXTURE_DIR = path.join(REPO_ROOT, 'test', 'fixtures');
 const LEAK_FIXTURE_DIR = path.join(REPO_ROOT, 'test', 'fixtures', 'leak_test');
+const BAD_FIXTURE_DIR = path.join(REPO_ROOT, 'test', 'fixtures', 'bad_urdf');
 
 // Files we will inject via the webkitdirectory fallback path. Browsers strip
 // File System Access API from headless contexts unless granted explicit user
@@ -93,6 +94,66 @@ test.describe('web shell', () => {
     expect(statusKind === null || statusKind === 'info' || statusKind === 'progress').toBeTruthy();
 
     expect(consoleErrors, `unexpected console errors:\n${consoleErrors.join('\n')}`).toEqual([]);
+  });
+
+  test('parse problems surface as a bottom-corner error toast', async ({ page }) => {
+    await page.goto(server.url);
+    if (await page.locator('dialog.onboarding').isVisible()) {
+      await page.locator('[data-action="skip"]').click();
+    }
+    await page.setInputFiles('#file-input', BAD_FIXTURE_DIR);
+    await expect(page.locator('#file-select')).toBeEnabled({ timeout: 10_000 });
+    const target = await page.locator('#file-select option').evaluateAll(opts => {
+      const found = opts.find(o => /missing_mesh\.urdf$/.test((o as HTMLOptionElement).value));
+      return found ? (found as HTMLOptionElement).value : '';
+    });
+    expect(target).not.toEqual('');
+    await page.locator('#file-select').selectOption(target);
+
+    // The bad fixture references a mesh that doesn't exist on disk — analyzer
+    // emits `mesh.missing` as an error. The host turns that into a toast.
+    const toast = page.locator('#toast-container .toast-error');
+    await expect(toast).toBeVisible({ timeout: 10_000 });
+    await expect(toast).toContainText(/error/i);
+    // The detail mentions the diagnostic kind.
+    await expect(toast).toContainText(/mesh/i);
+
+    // The toast is sticky for errors — it does not auto-dismiss.
+    await page.waitForTimeout(800);
+    await expect(toast).toBeVisible();
+
+    // Closing it via the × button hides it.
+    await toast.locator('.toast-close').click();
+    await expect(toast).toBeHidden();
+  });
+
+  test('settings dialog: Cancel and Save both close the dialog', async ({ page }) => {
+    await page.goto(server.url);
+    // Dismiss the onboarding tour first if it is visible.
+    if (await page.locator('dialog.onboarding').isVisible()) {
+      await page.locator('[data-action="skip"]').click();
+    }
+
+    // Open settings via the gear button.
+    await page.locator('#settings-btn').click();
+    const dialog = page.locator('dialog#settings-dialog');
+    await expect(dialog).toBeVisible();
+
+    // Cancel must close the dialog.
+    await dialog.locator('button[value="cancel"]').click();
+    await expect(dialog).toBeHidden();
+
+    // Re-open, then click Save — also closes, also persists.
+    await page.locator('#settings-btn').click();
+    await expect(dialog).toBeVisible();
+    await dialog.locator('select[name="upAxis"]').selectOption('+Y');
+    await dialog.locator('button[value="save"]').click();
+    await expect(dialog).toBeHidden();
+    // close handler runs on the dialog "close" event which fires asynchronously
+    // after submit. Give it a moment before reading localStorage.
+    await page.waitForTimeout(50);
+    const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('urdf-studio:settings:v1') || '{}'));
+    expect(saved.upAxis).toBe('+Y');
   });
 
   test('shows a helpful empty state before any folder is loaded', async ({ page }) => {

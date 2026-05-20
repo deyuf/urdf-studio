@@ -1,14 +1,10 @@
 /* ====================================================================
  * URDF Studio — Web build stylesheet.
  *
- * Visual language is loosely inspired by ai.google: generous typography,
- * Google Sans (with Inter and system fallbacks), 8px spacing grid, soft
- * elevation, deep-blue accent, and a subtle radial gradient backdrop.
- *
- * This file is loaded AFTER media/styles.css so it can override the
- * VS Code-style chrome the renderer ships with. The renderer reads its
- * colors from --vscode-* custom properties; we redefine those here so the
- * whole side panel inherits the new palette for free.
+ * Loaded AFTER media/styles.css so it can override the VS Code-style
+ * chrome the renderer ships with. The renderer reads its colors from
+ * --vscode-* custom properties; we redefine those here so the whole
+ * side panel inherits the new palette for free.
  * ==================================================================== */
 
 :root {
@@ -724,6 +720,122 @@ dialog.onboarding::backdrop {
 .onboarding-actions button[disabled] {
   opacity: 0.35;
   cursor: not-allowed;
+}
+
+/* ===== Toast (bottom error / warning bubbles) ===== */
+
+#toast-container {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 1000;
+  pointer-events: none;
+  max-width: min(420px, calc(100vw - 48px));
+}
+
+.toast {
+  display: grid;
+  grid-template-columns: 22px 1fr auto;
+  gap: 10px;
+  align-items: start;
+  padding: 12px 14px 12px 14px;
+  border-radius: var(--us-radius-md);
+  border: 1px solid var(--us-border);
+  background: var(--us-surface);
+  color: var(--us-fg);
+  box-shadow: var(--us-shadow-lg);
+  font-size: 13.5px;
+  line-height: 1.5;
+  pointer-events: auto;
+  transform: translateY(12px);
+  opacity: 0;
+  transition: transform 220ms cubic-bezier(0.2, 0, 0.2, 1), opacity 200ms ease;
+}
+
+.toast.toast-entered {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+.toast.toast-leaving {
+  transform: translateY(8px);
+  opacity: 0;
+}
+
+.toast-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-top: 1px;
+}
+
+.toast-error .toast-icon {
+  color: var(--us-danger);
+}
+
+.toast-warning .toast-icon {
+  color: var(--us-warning);
+}
+
+.toast-info .toast-icon {
+  color: var(--us-accent);
+}
+
+.toast-error {
+  border-left: 3px solid var(--us-danger);
+}
+
+.toast-warning {
+  border-left: 3px solid var(--us-warning);
+}
+
+.toast-info {
+  border-left: 3px solid var(--us-accent);
+}
+
+.toast-body {
+  min-width: 0;
+}
+
+.toast-message {
+  font-weight: 500;
+  color: var(--us-fg);
+  word-wrap: break-word;
+}
+
+.toast-detail {
+  margin-top: 4px;
+  font-size: 12.5px;
+  color: var(--us-fg-muted);
+  word-wrap: break-word;
+  font-family: var(--us-font-mono);
+  max-height: 6em;
+  overflow-y: auto;
+}
+
+.toast-close {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--us-fg-faint);
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.toast-close:hover {
+  background: var(--us-bg-subtle);
+  color: var(--us-fg);
 }
 
 /* ===== Responsive niceties ===== */

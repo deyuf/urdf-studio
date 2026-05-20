@@ -11,13 +11,17 @@ Pages is the reference deploy, but any static host that supports
 
 ## CI workflows
 
-`.github/workflows/` ships three workflows that handle deployment:
+`.github/workflows/` ships three workflows. The split is intentional:
+
+- **Tests** run on every branch — feature branches included.
+- **Deploy** and **publish** are restricted to `main`. Nothing is shipped to
+  Cloudflare or the Marketplace from a feature branch automatically.
 
 | Workflow | Trigger | Effect |
 |---|---|---|
-| `ci.yml` | Every push & PR | Type-check, unit tests, Playwright. |
-| `preview-web.yml` | PR opened/updated | Deploy a per-PR preview to Cloudflare Pages, sticky-comment the URL. |
-| `deploy-web.yml` | Push to `main` | Deploy production. |
+| `ci.yml` | Every push and PR | Type-check, unit tests, Playwright. |
+| `deploy-web.yml` | Push to `main` (or manual dispatch on `main`) | Deploy production to Cloudflare Pages. Hard-gated to `main`. |
+| `preview-web.yml` | Manual dispatch only | Ad-hoc preview deploy for a feature branch. Pass the branch name as an input; Cloudflare serves it under `<branch>.urdf-studio.pages.dev`. |
 
 Required GitHub secrets:
 

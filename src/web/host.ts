@@ -48,8 +48,15 @@ export type HostStatus =
   | { type: 'progress'; message: string }
   | { type: 'error'; message: string };
 
+export interface HostToast {
+  kind: 'error' | 'warning' | 'info';
+  message: string;
+  detail?: string;
+}
+
 export interface HostListeners {
   onStatus?(status: HostStatus): void;
+  onToast?(toast: HostToast): void;
 }
 
 interface ActiveDocument {
@@ -177,11 +184,49 @@ export class WebHost {
         type: 'info',
         message: `${metadata.robotName}: ${metadata.counts.links} links, ${metadata.counts.movableJoints} movable.`
       });
+
+      // Surface diagnostics through the toast layer so the user notices
+      // parse problems immediately. Errors are sticky; warnings auto-dismiss.
+      this.reportDiagnostics(diagnostics, fileName);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error('[urdf] load failed', error);
       this.setStatus({ type: 'error', message: `Load failed: ${message}` });
+      this.emitToast({
+        kind: 'error',
+        message: `Failed to load ${fileName}`,
+        detail: message
+      });
     }
+  }
+
+  /** Group diagnostics by severity and emit a toast per group. The message
+   *  is a count; the detail lists the first few entries verbatim. */
+  private reportDiagnostics(diagnostics: StudioDiagnostic[], fileName: string): void {
+    const errors = diagnostics.filter(d => d.severity === 'error');
+    const warnings = diagnostics.filter(d => d.severity === 'warning');
+    const previewLines = (items: StudioDiagnostic[]) =>
+      items.slice(0, 3).map(d => `• ${d.message}`).join('\n') +
+      (items.length > 3 ? `\n• …and ${items.length - 3} more (see Checks tab)` : '');
+
+    if (errors.length > 0) {
+      this.emitToast({
+        kind: 'error',
+        message: `${errors.length} error${errors.length === 1 ? '' : 's'} in ${fileName}`,
+        detail: previewLines(errors)
+      });
+    }
+    if (warnings.length > 0) {
+      this.emitToast({
+        kind: 'warning',
+        message: `${warnings.length} warning${warnings.length === 1 ? '' : 's'} in ${fileName}`,
+        detail: previewLines(warnings)
+      });
+    }
+  }
+
+  private emitToast(toast: HostToast): void {
+    this.listeners.onToast?.(toast);
   }
 
   private installRendererShim(): void {

@@ -1,9 +1,8 @@
 /* ====================================================================
  * URDF Studio — Docs stylesheet.
- * ai.google-inspired: Google Sans, generous spacing, subtle elevation,
- * deep-blue accent, light/dark via prefers-color-scheme.
- * Layout: three-column grid (sidebar · article · TOC rail) on wide
- * viewports, collapsing to a single column on mobile.
+ * Three-column grid (sidebar · article · TOC rail) on wide viewports,
+ * collapsing to a single column on mobile. Light/dark via
+ * prefers-color-scheme.
  * ==================================================================== */
 
 :root {
