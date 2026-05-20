@@ -168,14 +168,11 @@ body::before {
   display: flex;
   align-items: center;
   gap: var(--us-space-3);
-  /* Generous side gutters that breathe more on wider viewports. */
+  /* Same fluid gutters as the renderer toolbar below so the left/right
+     edges of all three rows (topbar / toolbar / subtoolbar) stay flush.
+     The previous max-width: 1800px caused a ~12px offset on wide screens. */
   padding: var(--us-space-3) clamp(var(--us-space-4), 2.5vw, var(--us-space-8));
   min-height: 60px;
-  /* Cap the topbar's interactive content on ultra-wide screens so the
-     brand and actions don't drift to the corners of a 2K/4K monitor. */
-  max-width: 1800px;
-  margin: 0 auto;
-  width: 100%;
 }
 
 .brand {
@@ -293,13 +290,16 @@ textarea {
   color: var(--us-fg);
 }
 
-/* Round icon-buttons (Settings, Help). */
+/* Icon-only buttons (Settings, Help). Match the height (36px) of the
+   adjacent labelled buttons but use a larger glyph so the ⚙ and ?
+   carry the same visual weight as text-bearing siblings. */
 #help-btn,
 #settings-btn {
-  width: 36px;
+  width: 40px;
   padding: 0;
-  font-size: 16px;
+  font-size: 20px;
   font-weight: 500;
+  line-height: 1;
   justify-content: center;
 }
 
@@ -415,7 +415,10 @@ textarea {
   border-left: 1px solid var(--us-border);
   background: var(--us-bg-elevated);
   /* Match the new row height of .tabs (40px) below. */
-  grid-template-rows: 40px minmax(0, 1fr);
+  /* Slightly taller than the renderer's default so the new tab font /
+     padding (see #app .tab below) gets enough headroom and the active
+     underline floats a few pixels below the text. */
+  grid-template-rows: 48px minmax(0, 1fr);
 }
 
 #app .tabs {
@@ -430,10 +433,13 @@ textarea {
   border-radius: 0;
   color: var(--us-fg-muted);
   font-weight: 500;
-  font-size: 13px;
-  padding: 12px 16px;
+  /* Bumped from 13px so labels read clearly against the 48px row. */
+  font-size: 14px;
+  /* Asymmetric vertical padding leaves a clear 6px gap between the
+     label baseline and the underline. */
+  padding: 14px 16px 12px;
   cursor: pointer;
-  transition: color 100ms ease;
+  transition: color 120ms ease;
 }
 
 #app .tab:hover {
@@ -450,10 +456,12 @@ textarea {
   position: absolute;
   left: 12px;
   right: 12px;
-  bottom: 0;
+  /* Float the underline a few pixels above the row border instead of
+     hugging the text. Visually balances the typography. */
+  bottom: 4px;
   height: 2px;
   background: var(--us-accent);
-  border-radius: 2px 2px 0 0;
+  border-radius: 2px;
 }
 
 /* More breathing room inside the side panels at higher resolutions. */
@@ -1117,14 +1125,24 @@ dialog.onboarding::backdrop {
   transform: translateY(8px);
 }
 
+/* Dialogs animate in and out symmetrically.
+   - The closed state (no [open]) carries the hidden values (opacity 0,
+     translated down). That state is what the dialog tweens TO when
+     close() is called.
+   - The [open] state carries the visible values.
+   - @starting-style copies the hidden state for the opening transition.
+   - allow-discrete on `display` + `overlay` keeps the dialog rendered
+     during the close animation; without these two, the dialog would
+     vanish instantly and the transition would never play, which is the
+     "laggy" behaviour the previous rule produced. */
 dialog.onboarding,
 dialog#settings-dialog {
-  opacity: 1;
-  transform: translateY(0) scale(1);
-  transition: opacity 240ms cubic-bezier(0.2, 0, 0.2, 1),
-              transform 240ms cubic-bezier(0.2, 0, 0.2, 1),
-              overlay 240ms allow-discrete,
-              display  240ms allow-discrete;
+  opacity: 0;
+  transform: translateY(10px) scale(0.985);
+  transition: opacity 180ms cubic-bezier(0.2, 0, 0.2, 1),
+              transform 180ms cubic-bezier(0.2, 0, 0.2, 1),
+              overlay   180ms allow-discrete,
+              display   180ms allow-discrete;
 }
 
 dialog.onboarding[open],
@@ -1137,22 +1155,31 @@ dialog#settings-dialog[open] {
   dialog.onboarding[open],
   dialog#settings-dialog[open] {
     opacity: 0;
-    transform: translateY(12px) scale(0.98);
+    transform: translateY(10px) scale(0.985);
   }
 }
 
 dialog.onboarding::backdrop,
 dialog#settings-dialog::backdrop {
+  background: rgba(15, 17, 21, 0);
+  backdrop-filter: blur(0);
+  transition: background 180ms ease,
+              backdrop-filter 180ms ease,
+              display 180ms allow-discrete;
+}
+
+dialog.onboarding[open]::backdrop,
+dialog#settings-dialog[open]::backdrop {
   background: rgba(15, 17, 21, 0.5);
   backdrop-filter: blur(4px);
-  transition: opacity 240ms ease, background 240ms ease, display 240ms allow-discrete;
   opacity: 1;
 }
 
 @starting-style {
   dialog.onboarding[open]::backdrop,
   dialog#settings-dialog[open]::backdrop {
-    opacity: 0;
+    background: rgba(15, 17, 21, 0);
+    backdrop-filter: blur(0);
   }
 }
 
