@@ -419,63 +419,16 @@ export class WebHost {
     return Array.from(roots);
   }
 
-  /** Pre-load every YAML referenced by the source/include chain so xacro's
-   *  synchronous load_yaml() expression can read from cache. */
-  private async preWarmYamlCache(sourcePath: string, vfs: BrowserVfs): Promise<void> {
-    const visited = new Set<string>();
-    const queue: string[] = [sourcePath];
-    const yamlPaths = new Set<string>();
-    const includeRegex = /<xacro:include\s+filename="([^"]+)"/g;
-    const yamlRegex = /load_yaml\(\s*['"]([^'"]+)['"]\s*\)/g;
-    const findRegex = /\$\(\s*find(?:-pkg-share)?\s+([A-Za-z0-9_]+)\s*\)/g;
-
-    while (queue.length > 0) {
-      const current = queue.shift()!;
-      if (visited.has(current)) {
-        continue;
-      }
-      visited.add(current);
-      let content: string;
-      try {
-        content = await vfs.readText(current);
-      } catch {
-        continue;
-      }
-      const baseDir = posixPath.dirname(current);
-
-      const resolveRef = (raw: string): string | undefined => {
-        // Strip $(find foo)/rest into <package-root>/rest if we can guess.
-        const rewritten = raw.replace(findRegex, (_match, pkgName: string) => {
-          // We don't know packages yet; assume the package root sits at vfs.root/<pkgName>.
-          return posixPath.join(vfs.root, pkgName);
-        });
-        if (!rewritten) {
-          return undefined;
-        }
-        if (rewritten.startsWith('/')) {
-          return posixPath.resolve(rewritten);
-        }
-        return posixPath.resolve(baseDir, rewritten);
-      };
-
-      let match: RegExpExecArray | null;
-      while ((match = includeRegex.exec(content)) !== null) {
-        const resolved = resolveRef(match[1]);
-        if (resolved && !visited.has(resolved)) {
-          queue.push(resolved);
-        }
-      }
-      includeRegex.lastIndex = 0;
-      while ((match = yamlRegex.exec(content)) !== null) {
-        const resolved = resolveRef(match[1]);
-        if (resolved) {
-          yamlPaths.add(resolved);
-        }
-      }
-      yamlRegex.lastIndex = 0;
+  /** Pre-load every YAML in the VFS so xacro's synchronous load_yaml()
+   *  expression can read from cache. YAML files are tiny relative to meshes;
+   *  caching them up front is much simpler and more reliable than trying to
+   *  trace indirect xacro property references. */
+  private async preWarmYamlCache(_sourcePath: string, vfs: BrowserVfs): Promise<void> {
+    const yamlPaths = vfs.allFiles().filter(path => /\.(ya?ml)$/i.test(path));
+    if (yamlPaths.length === 0) {
+      return;
     }
-
-    await vfs.warmTextCache(Array.from(yamlPaths));
+    await vfs.warmTextCache(yamlPaths);
   }
 
   /** Build a synchronous urdf-studio-vfs:// → blob: URL map for every mesh file
