@@ -67,9 +67,15 @@ so the failure mode is unambiguous.
    ```bash
    npx wrangler pages project create urdf-studio --production-branch=main
    ```
-2. **GitHub Pages.** **Settings → Pages → Build and deployment → Source:
-   GitHub Actions**. The workflow uploads the artifact; no branch or
-   folder selection is needed.
+2. **GitHub Pages.** The workflow tries to enable Pages on first run
+   via `actions/configure-pages@v5` with `enablement: true`. This
+   requires the repo's **Settings → Actions → General → Workflow
+   permissions** to allow write access.
+
+   If the bootstrap step fails with `Get Pages site failed ... Not
+   Found`, the fix is a one-time manual toggle: **Settings → Pages →
+   Build and deployment → Source: GitHub Actions**. After that, every
+   subsequent deploy is automatic.
 3. **Secrets.** Set the three listed above under **Settings → Secrets
    and variables → Actions**.
 
@@ -169,13 +175,20 @@ Manual checks in the browser:
 ## GitHub Pages docs
 
 The docs site is also published to GitHub Pages at
-`https://<owner>.github.io/<repo>/` via `deploy-docs.yml`. Two
-prerequisites are one-time:
+`https://<owner>.github.io/<repo>/` via the `deploy-docs` job inside
+`release.yml`. The workflow attempts to enable Pages itself with
+`actions/configure-pages@v5` (`enablement: true`); if that succeeds,
+no manual setup is needed.
+
+If the enablement step is denied (the default `GITHUB_TOKEN` doesn't
+have admin scope, or Workflow permissions are restricted), do the
+one-time toggle by hand:
 
 1. **Settings → Pages → Build and deployment → Source: GitHub Actions.**
    No branch / folder selection; the workflow uploads the artifact.
-2. Ensure the workflow has `pages: write` and `id-token: write`
-   permissions (already declared at workflow scope).
+2. **Settings → Actions → General → Workflow permissions** should be
+   "Read and write permissions" if you also want `enablement: true` to
+   work automatically next time. Optional.
 
 The deploy fires automatically after every production cycle on `main`:
 when both `deploy-web` and `publish` have completed successfully on the

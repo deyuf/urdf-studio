@@ -279,6 +279,11 @@ jobs:
       contents: read
       pages: write
       id-token: write
+      # Required by actions/configure-pages@v5 when `enablement: true` is
+      # set — Pages enablement goes through the repo admin API. If the
+      # workflow permission isn't sufficient, the step falls back to a
+      # clear error message asking the user to enable Pages by hand.
+      administration: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -296,6 +301,13 @@ jobs:
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
+        with:
+          # Bootstrap the Pages site on first run. Without this, the very
+          # first deploy fails with "Get Pages site failed. ... Not Found"
+          # because Pages hasn't been turned on for the repo yet. With this
+          # set, the action enables Pages (Source: GitHub Actions) on
+          # demand, removing the manual one-time setup step.
+          enablement: true
 
       - name: Upload docs as Pages artifact
         uses: actions/upload-pages-artifact@v3
