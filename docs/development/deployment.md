@@ -9,39 +9,82 @@ The web app is a fully static SPA + docs site (no backend). Cloudflare
 Pages is the reference deploy, but any static host that supports
 `_headers`-style metadata will work.
 
-## CI workflows
+## CI / CD — one consolidated workflow
 
-`.github/workflows/` ships five workflows. The split is intentional:
+`.github/workflows/release.yml` is the entire CI/CD pipeline. Four jobs
+in one workflow, connected by `needs:` dependencies:
 
-- **Tests** run on every branch — feature branches included.
-- **Deploys** and **publishes** are restricted to `main` *and* gated on
-  CI success on the same commit. Nothing ships unless tests pass.
-- **Docs** deploy to GitHub Pages only after both the web app deploy
-  and the Marketplace publish have completed successfully.
+```
+push to main (or PR / any-branch push)
+   │
+   ▼
+test  (always — type-check + unit + Playwright + build web bundle)
+   │      └─ uploads dist-web as an artifact (main pushes only)
+   │
+   ├─ needs test ──▶ deploy-web    (main only, Cloudflare Pages)
+   │                       │
+   │                       └─────┐
+   ├─ needs test ──▶ publish ◀────┤
+   │                  (skips if  │
+   │                   version    │
+   │                   unchanged) │
+   │                       │     │
+   │                       └─────┤
+   │                             ▼
+   │                  deploy-docs (main only, GitHub Pages)
+```
 
-| Workflow | Trigger | Effect |
+Manual `workflow_dispatch` is also supported, with one optional input —
+`force_publish` — that bypasses the version-bump check.
+
+| Job | Runs when | Effect |
 |---|---|---|
-| `ci.yml` | Every push and PR | Type-check, unit tests, Playwright. |
-| `deploy-web.yml` | `workflow_run` after CI succeeds on `main` (or manual dispatch on `main`) | Deploy production to Cloudflare Pages. |
-| `publish.yml` | `workflow_run` after CI succeeds on `main` (or manual dispatch on `main`) | Publish `.vsix` to the Marketplace when `package.json#version` changes. |
-| `deploy-docs.yml` | `workflow_run` after `deploy-web` *and* `publish` both succeed on `main` (or manual dispatch) | Build docs and publish to GitHub Pages. |
-| `preview-web.yml` | Manual dispatch only | Ad-hoc preview deploy for a feature branch. |
+| `test` | Always (every branch + PR) | Type-check, unit tests, Playwright. Uploads `dist-web` artifact on main pushes. |
+| `deploy-web` | main + tests passed | Cloudflare Pages production deploy. |
+| `publish` | main + tests passed | VS Code Marketplace publish (only if `package.json#version` changed). |
+| `deploy-docs` | main + deploy-web + publish succeeded | GitHub Pages docs deploy. |
 
-The dependency chain on a push to `main` is:
+`preview-web.yml` is a separate, manual-dispatch-only workflow for
+ad-hoc branch previews to Cloudflare Pages.
 
-```
-ci.yml
-  └─ on success ──▶ deploy-web.yml ──┐
-                                     ├─▶ deploy-docs.yml
-  └─ on success ──▶ publish.yml ─────┘
-                    (skips if version unchanged)
-```
+## Required secrets
 
-`deploy-docs.yml` listens to both `deploy-web.yml` and `publish.yml`
-completions. When triggered by one, it consults the GitHub API for the
-other workflow's status on the same SHA; if the other hasn't finished
-yet, the job exits cleanly and waits for the next trigger. When both are
-finished and green, it builds the docs and ships them.
+| Secret | Used by | Scope |
+|---|---|---|
+| `CLOUDFLARE_API_TOKEN` | `deploy-web` | Cloudflare Pages: Edit. |
+| `CLOUDFLARE_ACCOUNT_ID` | `deploy-web` | The account where the Pages project lives. |
+| `VSCE_PAT` | `publish` | Azure DevOps PAT for the `deyuf` publisher with **Marketplace → Manage** scope. |
+
+If `CLOUDFLARE_*` secrets are absent, `deploy-web` fails fast with an
+embedded how-to in the log. The preflight runs before any wrangler call,
+so the failure mode is unambiguous.
+
+## First-time setup
+
+1. **Cloudflare Pages project.** The workflow creates it automatically
+   via the Cloudflare REST API on first run, but you can also do it
+   manually:
+   ```bash
+   npx wrangler pages project create urdf-studio --production-branch=main
+   ```
+2. **GitHub Pages.** **Settings → Pages → Build and deployment → Source:
+   GitHub Actions**. The workflow uploads the artifact; no branch or
+   folder selection is needed.
+3. **Secrets.** Set the three listed above under **Settings → Secrets
+   and variables → Actions**.
+
+## Why use the Cloudflare REST API for the project check?
+
+An earlier version parsed `wrangler pages project list` with `awk` to
+detect whether the project already existed. Wrangler's table output
+changed across minor versions and broke the parse — producing the
+infamous `process npx failed with exit code 1` with no useful detail.
+
+The current workflow hits
+`GET /accounts/<id>/pages/projects/<name>` directly with `curl`. A 200
+means the project exists, 404 means we should create it. 401/403 means
+the API token doesn't have the right scope, and the workflow says so
+out loud. No more wrangler-output parsing.
 
 Required GitHub secrets:
 

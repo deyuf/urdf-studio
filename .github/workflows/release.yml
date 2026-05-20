@@ -1,0 +1,308 @@
+name: Release pipeline
+
+# Single workflow handling the full CI → deploy chain:
+#
+#   test (always)
+#     ├──▶ deploy-web   (main only, needs test)
+#     ├──▶ publish      (main only, needs test, skips if version unchanged)
+#     └──▶ deploy-docs  (main only, needs deploy-web + publish)
+#
+# Branch previews live in preview-web.yml (manual dispatch only).
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      force_publish:
+        description: 'Publish to the Marketplace even if package.json version is unchanged'
+        type: boolean
+        default: false
+
+# Cancel in-progress runs for the same PR; never cancel main runs (they ship).
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  PAGES_PROJECT: urdf-studio
+
+jobs:
+  # =================================================================
+  # test — runs on every branch push and every PR.
+  # Uploads the production web build as an artifact so the downstream
+  # deploy jobs don't have to rebuild.
+  # =================================================================
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check
+        run: npm run check-types
+
+      - name: Unit tests
+        run: npm run test:unit
+
+      - name: Cache Playwright browsers
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Playwright Chromium
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+
+      - name: Build VS Code extension
+        run: npm run compile
+
+      - name: Build web bundle (incl. docs)
+        run: npm run web:build
+
+      - name: Playwright (renderer + web shell)
+        run: npx playwright test
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report
+            test-results
+          retention-days: 7
+
+      # Hand the built web app to the deploy jobs. Only on main pushes /
+      # manual dispatch — no point building artifacts for PR runs.
+      - name: Upload web build artifact
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-build
+          path: dist-web
+          retention-days: 1
+
+  # =================================================================
+  # deploy-web — production deploy to Cloudflare Pages.
+  # Only on main, only after tests pass. Uses the artifact built by
+  # the test job so we don't rebuild.
+  # =================================================================
+  deploy-web:
+    name: Deploy web app to Cloudflare Pages
+    needs: test
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      deployments: write
+    steps:
+      - name: Verify Cloudflare secrets are configured
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          missing=()
+          [ -z "$CLOUDFLARE_API_TOKEN"  ] && missing+=(CLOUDFLARE_API_TOKEN)
+          [ -z "$CLOUDFLARE_ACCOUNT_ID" ] && missing+=(CLOUDFLARE_ACCOUNT_ID)
+          if [ ${#missing[@]} -gt 0 ]; then
+            cat <<EOF >&2
+          ::error::Missing required secrets: ${missing[*]}
+
+          Configure them under Settings → Secrets and variables → Actions.
+
+          To get them:
+            1. Account ID — visible in any Cloudflare dashboard page (right sidebar).
+            2. API Token — https://dash.cloudflare.com/profile/api-tokens
+                 → Create Token → Custom → grant:
+                     Account · Cloudflare Pages · Edit
+                     User    · User Details     · Read
+                 → constrain to your account → Continue → Create.
+
+          See docs/development/deployment.md for the full walk-through.
+          EOF
+            exit 1
+          fi
+          echo "Secrets present (token=${#CLOUDFLARE_API_TOKEN} chars, account=${#CLOUDFLARE_ACCOUNT_ID} chars)."
+
+      - name: Download web build
+        uses: actions/download-artifact@v4
+        with:
+          name: web-build
+          path: dist-web
+
+      - name: Verify build output
+        run: |
+          test -f dist-web/index.html || { echo "::error::dist-web/index.html missing"; exit 1; }
+          test -f dist-web/app.js     || { echo "::error::dist-web/app.js missing";     exit 1; }
+          test -d dist-web/docs       || { echo "::error::dist-web/docs missing";       exit 1; }
+          du -sh dist-web
+
+      # Use the Cloudflare REST API directly rather than parsing wrangler's
+      # pretty-printed table — that breaks across wrangler minor versions and
+      # was the source of an earlier "process npx failed with exit code 1"
+      # failure mode.
+      - name: Ensure Cloudflare Pages project exists
+        env:
+          CF_TOKEN:   ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -e
+          api="https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT}/pages/projects"
+          http=$(curl -sS -o /tmp/project.json -w '%{http_code}' \
+            -H "Authorization: Bearer ${CF_TOKEN}" \
+            "${api}/${PAGES_PROJECT}")
+          case "$http" in
+            200)
+              echo "Pages project '${PAGES_PROJECT}' already exists."
+              ;;
+            404)
+              echo "Pages project not found; creating '${PAGES_PROJECT}'..."
+              create_http=$(curl -sS -o /tmp/create.json -w '%{http_code}' \
+                -H "Authorization: Bearer ${CF_TOKEN}" \
+                -H "Content-Type: application/json" \
+                -X POST \
+                -d "{\"name\":\"${PAGES_PROJECT}\",\"production_branch\":\"main\"}" \
+                "${api}")
+              if [ "$create_http" != "200" ] && [ "$create_http" != "201" ]; then
+                echo "::error::Project create returned HTTP ${create_http}"
+                cat /tmp/create.json
+                exit 1
+              fi
+              ;;
+            401|403)
+              echo "::error::Cloudflare API rejected the token (HTTP ${http}). Check that CLOUDFLARE_API_TOKEN has 'Cloudflare Pages: Edit' on this account."
+              cat /tmp/project.json
+              exit 1
+              ;;
+            *)
+              echo "::error::Unexpected HTTP ${http} from Cloudflare API"
+              cat /tmp/project.json
+              exit 1
+              ;;
+          esac
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy dist-web --project-name=${{ env.PAGES_PROJECT }} --branch=main
+
+  # =================================================================
+  # publish — VS Code Marketplace publish + GitHub Release.
+  # Only on main, only after tests pass, only if package.json#version
+  # changed (or workflow_dispatch with force_publish=true).
+  # =================================================================
+  publish:
+    name: Publish to VS Code Marketplace
+    needs: test
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Detect version change
+        id: version
+        run: |
+          current=$(node -p "require('./package.json').version")
+          previous=$(git show HEAD~1:package.json 2>/dev/null \
+            | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).version" 2>/dev/null || echo "")
+          force='${{ github.event.inputs.force_publish }}'
+          echo "current=$current"   >> "$GITHUB_OUTPUT"
+          echo "previous=$previous" >> "$GITHUB_OUTPUT"
+          if [ "$current" != "$previous" ] || [ "$force" = "true" ]; then
+            echo "should_publish=true" >> "$GITHUB_OUTPUT"
+            echo "Version $previous -> $current (force=$force) — will publish."
+          else
+            echo "should_publish=false" >> "$GITHUB_OUTPUT"
+            echo "Version unchanged at $current — skipping publish."
+          fi
+
+      - name: Package .vsix
+        if: steps.version.outputs.should_publish == 'true'
+        run: npx --yes @vscode/vsce package --out urdf-studio-${{ steps.version.outputs.current }}.vsix
+
+      - name: Publish to Marketplace
+        if: steps.version.outputs.should_publish == 'true'
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: npx --yes @vscode/vsce publish --packagePath urdf-studio-${{ steps.version.outputs.current }}.vsix
+
+      - name: Create GitHub Release
+        if: steps.version.outputs.should_publish == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.current }}
+          name: v${{ steps.version.outputs.current }}
+          generate_release_notes: true
+          files: urdf-studio-${{ steps.version.outputs.current }}.vsix
+
+  # =================================================================
+  # deploy-docs — GitHub Pages.
+  # Only runs after BOTH deploy-web and publish complete successfully.
+  # Reuses the test job's web-build artifact.
+  # =================================================================
+  deploy-docs:
+    name: Deploy docs to GitHub Pages
+    needs: [deploy-web, publish]
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Download web build
+        uses: actions/download-artifact@v4
+        with:
+          name: web-build
+          path: dist-web
+
+      - name: Verify docs output
+        run: |
+          test -f dist-web/docs/index.html || { echo "::error::dist-web/docs/index.html missing"; exit 1; }
+          ls -la dist-web/docs | head
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload docs as Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # Ship only the docs subtree — the app itself lives on Cloudflare.
+          path: dist-web/docs
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

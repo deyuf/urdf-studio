@@ -282,31 +282,32 @@ More: [docs/development/building →](https://urdf.deyuf.org/docs/development/bu
 
 ## Deployment
 
-Five workflows under `.github/workflows/`, all gated on CI:
+The whole CI/CD lives in one workflow — `.github/workflows/release.yml`
+— with four jobs connected by `needs:`:
 
-| File | Trigger | Effect |
-|---|---|---|
-| `ci.yml` | every push (any branch) + every PR | type-check + unit + Playwright |
-| `deploy-web.yml` | `workflow_run` after CI succeeds on `main` | Cloudflare Pages production |
-| `publish.yml` | `workflow_run` after CI succeeds on `main` | VS Code Marketplace publish (only if version bumped) |
-| `deploy-docs.yml` | `workflow_run` after **both** `deploy-web` *and* `publish` succeed | docs to GitHub Pages |
-| `preview-web.yml` | manual dispatch only | ad-hoc preview deploy for any branch |
+```
+test (any branch + PRs)
+  ├─ needs test ──▶ deploy-web   ── Cloudflare Pages (main)
+  ├─ needs test ──▶ publish      ── VS Code Marketplace (main, if version bumped)
+  └─ needs [deploy-web, publish] ▶ deploy-docs ── GitHub Pages (main)
+```
+
+`preview-web.yml` stays separate, manual-dispatch only, for ad-hoc
+branch previews to Cloudflare Pages.
 
 Required GitHub secrets:
 
-- `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` — for web app deploy.
-- `VSCE_PAT` — for Marketplace publish.
-
-First-time Cloudflare project setup:
-
-```bash
-npx wrangler pages project create urdf-studio --production-branch=main
-```
+- `CLOUDFLARE_API_TOKEN` — Cloudflare Pages: Edit scope.
+- `CLOUDFLARE_ACCOUNT_ID` — visible in any Cloudflare dashboard page.
+- `VSCE_PAT` — Azure DevOps PAT for the `deyuf` Marketplace publisher.
 
 First-time GitHub Pages: **Settings → Pages → Source: GitHub Actions**.
 
-Custom domain (Cloudflare): add `urdf.example.com` under **Pages →
-urdf-studio → Custom domains**. CI config doesn't change.
+The Cloudflare Pages project is auto-created on first deploy via the
+Cloudflare REST API (no manual `wrangler pages project create` needed).
+
+Custom domain (Cloudflare): add `urdf.example.com` under
+**Pages → urdf-studio → Custom domains**. CI config doesn't change.
 
 Step-by-step:
 [docs/development/deployment →](https://urdf.deyuf.org/docs/development/deployment.html)
