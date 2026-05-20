@@ -67,15 +67,16 @@ so the failure mode is unambiguous.
    ```bash
    npx wrangler pages project create urdf-studio --production-branch=main
    ```
-2. **GitHub Pages.** The workflow tries to enable Pages on first run
-   via `actions/configure-pages@v5` with `enablement: true`. This
-   requires the repo's **Settings → Actions → General → Workflow
-   permissions** to allow write access.
+2. **GitHub Pages.** Toggle it on once, by hand:
+   **Settings → Pages → Build and deployment → Source: GitHub Actions.**
 
-   If the bootstrap step fails with `Get Pages site failed ... Not
-   Found`, the fix is a one-time manual toggle: **Settings → Pages →
-   Build and deployment → Source: GitHub Actions**. After that, every
-   subsequent deploy is automatic.
+   The workflow also passes `enablement: true` to
+   `actions/configure-pages@v5`, but the Pages-enablement endpoint
+   needs `administration: write` on the token and `GITHUB_TOKEN` cannot
+   be granted that scope (only fine-grained PATs can). So the
+   enablement call is best-effort; in practice the one-click manual
+   toggle is what unblocks the first deploy. After that, every
+   subsequent run no-ops the configure step.
 3. **Secrets.** Set the three listed above under **Settings → Secrets
    and variables → Actions**.
 
@@ -176,19 +177,16 @@ Manual checks in the browser:
 
 The docs site is also published to GitHub Pages at
 `https://<owner>.github.io/<repo>/` via the `deploy-docs` job inside
-`release.yml`. The workflow attempts to enable Pages itself with
-`actions/configure-pages@v5` (`enablement: true`); if that succeeds,
-no manual setup is needed.
-
-If the enablement step is denied (the default `GITHUB_TOKEN` doesn't
-have admin scope, or Workflow permissions are restricted), do the
-one-time toggle by hand:
+`release.yml`. One-time setup required:
 
 1. **Settings → Pages → Build and deployment → Source: GitHub Actions.**
-   No branch / folder selection; the workflow uploads the artifact.
-2. **Settings → Actions → General → Workflow permissions** should be
-   "Read and write permissions" if you also want `enablement: true` to
-   work automatically next time. Optional.
+   No branch / folder selection — the workflow uploads the artifact.
+
+The workflow passes `enablement: true` to `actions/configure-pages@v5`
+in case the Pages site has not been enabled yet, but the underlying
+API requires `administration` scope on the token and `GITHUB_TOKEN`
+cannot be granted that. In practice the one-click manual toggle above
+is what enables the first deploy; subsequent runs are automatic.
 
 The deploy fires automatically after every production cycle on `main`:
 when both `deploy-web` and `publish` have completed successfully on the
