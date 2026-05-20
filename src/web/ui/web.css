@@ -1,0 +1,195 @@
+/* Web overlay on top of media/styles.css. Provides:
+   1. Default values for the --vscode-* variables the renderer CSS uses.
+   2. Layout for the topbar (above #app).
+   3. Styles for the file picker, status line, and settings dialog. */
+
+:root {
+  --vscode-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --vscode-foreground: #cccccc;
+  --vscode-editor-background: #1e1e1e;
+  --vscode-sideBar-background: #252526;
+  --vscode-panel-border: #3c3c3c;
+  --vscode-input-background: #3c3c3c;
+  --vscode-input-foreground: #cccccc;
+  --vscode-input-border: #3c3c3c;
+  --vscode-button-background: #0e639c;
+  --vscode-button-foreground: #ffffff;
+  --vscode-button-hoverBackground: #1177bb;
+  --vscode-toolbar-hoverBackground: #3a3a3a;
+  --vscode-list-activeSelectionBackground: #094771;
+  --vscode-list-hoverBackground: #2a2d2e;
+  --vscode-textLink-foreground: #3794ff;
+  --vscode-editorWidget-background: #252526;
+  --vscode-editor-foreground: #d4d4d4;
+  --vscode-errorForeground: #f48771;
+  --vscode-editorWarning-foreground: #cca700;
+  --vscode-editorInfo-foreground: #75beff;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --vscode-foreground: #333333;
+    --vscode-editor-background: #ffffff;
+    --vscode-sideBar-background: #f3f3f3;
+    --vscode-panel-border: #c8c8c8;
+    --vscode-input-background: #ffffff;
+    --vscode-input-foreground: #333333;
+    --vscode-input-border: #c8c8c8;
+    --vscode-button-background: #007acc;
+    --vscode-button-foreground: #ffffff;
+    --vscode-button-hoverBackground: #0066a8;
+    --vscode-toolbar-hoverBackground: #e8e8e8;
+    --vscode-list-activeSelectionBackground: #cce8ff;
+    --vscode-list-hoverBackground: #ececec;
+    --vscode-editor-foreground: #1f1f1f;
+    --vscode-editorWidget-background: #f3f3f3;
+  }
+}
+
+html,
+body {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  overflow: hidden;
+  font-family: var(--vscode-font-family);
+  color: var(--vscode-foreground);
+  background: var(--vscode-editor-background);
+}
+
+body {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+#topbar {
+  border-bottom: 1px solid var(--vscode-panel-border);
+  background: var(--vscode-sideBar-background);
+}
+
+.topbar-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 12px;
+}
+
+.brand {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.brand-tag {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 500;
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  border-radius: 10px;
+  vertical-align: middle;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+#file-select {
+  min-width: 200px;
+  max-width: 360px;
+  height: 28px;
+  padding: 0 8px;
+}
+
+button.ghost {
+  background: transparent;
+  border-color: var(--vscode-panel-border);
+}
+
+button.ghost:hover {
+  background: var(--vscode-toolbar-hoverBackground);
+}
+
+.topbar-status {
+  padding: 4px 12px 6px;
+  font-size: 12px;
+  color: var(--vscode-foreground);
+  border-top: 1px solid var(--vscode-panel-border);
+}
+
+.topbar-status[data-kind='error'] {
+  color: var(--vscode-errorForeground);
+}
+
+.topbar-status[data-kind='progress'] {
+  color: var(--vscode-editorInfo-foreground);
+}
+
+#app {
+  position: relative;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+dialog#settings-dialog {
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 6px;
+  background: var(--vscode-editorWidget-background);
+  color: var(--vscode-foreground);
+  padding: 0;
+  width: min(520px, 90vw);
+}
+
+dialog#settings-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+dialog#settings-dialog form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 20px;
+}
+
+dialog#settings-dialog h3 {
+  margin: 0 0 6px;
+  font-size: 14px;
+}
+
+dialog#settings-dialog label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+
+dialog#settings-dialog textarea,
+dialog#settings-dialog input,
+dialog#settings-dialog select {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  padding: 4px 6px;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 4px;
+  resize: vertical;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* The renderer assumes #app has height 100%; we've already provided that
+   via the grid layout above. Resetting the inherited rule from styles.css. */
+#app .shell {
+  height: 100%;
+}

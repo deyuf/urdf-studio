@@ -136,7 +136,9 @@
     "test:unit": "node esbuild.mjs --tests && node --test dist/test/*.test.cjs",
     "test:renderer": "npm run compile && playwright test",
     "test": "npm run test:unit",
-    "vsce:package": "npm run package && vsce package"
+    "vsce:package": "npm run package && vsce package",
+    "web:dev": "node esbuild.mjs --web --serve",
+    "web:build": "npm run check-types && node esbuild.mjs --web --production"
   },
   "dependencies": {
     "@xmldom/xmldom": "^0.8.11",

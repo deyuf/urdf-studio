@@ -400,6 +400,29 @@ async function loadRobot(data: LoadRobotMessage, forceCollisionGeometry = false)
   manager.onError = (url: string) => setStatus(`Mesh failed: ${url}`);
   manager.onLoad = revealRobot;
 
+  // Host-supplied URL rewriter (used by the web build to resolve
+  // urdf-studio-vfs:// URLs to blob: URLs). VS Code build leaves it unset.
+  const vfsUrlMap = (data as LoadRobotMessage & { vfsUrlMap?: Record<string, string>; vfsUrlScheme?: string }).vfsUrlMap;
+  const vfsScheme = (data as LoadRobotMessage & { vfsUrlScheme?: string }).vfsUrlScheme;
+  if (vfsUrlMap && vfsScheme) {
+    manager.setURLModifier(url => {
+      if (typeof url !== 'string' || !url.startsWith(vfsScheme)) {
+        return url;
+      }
+      const mapped = vfsUrlMap[url];
+      if (mapped) {
+        return mapped;
+      }
+      // Try normalizing collapsed `..` segments (`/a/b/../c` → `/a/c`).
+      const normalized = normalizeVfsUrl(url, vfsScheme);
+      if (normalized !== url && vfsUrlMap[normalized]) {
+        return vfsUrlMap[normalized];
+      }
+      console.warn('[urdf] unmapped VFS url', url);
+      return url;
+    });
+  }
+
   const loader = new URDFLoader(manager);
   loader.packages = data.packageMap;
   loader.workingPath = data.sourceBaseUri;
@@ -1775,4 +1798,20 @@ function writeCollisionPairs(): void {
     return;
   }
   vscode.postMessage({ type: 'requestWriteDisableCollisions', entries: lastCollisionAnalysis });
+}
+
+function normalizeVfsUrl(url: string, scheme: string): string {
+  const path = url.slice(scheme.length);
+  const segments = path.split('/');
+  const stack: string[] = [];
+  for (const segment of segments) {
+    if (segment === '..') {
+      if (stack.length > 1) {
+        stack.pop();
+      }
+    } else if (segment !== '.') {
+      stack.push(segment);
+    }
+  }
+  return `${scheme}${stack.join('/')}`;
 }
