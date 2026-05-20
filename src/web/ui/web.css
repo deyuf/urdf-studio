@@ -1,49 +1,109 @@
-/* Web overlay on top of media/styles.css. Provides:
-   1. Default values for the --vscode-* variables the renderer CSS uses.
-   2. Layout for the topbar (above #app).
-   3. Styles for the file picker, status line, and settings dialog. */
+/* ====================================================================
+ * URDF Studio — Web build stylesheet.
+ *
+ * Visual language is loosely inspired by ai.google: generous typography,
+ * Google Sans (with Inter and system fallbacks), 8px spacing grid, soft
+ * elevation, deep-blue accent, and a subtle radial gradient backdrop.
+ *
+ * This file is loaded AFTER media/styles.css so it can override the
+ * VS Code-style chrome the renderer ships with. The renderer reads its
+ * colors from --vscode-* custom properties; we redefine those here so the
+ * whole side panel inherits the new palette for free.
+ * ==================================================================== */
 
 :root {
-  --vscode-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-  --vscode-foreground: #cccccc;
-  --vscode-editor-background: #1e1e1e;
-  --vscode-sideBar-background: #252526;
-  --vscode-panel-border: #3c3c3c;
-  --vscode-input-background: #3c3c3c;
-  --vscode-input-foreground: #cccccc;
-  --vscode-input-border: #3c3c3c;
-  --vscode-button-background: #0e639c;
-  --vscode-button-foreground: #ffffff;
-  --vscode-button-hoverBackground: #1177bb;
-  --vscode-toolbar-hoverBackground: #3a3a3a;
-  --vscode-list-activeSelectionBackground: #094771;
-  --vscode-list-hoverBackground: #2a2d2e;
-  --vscode-textLink-foreground: #3794ff;
-  --vscode-editorWidget-background: #252526;
-  --vscode-editor-foreground: #d4d4d4;
-  --vscode-errorForeground: #f48771;
-  --vscode-editorWarning-foreground: #cca700;
-  --vscode-editorInfo-foreground: #75beff;
+  /* Palette — light. */
+  --us-bg: #ffffff;
+  --us-bg-elevated: #f8f9fa;
+  --us-bg-subtle: #f1f3f4;
+  --us-surface: #ffffff;
+  --us-fg: #1f1f1f;
+  --us-fg-muted: #5f6368;
+  --us-fg-faint: #80868b;
+  --us-border: #e8eaed;
+  --us-border-strong: #dadce0;
+  --us-accent: #1a73e8;
+  --us-accent-hover: #1967d2;
+  --us-accent-soft: rgba(26, 115, 232, 0.08);
+  --us-accent-soft-hover: rgba(26, 115, 232, 0.14);
+  --us-on-accent: #ffffff;
+  --us-success: #1e8e3e;
+  --us-warning: #f29900;
+  --us-danger: #d93025;
+  --us-shadow-sm: 0 1px 2px rgba(60, 64, 67, 0.08), 0 1px 3px 1px rgba(60, 64, 67, 0.05);
+  --us-shadow-md: 0 1px 3px rgba(60, 64, 67, 0.1), 0 4px 8px 3px rgba(60, 64, 67, 0.05);
+  --us-shadow-lg: 0 2px 6px rgba(60, 64, 67, 0.1), 0 8px 24px 4px rgba(60, 64, 67, 0.1);
+
+  /* Spacing scale (8px grid). */
+  --us-space-1: 4px;
+  --us-space-2: 8px;
+  --us-space-3: 12px;
+  --us-space-4: 16px;
+  --us-space-5: 24px;
+  --us-space-6: 32px;
+  --us-space-8: 48px;
+
+  /* Radii. */
+  --us-radius-sm: 6px;
+  --us-radius-md: 10px;
+  --us-radius-lg: 16px;
+  --us-radius-pill: 999px;
+
+  /* Typography. */
+  --us-font-sans: 'Google Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --us-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* ---- Renderer compatibility shims. The renderer's HTML uses
+         var(--vscode-*) names; we alias them to our tokens. ---- */
+  --vscode-font-family: var(--us-font-sans);
+  --vscode-foreground: var(--us-fg);
+  --vscode-editor-background: var(--us-bg);
+  --vscode-editor-foreground: var(--us-fg);
+  --vscode-sideBar-background: var(--us-bg-elevated);
+  --vscode-panel-border: var(--us-border);
+  --vscode-input-background: var(--us-surface);
+  --vscode-input-foreground: var(--us-fg);
+  --vscode-input-border: var(--us-border-strong);
+  --vscode-button-background: var(--us-accent);
+  --vscode-button-foreground: var(--us-on-accent);
+  --vscode-button-hoverBackground: var(--us-accent-hover);
+  --vscode-toolbar-hoverBackground: var(--us-bg-subtle);
+  --vscode-list-activeSelectionBackground: var(--us-accent-soft);
+  --vscode-list-hoverBackground: var(--us-bg-subtle);
+  --vscode-textLink-foreground: var(--us-accent);
+  --vscode-editorWidget-background: var(--us-surface);
+  --vscode-errorForeground: var(--us-danger);
+  --vscode-editorWarning-foreground: var(--us-warning);
+  --vscode-editorInfo-foreground: var(--us-accent);
 }
 
-@media (prefers-color-scheme: light) {
+@media (prefers-color-scheme: dark) {
   :root {
-    --vscode-foreground: #333333;
-    --vscode-editor-background: #ffffff;
-    --vscode-sideBar-background: #f3f3f3;
-    --vscode-panel-border: #c8c8c8;
-    --vscode-input-background: #ffffff;
-    --vscode-input-foreground: #333333;
-    --vscode-input-border: #c8c8c8;
-    --vscode-button-background: #007acc;
-    --vscode-button-foreground: #ffffff;
-    --vscode-button-hoverBackground: #0066a8;
-    --vscode-toolbar-hoverBackground: #e8e8e8;
-    --vscode-list-activeSelectionBackground: #cce8ff;
-    --vscode-list-hoverBackground: #ececec;
-    --vscode-editor-foreground: #1f1f1f;
-    --vscode-editorWidget-background: #f3f3f3;
+    --us-bg: #131314;
+    --us-bg-elevated: #1e1f20;
+    --us-bg-subtle: #28292a;
+    --us-surface: #1e1f20;
+    --us-fg: #e3e3e3;
+    --us-fg-muted: #9aa0a6;
+    --us-fg-faint: #80868b;
+    --us-border: #3c4043;
+    --us-border-strong: #5f6368;
+    --us-accent: #8ab4f8;
+    --us-accent-hover: #aecbfa;
+    --us-accent-soft: rgba(138, 180, 248, 0.12);
+    --us-accent-soft-hover: rgba(138, 180, 248, 0.2);
+    --us-on-accent: #062e6f;
+    --us-success: #81c995;
+    --us-warning: #fdd663;
+    --us-danger: #f28b82;
+    --us-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 3px 1px rgba(0, 0, 0, 0.15);
+    --us-shadow-md: 0 1px 3px rgba(0, 0, 0, 0.4), 0 4px 8px 3px rgba(0, 0, 0, 0.15);
+    --us-shadow-lg: 0 2px 6px rgba(0, 0, 0, 0.4), 0 8px 24px 4px rgba(0, 0, 0, 0.3);
   }
+}
+
+* {
+  box-sizing: border-box;
 }
 
 html,
@@ -52,9 +112,11 @@ body {
   width: 100%;
   margin: 0;
   overflow: hidden;
-  font-family: var(--vscode-font-family);
-  color: var(--vscode-foreground);
-  background: var(--vscode-editor-background);
+  font-family: var(--us-font-sans);
+  color: var(--us-fg);
+  background: var(--us-bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 body {
@@ -62,89 +124,209 @@ body {
   grid-template-rows: auto minmax(0, 1fr);
 }
 
+/* Subtle radial gradient backdrop — visible behind the topbar's translucent
+   surface. Strong enough to give the page a sense of depth without competing
+   with the 3D viewport. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+  background:
+    radial-gradient(1200px 600px at 8% -20%, rgba(26, 115, 232, 0.08), transparent 60%),
+    radial-gradient(900px 500px at 100% 0%, rgba(168, 67, 233, 0.05), transparent 60%);
+}
+
+@media (prefers-color-scheme: dark) {
+  body::before {
+    background:
+      radial-gradient(1200px 600px at 8% -20%, rgba(138, 180, 248, 0.07), transparent 60%),
+      radial-gradient(900px 500px at 100% 0%, rgba(197, 138, 248, 0.05), transparent 60%);
+  }
+}
+
+/* ===== Topbar ===== */
+
 #topbar {
-  border-bottom: 1px solid var(--vscode-panel-border);
-  background: var(--vscode-sideBar-background);
+  position: relative;
+  background: color-mix(in srgb, var(--us-bg) 85%, transparent);
+  backdrop-filter: saturate(180%) blur(10px);
+  border-bottom: 1px solid var(--us-border);
+  z-index: 5;
 }
 
 .topbar-row {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 6px 12px;
+  gap: var(--us-space-3);
+  padding: var(--us-space-3) var(--us-space-5);
+  min-height: 56px;
 }
 
 .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--us-space-2);
+  font-family: var(--us-font-sans);
   font-weight: 600;
-  font-size: 14px;
+  font-size: 18px;
+  letter-spacing: -0.01em;
+  color: var(--us-fg);
+}
+
+.brand::before {
+  content: '';
+  display: inline-block;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--us-radius-sm);
+  background:
+    radial-gradient(circle at 30% 30%, #4285f4 0%, #1a73e8 45%, #185abc 100%);
+  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.15);
+  flex-shrink: 0;
 }
 
 .brand-tag {
-  display: inline-block;
-  margin-left: 4px;
-  padding: 1px 6px;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  margin-left: var(--us-space-1);
   font-size: 10px;
-  font-weight: 500;
-  background: var(--vscode-button-background);
-  color: var(--vscode-button-foreground);
-  border-radius: 10px;
-  vertical-align: middle;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--us-accent);
+  background: var(--us-accent-soft);
+  border-radius: var(--us-radius-pill);
 }
 
 .topbar-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--us-space-2);
   margin-left: auto;
+  flex-wrap: wrap;
 }
 
-#file-select {
-  min-width: 200px;
-  max-width: 360px;
-  height: 28px;
-  padding: 0 8px;
+/* ===== Buttons (override styles.css) ===== */
+
+button,
+input,
+select,
+textarea {
+  font-family: var(--us-font-sans);
+  font-size: 13px;
 }
 
-button.ghost {
-  background: transparent;
-  border-color: var(--vscode-panel-border);
-}
-
-button.ghost:hover {
-  background: var(--vscode-toolbar-hoverBackground);
-}
-
-a.ghost-link {
+#topbar button,
+#topbar a.ghost-link,
+#topbar select {
+  height: 36px;
+  padding: 0 16px;
+  border-radius: var(--us-radius-pill);
+  border: 1px solid var(--us-border-strong);
+  background: var(--us-surface);
+  color: var(--us-fg);
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, transform 80ms ease, box-shadow 120ms ease;
   display: inline-flex;
   align-items: center;
-  height: 28px;
-  padding: 0 9px;
-  font: inherit;
-  color: var(--vscode-foreground);
-  background: transparent;
-  border: 1px solid var(--vscode-panel-border);
-  border-radius: 4px;
+  gap: 6px;
   text-decoration: none;
 }
 
-a.ghost-link:hover {
-  background: var(--vscode-toolbar-hoverBackground);
+#topbar button:hover,
+#topbar a.ghost-link:hover {
+  background: var(--us-bg-subtle);
+  border-color: var(--us-border-strong);
+}
+
+#topbar button:active {
+  transform: scale(0.98);
+}
+
+#topbar button.primary {
+  background: var(--us-accent);
+  color: var(--us-on-accent);
+  border-color: transparent;
+  box-shadow: 0 1px 2px rgba(26, 115, 232, 0.18), 0 1px 3px 1px rgba(26, 115, 232, 0.1);
+}
+
+#topbar button.primary:hover {
+  background: var(--us-accent-hover);
+  box-shadow: 0 2px 4px rgba(26, 115, 232, 0.25), 0 2px 6px 2px rgba(26, 115, 232, 0.12);
+}
+
+#topbar button.primary:disabled {
+  background: var(--us-bg-subtle);
+  color: var(--us-fg-faint);
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+#topbar button.ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--us-fg-muted);
+}
+
+#topbar button.ghost:hover {
+  background: var(--us-bg-subtle);
+  color: var(--us-fg);
+}
+
+/* Round icon-buttons (Settings, Help). */
+#help-btn,
+#settings-btn {
+  width: 36px;
+  padding: 0;
+  font-size: 16px;
+  font-weight: 500;
+  justify-content: center;
+}
+
+#file-select {
+  min-width: 240px;
+  max-width: 380px;
+  padding-right: 32px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--us-fg-muted) 50%),
+    linear-gradient(135deg, var(--us-fg-muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 14px) 50%,
+    calc(100% - 9px) 50%;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+#file-select:disabled {
+  color: var(--us-fg-faint);
+  cursor: not-allowed;
 }
 
 .topbar-status {
-  padding: 4px 12px 6px;
-  font-size: 12px;
-  color: var(--vscode-foreground);
-  border-top: 1px solid var(--vscode-panel-border);
+  padding: 8px var(--us-space-5) 10px;
+  font-size: 12.5px;
+  color: var(--us-fg-muted);
+  border-top: 1px solid var(--us-border);
+  background: var(--us-bg-elevated);
 }
 
 .topbar-status[data-kind='error'] {
-  color: var(--vscode-errorForeground);
+  color: var(--us-danger);
 }
 
 .topbar-status[data-kind='progress'] {
-  color: var(--vscode-editorInfo-foreground);
+  color: var(--us-accent);
 }
+
+/* ===== Renderer chrome overrides =====
+   The renderer ships its own toolbar/subtoolbar/side panel from styles.css.
+   We refine spacing, rounded corners, and hover states. */
 
 #app {
   position: relative;
@@ -153,161 +335,411 @@ a.ghost-link:hover {
   overflow: hidden;
 }
 
+#app .shell {
+  height: 100%;
+  background: var(--us-bg);
+}
+
+#app .toolbar,
+#app .subtoolbar {
+  border-bottom: 1px solid var(--us-border);
+  background: color-mix(in srgb, var(--us-bg-elevated) 60%, transparent);
+  padding: 8px 20px;
+  gap: 10px;
+}
+
+#app .toolbar button,
+#app .subtoolbar button,
+#app .toolbar select,
+#app .subtoolbar select {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: var(--us-radius-sm);
+  border: 1px solid var(--us-border);
+  background: var(--us-surface);
+  color: var(--us-fg);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 100ms ease, border-color 100ms ease;
+}
+
+#app .toolbar button:hover,
+#app .subtoolbar button:hover,
+#app .toolbar select:hover,
+#app .subtoolbar select:hover {
+  background: var(--us-bg-subtle);
+}
+
+#app .toolbar button.primary {
+  background: var(--us-accent);
+  color: var(--us-on-accent);
+  border-color: transparent;
+}
+
+#app .toolbar button.primary:hover {
+  background: var(--us-accent-hover);
+}
+
+#app .toolbar label,
+#app .subtoolbar label {
+  font-size: 12.5px;
+  color: var(--us-fg-muted);
+}
+
+#app .side {
+  border-left: 1px solid var(--us-border);
+  background: var(--us-bg-elevated);
+}
+
+#app .tabs {
+  border-bottom: 1px solid var(--us-border);
+  background: var(--us-bg-elevated);
+}
+
+#app .tab {
+  position: relative;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  color: var(--us-fg-muted);
+  font-weight: 500;
+  font-size: 13px;
+  padding: 12px 16px;
+  cursor: pointer;
+  transition: color 100ms ease;
+}
+
+#app .tab:hover {
+  color: var(--us-fg);
+  background: transparent;
+}
+
+#app .tab.active {
+  color: var(--us-accent);
+}
+
+#app .tab.active::after {
+  content: '';
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 0;
+  height: 2px;
+  background: var(--us-accent);
+  border-radius: 2px 2px 0 0;
+}
+
+#app input[type='range'] {
+  accent-color: var(--us-accent);
+}
+
+#app input[type='number'],
+#app input[type='text'],
+#app input[type='search'] {
+  border-radius: var(--us-radius-sm);
+  border: 1px solid var(--us-border);
+  background: var(--us-surface);
+  padding: 6px 10px;
+  font-family: var(--us-font-mono);
+  font-size: 12.5px;
+}
+
+#app input[type='number']:focus,
+#app input[type='text']:focus,
+#app input[type='search']:focus {
+  outline: none;
+  border-color: var(--us-accent);
+  box-shadow: 0 0 0 3px var(--us-accent-soft);
+}
+
+#app .hud {
+  background: color-mix(in srgb, var(--us-surface) 80%, transparent);
+  backdrop-filter: blur(6px);
+  border: 1px solid var(--us-border);
+  border-radius: var(--us-radius-md);
+  padding: 8px 14px;
+  font-size: 12.5px;
+  color: var(--us-fg-muted);
+  box-shadow: var(--us-shadow-sm);
+}
+
+/* ===== Settings dialog ===== */
+
 dialog#settings-dialog {
-  border: 1px solid var(--vscode-panel-border);
-  border-radius: 6px;
-  background: var(--vscode-editorWidget-background);
-  color: var(--vscode-foreground);
+  border: none;
+  border-radius: var(--us-radius-lg);
   padding: 0;
-  width: min(520px, 90vw);
+  width: min(560px, 92vw);
+  background: var(--us-surface);
+  color: var(--us-fg);
+  box-shadow: var(--us-shadow-lg);
 }
 
 dialog#settings-dialog::backdrop {
-  background: rgba(0, 0, 0, 0.45);
+  background: rgba(15, 17, 21, 0.45);
+  backdrop-filter: blur(2px);
 }
 
 dialog#settings-dialog form {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 16px 20px;
+  gap: var(--us-space-3);
+  padding: var(--us-space-5) var(--us-space-6);
 }
 
 dialog#settings-dialog h3 {
-  margin: 0 0 6px;
-  font-size: 14px;
+  margin: 0 0 var(--us-space-2);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 dialog#settings-dialog label {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  font-size: 12px;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--us-fg-muted);
 }
 
 dialog#settings-dialog textarea,
 dialog#settings-dialog input,
 dialog#settings-dialog select {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
-  padding: 4px 6px;
-  background: var(--vscode-input-background);
-  color: var(--vscode-input-foreground);
-  border: 1px solid var(--vscode-input-border);
-  border-radius: 4px;
+  font-family: var(--us-font-mono);
+  font-size: 12.5px;
+  padding: 8px 10px;
+  background: var(--us-bg-elevated);
+  color: var(--us-fg);
+  border: 1px solid var(--us-border);
+  border-radius: var(--us-radius-sm);
   resize: vertical;
+}
+
+dialog#settings-dialog textarea:focus,
+dialog#settings-dialog input:focus,
+dialog#settings-dialog select:focus {
+  outline: none;
+  border-color: var(--us-accent);
+  box-shadow: 0 0 0 3px var(--us-accent-soft);
 }
 
 .dialog-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
-  margin-top: 8px;
+  gap: var(--us-space-2);
+  margin-top: var(--us-space-3);
 }
 
-/* The renderer assumes #app has height 100%; we've already provided that
-   via the grid layout above. Resetting the inherited rule from styles.css. */
-#app .shell {
-  height: 100%;
+.dialog-actions button {
+  height: 36px;
+  padding: 0 18px;
+  border-radius: var(--us-radius-pill);
+  border: 1px solid var(--us-border-strong);
+  background: var(--us-surface);
+  color: var(--us-fg);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.dialog-actions button.primary {
+  background: var(--us-accent);
+  border-color: transparent;
+  color: var(--us-on-accent);
+}
+
+.dialog-actions button:hover {
+  background: var(--us-bg-subtle);
+}
+
+.dialog-actions button.primary:hover {
+  background: var(--us-accent-hover);
 }
 
 /* ===== Onboarding tour ===== */
 
 dialog.onboarding {
   border: none;
-  border-radius: 10px;
+  border-radius: var(--us-radius-lg);
   padding: 0;
-  width: min(520px, 92vw);
-  background: var(--vscode-editorWidget-background);
-  color: var(--vscode-foreground);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  width: min(560px, 92vw);
+  background: var(--us-surface);
+  color: var(--us-fg);
+  box-shadow: var(--us-shadow-lg);
+  overflow: hidden;
 }
 
 dialog.onboarding::backdrop {
-  background: rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(2px);
+  background: rgba(15, 17, 21, 0.5);
+  backdrop-filter: blur(4px);
 }
 
 .onboarding-card {
-  padding: 24px 26px 18px;
+  padding: var(--us-space-6) var(--us-space-6) var(--us-space-5);
+  position: relative;
+}
+
+.onboarding-card::before {
+  /* A subtle gradient accent strip on top of the dialog. */
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, #4285f4 0%, #a142f4 50%, #ea4335 100%);
 }
 
 .onboarding-step {
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--vscode-textLink-foreground);
-  margin-bottom: 8px;
+  color: var(--us-accent);
+  margin-bottom: 10px;
   font-weight: 600;
 }
 
 .onboarding-card h2 {
-  margin: 0 0 10px;
-  font-size: 18px;
+  margin: 0 0 var(--us-space-3);
+  font-size: 24px;
   font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
 }
 
 .onboarding-card p {
-  margin: 0 0 12px;
-  font-size: 14px;
-  line-height: 1.55;
+  margin: 0 0 var(--us-space-3);
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--us-fg);
 }
 
 .onboarding-card p code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--us-font-mono);
   font-size: 12.5px;
-  background: rgba(127, 127, 127, 0.18);
-  border-radius: 4px;
-  padding: 1px 5px;
+  background: var(--us-bg-subtle);
+  border-radius: var(--us-radius-sm);
+  padding: 2px 6px;
 }
 
 .onboarding-card a {
-  color: var(--vscode-textLink-foreground);
+  color: var(--us-accent);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.onboarding-card a:hover {
+  text-decoration: underline;
 }
 
 .onboarding-hint {
-  font-size: 12.5px;
-  color: var(--vscode-foreground);
-  opacity: 0.7;
-  border-left: 3px solid var(--vscode-button-background);
-  padding: 4px 10px;
-  margin-top: 12px;
+  font-size: 13px;
+  color: var(--us-fg-muted);
+  background: var(--us-bg-elevated);
+  border-radius: var(--us-radius-md);
+  padding: 12px 14px;
+  margin-top: var(--us-space-3);
+  border-left: 3px solid var(--us-accent);
 }
 
 .onboarding-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-top: 16px;
-  padding-top: 14px;
-  border-top: 1px solid var(--vscode-panel-border);
+  gap: var(--us-space-3);
+  margin-top: var(--us-space-5);
+  padding-top: var(--us-space-4);
+  border-top: 1px solid var(--us-border);
 }
 
 .onboarding-dots {
   display: flex;
-  gap: 6px;
+  gap: 8px;
 }
 
 .onboarding-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--vscode-panel-border);
+  background: var(--us-border-strong);
   cursor: pointer;
-  transition: background 120ms ease;
+  transition: background 120ms ease, transform 120ms ease;
+  border: none;
+  padding: 0;
+}
+
+.onboarding-dot:hover {
+  background: var(--us-fg-muted);
 }
 
 .onboarding-dot.active {
-  background: var(--vscode-button-background);
+  background: var(--us-accent);
+  transform: scale(1.15);
 }
 
 .onboarding-actions {
   display: flex;
-  gap: 8px;
+  gap: var(--us-space-2);
+}
+
+.onboarding-actions button {
+  height: 36px;
+  padding: 0 18px;
+  border-radius: var(--us-radius-pill);
+  border: 1px solid var(--us-border-strong);
+  background: var(--us-surface);
+  color: var(--us-fg);
+  font-weight: 500;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.onboarding-actions button:hover {
+  background: var(--us-bg-subtle);
+}
+
+.onboarding-actions button.primary {
+  background: var(--us-accent);
+  color: var(--us-on-accent);
+  border-color: transparent;
+  box-shadow: 0 1px 2px rgba(26, 115, 232, 0.18), 0 1px 3px 1px rgba(26, 115, 232, 0.1);
+}
+
+.onboarding-actions button.primary:hover {
+  background: var(--us-accent-hover);
+}
+
+.onboarding-actions button.ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--us-fg-muted);
+}
+
+.onboarding-actions button.ghost:hover {
+  background: var(--us-bg-subtle);
+  color: var(--us-fg);
 }
 
 .onboarding-actions button[disabled] {
-  opacity: 0.4;
+  opacity: 0.35;
   cursor: not-allowed;
+}
+
+/* ===== Responsive niceties ===== */
+
+@media (max-width: 720px) {
+  .topbar-row {
+    flex-wrap: wrap;
+    padding: var(--us-space-3);
+    gap: var(--us-space-2);
+  }
+  .topbar-actions {
+    flex-basis: 100%;
+    margin-left: 0;
+  }
+  #file-select {
+    min-width: 0;
+    flex: 1;
+  }
 }

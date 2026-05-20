@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <b>Inspect, visualize, and interact with URDF &amp; xacro robot models — directly inside VS Code.</b>
+  <b>Inspect, visualize, and interact with URDF &amp; xacro robot models — in VS Code <i>and</i> in the browser.</b>
 </p>
 
 <p align="center">
@@ -28,11 +28,53 @@
 
 ---
 
+## Two ways to use it
+
+URDF Studio ships in **two forms from a single codebase**:
+
+- **VS Code extension** — opens `.urdf`, `.urdf.xacro`, and `.xacro` files as a custom editor next to your code, with inline diagnostics.
+- **Browser app** — runs entirely client-side via the File System Access API. No upload, no server; your files never leave your machine. Deployed at any static host (Cloudflare Pages, Netlify, GitHub Pages).
+
+### Web app screenshots
+
+<p align="center">
+  <img src="media/screenshots-web/03-fr3-posed.png" alt="Franka FR3 loaded in the web app" width="100%">
+  <br>
+  <em>Franka Research 3 loaded directly from a cloned <code>franka_description</code> folder — full xacro expansion, packages resolved, meshes streamed from local disk via blob URLs.</em>
+</p>
+
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <img src="media/screenshots-web/01-welcome.png" alt="Welcome tour" width="100%">
+      <br><sub><b>Onboarding tour</b> — 4 steps, dismissed once.</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="media/screenshots-web/06-fr3-dark.png" alt="Dark theme" width="100%">
+      <br><sub><b>Dark theme</b> auto-follows OS color scheme.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="media/screenshots-web/04-checks.png" alt="Checks panel" width="100%">
+      <br><sub><b>Checks panel</b> surfaces parser warnings.</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="media/screenshots-web/07-docs.png" alt="Docs site" width="100%">
+      <br><sub><b>Docs</b> served from the same deployment.</sub>
+    </td>
+  </tr>
+</table>
+
+> The visual language is inspired by [ai.google](https://ai.google) — Google Sans typography, soft elevation, generous spacing, a deep-blue accent, and a subtle radial gradient backdrop. Light/dark themes are auto-selected from `prefers-color-scheme`.
+
+---
+
 ## Features
 
 ### 🖥️ Interactive 3D Viewer
 
-A full Three.js viewport embedded in VS Code with orbit, pan, and zoom controls. Supports preset camera angles (**Front**, **Right**, **Top**, **Iso**) and a one-click **Fit** to frame the entire robot.
+A full Three.js viewport with orbit, pan, and zoom controls. Supports preset camera angles (**Front**, **Right**, **Top**, **Iso**) and a one-click **Fit** to frame the entire robot.
 
 ![URDF Studio viewer with Franka Research 3 loaded](media/screenshots/viewer-joints.png)
 
@@ -140,9 +182,33 @@ Beyond the 3D preview, URDF Studio registers editor language features for `.urdf
 
 ## Quick Start
 
-1. Install the extension from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=deyuf.urdf-studio)
-2. Open any `.urdf` or `.xacro` file
-3. The 3D preview opens automatically, or use the command **URDF Studio: Open Preview**
+**Browser (no install):**
+
+1. Open the deployed URL in Chrome / Edge / Brave / Arc.
+2. Click **Open Folder** and pick the root of your ROS package (e.g. a cloned [`franka_description`](https://github.com/frankarobotics/franka_description)).
+3. Pick a robot file from the dropdown — the preview loads on the spot.
+
+**VS Code extension:**
+
+1. Install from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=deyuf.urdf-studio).
+2. Open any `.urdf` or `.xacro` file.
+3. The 3D preview opens automatically, or use the command **URDF Studio: Open Preview**.
+
+### Tested against real models
+
+| Model | Source | Status |
+|-------|--------|--------|
+| Franka Research 3 (`fr3`) | [franka_description](https://github.com/frankarobotics/franka_description) | ✅ 8 joints, 25 links, 0 diagnostics |
+| Franka Research (`fer`)   | [franka_description](https://github.com/frankarobotics/franka_description) | ✅ 8 joints, 25 links, 0 diagnostics |
+| Franka Production 3 (`fp3`) | [franka_description](https://github.com/frankarobotics/franka_description) | ✅ 8 joints, 25 links, 0 diagnostics |
+
+Reproduce with:
+
+```bash
+git clone https://github.com/frankarobotics/franka_description /tmp/franka_description
+npm run web:build
+FRANKA_DIR=/tmp/franka_description node scripts/test-franka.mjs
+```
 
 ---
 

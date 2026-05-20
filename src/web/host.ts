@@ -559,8 +559,18 @@ export class WebHost {
     await Promise.all(pending);
   }
 
+  /** workingPath URI — URDFLoader concatenates a relative path directly onto
+   *  this, so it MUST have a trailing slash. */
   private toBaseUri(directoryPath: string): string {
     return `${VFS_URL_SCHEME}${ensureLeadingSlash(directoryPath)}/`.replace(/\/+$/, '/');
+  }
+
+  /** packageMap entry — URDFLoader builds the final URL with
+   *  `packages[pkg] + '/' + relPath`, so this MUST NOT have a trailing slash
+   *  or every fetch URL gets a leading double slash and breaks the URL
+   *  modifier lookup. */
+  private toPackageRootUri(directoryPath: string): string {
+    return `${VFS_URL_SCHEME}${ensureLeadingSlash(directoryPath)}`.replace(/\/+$/, '');
   }
 
   private toFileUri(filePath: string): string {
@@ -569,7 +579,7 @@ export class WebHost {
 
   private buildPackageUriMap(packages: PackageMap): Record<string, string> {
     return Object.fromEntries(
-      Object.entries(packages).map(([name, entry]) => [name, this.toBaseUri(entry.path)])
+      Object.entries(packages).map(([name, entry]) => [name, this.toPackageRootUri(entry.path)])
     );
   }
 }

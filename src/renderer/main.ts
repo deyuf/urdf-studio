@@ -1801,17 +1801,24 @@ function writeCollisionPairs(): void {
 }
 
 function normalizeVfsUrl(url: string, scheme: string): string {
-  const path = url.slice(scheme.length);
+  // Normalize the path portion of a urdf-studio-vfs URL:
+  // collapse empty segments (`a//b` → `a/b`), drop `.`, resolve `..` against
+  // the stack. The scheme always carries `//` (e.g. `urdf-studio-vfs://`) and
+  // the returned URL has exactly one slash between scheme and path.
+  const path = url.slice(scheme.length).replace(/^\/+/, '');
   const segments = path.split('/');
   const stack: string[] = [];
   for (const segment of segments) {
+    if (segment === '' || segment === '.') {
+      continue;
+    }
     if (segment === '..') {
-      if (stack.length > 1) {
+      if (stack.length > 0) {
         stack.pop();
       }
-    } else if (segment !== '.') {
-      stack.push(segment);
+      continue;
     }
+    stack.push(segment);
   }
-  return `${scheme}${stack.join('/')}`;
+  return `${scheme}/${stack.join('/')}`;
 }
