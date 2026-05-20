@@ -1,208 +1,178 @@
-# URDF Studio
+<h1 align="center">
+  <img src="media/icon.png" alt="" width="96" align="center">
+  <br>
+  URDF&nbsp;Studio
+</h1>
 
 <p align="center">
-  <img src="media/icon.png" alt="URDF Studio" width="128">
+  <strong>Inspect, visualize, and drive ROS robot models — in VS Code <em>and</em> in the browser.</strong>
 </p>
 
 <p align="center">
-  <b>Inspect, visualize, and interact with URDF &amp; xacro robot models — in VS Code <i>and</i> in the browser.</b>
+  <a href="https://urdf.deyuf.org"><img src="https://img.shields.io/badge/web%20app-urdf.deyuf.org-1a73e8?style=flat-square&labelColor=24292f" alt="Web app"></a>
+  <a href="https://marketplace.visualstudio.com/items?itemName=deyuf.urdf-studio"><img src="https://vsmarketplacebadges.dev/version/deyuf.urdf-studio.svg?style=flat-square&labelColor=24292f" alt="Marketplace"></a>
+  <a href="https://marketplace.visualstudio.com/items?itemName=deyuf.urdf-studio"><img src="https://vsmarketplacebadges.dev/installs/deyuf.urdf-studio.svg?style=flat-square&labelColor=24292f" alt="Installs"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/deyuf/urdf-studio?style=flat-square&labelColor=24292f" alt="License"></a>
 </p>
 
 <p align="center">
-  <a href="https://marketplace.visualstudio.com/items?itemName=deyuf.urdf-studio">
-    <img src="https://vsmarketplacebadges.dev/version/deyuf.urdf-studio.svg" alt="Marketplace Version">
-  </a>
-  <a href="https://marketplace.visualstudio.com/items?itemName=deyuf.urdf-studio">
-    <img src="https://vsmarketplacebadges.dev/downloads/deyuf.urdf-studio.svg" alt="Downloads">
-  </a>
-  <a href="https://marketplace.visualstudio.com/items?itemName=deyuf.urdf-studio">
-    <img src="https://vsmarketplacebadges.dev/installs/deyuf.urdf-studio.svg" alt="Installs">
-  </a>
-  <a href="https://marketplace.visualstudio.com/items?itemName=deyuf.urdf-studio">
-    <img src="https://vsmarketplacebadges.dev/rating/deyuf.urdf-studio.svg" alt="Rating">
-  </a>
-  <a href="https://github.com/deyuf/urdf-studio/blob/main/LICENSE">
-    <img src="https://img.shields.io/github/license/deyuf/urdf-studio" alt="License">
-  </a>
+  <img src="media/screenshots-web/03-fr3-posed.png" alt="Franka Research 3 loaded in the web app">
+</p>
+
+<p align="center">
+  <em>Franka Research 3 loaded directly from a local <code>franka_description</code> checkout — full xacro expansion, packages resolved, meshes streamed via blob URLs. No server.</em>
 </p>
 
 ---
 
-## Two ways to use it
+## Table of contents
 
-URDF Studio ships in **two forms from a single codebase**:
+- [Quickstart](#quickstart)
+- [How it looks](#how-it-looks)
+- [Features](#features)
+- [Tested models](#tested-models)
+- [Configuration](#configuration)
+- [Architecture](#architecture)
+- [Local development](#local-development)
+- [Deployment](#deployment)
+- [Releasing](#releasing)
+- [Contributing &amp; license](#contributing--license)
 
-- **VS Code extension** — opens `.urdf`, `.urdf.xacro`, and `.xacro` files as a custom editor next to your code, with inline diagnostics.
-- **Browser app** — runs entirely client-side via the File System Access API. No upload, no server; your files never leave your machine. Deployed at any static host (Cloudflare Pages, Netlify, GitHub Pages).
+---
 
-### Web app screenshots
+## Quickstart
 
-<p align="center">
-  <img src="media/screenshots-web/03-fr3-posed.png" alt="Franka FR3 loaded in the web app" width="100%">
-  <br>
-  <em>Franka Research 3 loaded directly from a cloned <code>franka_description</code> folder — full xacro expansion, packages resolved, meshes streamed from local disk via blob URLs.</em>
-</p>
+URDF Studio ships two artifacts from one codebase. Pick the one that
+matches how you work.
+
+### Browser
+
+1. Open [**urdf.deyuf.org**](https://urdf.deyuf.org) in Chrome / Edge / Brave / Arc.
+2. Click **Open Folder** → pick a ROS package (try a cloned
+   [`franka_description`](https://github.com/frankarobotics/franka_description)).
+3. Pick a robot file from the dropdown. The viewport loads on the spot.
+
+> Safari / iOS / Firefox don't expose the File System Access API — use
+> the **Pick Files** button (`webkitdirectory` fallback) instead. Bytes
+> never leave your machine either way.
+
+### VS Code
+
+1. Install [**deyuf.urdf-studio**](https://marketplace.visualstudio.com/items?itemName=deyuf.urdf-studio)
+   from the Marketplace.
+2. Right-click a `.urdf`, `.urdf.xacro`, or `.xacro` file → **Open With**
+   → **URDF Studio Preview**.
+3. The custom editor opens. Workspace package roots are auto-discovered.
+
+Full docs: **<https://urdf.deyuf.org/docs/>**.
+
+---
+
+## How it looks
 
 <table>
   <tr>
     <td width="50%" align="center">
-      <img src="media/screenshots-web/01-welcome.png" alt="Welcome tour" width="100%">
-      <br><sub><b>Onboarding tour</b> — 4 steps, dismissed once.</sub>
+      <img src="media/screenshots-web/01-welcome.png" alt="Onboarding tour" width="100%">
+      <br>
+      <sub><strong>Onboarding tour</strong> — 4 steps, dismissable, ? button re-opens.</sub>
     </td>
     <td width="50%" align="center">
       <img src="media/screenshots-web/06-fr3-dark.png" alt="Dark theme" width="100%">
-      <br><sub><b>Dark theme</b> auto-follows OS color scheme.</sub>
+      <br>
+      <sub><strong>Dark theme</strong> auto-follows OS color scheme.</sub>
     </td>
   </tr>
   <tr>
     <td width="50%" align="center">
       <img src="media/screenshots-web/04-checks.png" alt="Checks panel" width="100%">
-      <br><sub><b>Checks panel</b> surfaces parser warnings.</sub>
+      <br>
+      <sub><strong>Checks panel</strong> — every diagnostic the analyzer found.</sub>
     </td>
     <td width="50%" align="center">
-      <img src="media/screenshots-web/07-docs.png" alt="Docs site" width="100%">
-      <br><sub><b>Docs</b> served from the same deployment.</sub>
+      <img src="media/screenshots-web/05-inspector.png" alt="Inspector" width="100%">
+      <br>
+      <sub><strong>Inspector</strong> — joints, mass, CoM, inertia, mesh paths.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="media/screenshots-web/08-docs-overview.png" alt="Docs overview" width="100%">
+      <br>
+      <sub><strong>Docs site</strong> — three-column, sidebar groups, in-page TOC.</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="media/screenshots-web/10-docs-diagnostics.png" alt="Docs diagnostics catalog" width="100%">
+      <br>
+      <sub><strong>Diagnostic catalog</strong> — every check, code, severity.</sub>
     </td>
   </tr>
 </table>
 
-> The visual language is inspired by [ai.google](https://ai.google) — Google Sans typography, soft elevation, generous spacing, a deep-blue accent, and a subtle radial gradient backdrop. Light/dark themes are auto-selected from `prefers-color-scheme`.
+> Visual language is inspired by [ai.google](https://ai.google) — Google
+> Sans typography, soft elevation, generous spacing, a deep-blue accent,
+> and a subtle radial gradient backdrop.
 
 ---
 
 ## Features
 
-### 🖥️ Interactive 3D Viewer
+Feature pages in the docs go into much more detail; this is the
+overview.
 
-A full Three.js viewport with orbit, pan, and zoom controls. Supports preset camera angles (**Front**, **Right**, **Top**, **Iso**) and a one-click **Fit** to frame the entire robot.
+### 🖥 Viewing
 
-![URDF Studio viewer with Franka Research 3 loaded](media/screenshots/viewer-joints.png)
+| | |
+|---|---|
+| **3D viewport** | Orbit / pan / zoom (OrbitControls), presets (Front / Right / Top / Iso), one-click Fit. |
+| **Render modes** | `Visual`, `Collision`, or `Both` — see [Render modes →](https://urdf.deyuf.org/docs/features/render-modes.html) |
+| **Frames & inertia** | Per-link TF axes (off / selected / all) and inertia ellipsoids + CoM markers. |
+| **Configurable up axis** | `+X`, `+Y`, `+Z` — grid and camera adjust together. |
+| **Wireframe overlay** | Spot cracks, inverted normals, high-poly collision meshes. |
 
-*The 3D viewport with a Franka Research 3 loaded; toolbar, joints panel, and link/joint counts on the right.*
+### 🦾 Driving
 
-### 🤖 URDF & Xacro Support
+| | |
+|---|---|
+| **Joint sliders** | Live sliders + numeric inputs honoring `<limit>` for `revolute`, `continuous`, `prismatic`. |
+| **Mimic propagation** | `<mimic>` joints follow their master, with limit-clamp bypass so propagation isn't truncated. |
+| **Ignore limits** | One-click bypass of every joint's `<limit>` for exploration. |
+| **Search & filter** | Substring filter, *only modified* toggle. |
+| **Named states** | SRDF `<group_state>` blocks appear in the bookmark dropdown — see [Joints →](https://urdf.deyuf.org/docs/features/joints.html) |
 
-Opens `.urdf`, `.urdf.xacro`, and `.xacro` files natively as a custom editor. Xacro files are expanded on-the-fly with full argument support — edit xacro args and hit **Reload xacro** to see changes instantly.
+### 🩺 Analysing
 
-### 🦾 Joint Controls
+| | |
+|---|---|
+| **Checks panel** | Every parse error, missing mesh, malformed inertia, joint cycle. [Catalog →](https://urdf.deyuf.org/docs/features/diagnostics.html) |
+| **Link tree & inspector** | Click anywhere on the robot or tree → see joints, mass, CoM, inertia tensor, mesh paths. |
+| **Diagnostics in VS Code** | Same checks surface in the Problems panel with line numbers. |
 
-Interactive sliders and numeric inputs for every movable joint. Supports **revolute**, **continuous**, and **prismatic** joint types with proper limits. Toggle **Ignore limits** mode to freely explore the full range of motion.
+### 🛠 Authoring
 
-### 📦 ROS Package Resolution
+| | |
+|---|---|
+| **Reachability sampling** | Monte-Carlo workspace point cloud for any tip link. |
+| **Never-colliding pairs** | Sample for `<disable_collisions>` entries → write merged SRDF. |
+| **Pose & bookmarks** | Save pose, name bookmarks, restore on next open. |
+| **Export & screenshot** | JSON pose with camera; PNG screenshot at native resolution. |
 
-Automatically discovers `package.xml` files across your workspace and resolves `package://` URIs for meshes. Add custom package search roots via settings for multi-workspace setups.
+### 🤖 ROS / URDF / xacro
 
-### 🎨 Render Modes
-
-Switch between three geometry layers:
-
-| Mode | Description |
-|------|-------------|
-| **Visual** | Render visual meshes (default) |
-| **Collision** | Render collision geometry only |
-| **Both** | Overlay both layers simultaneously |
-
-Toggle **wireframe** mode to inspect mesh topology. Show or hide the **grid** and **axes** helpers.
-
-![Collision render mode for Franka FR3](media/screenshots/render-collision.png)
-
-*Collision-only render mode — FR3's self-collision primitives (capsules and cylinders) replace the detailed visual meshes.*
-
-### 🌲 Link Tree & Inspector
-
-Browse the full kinematic tree in a collapsible hierarchy. Click any link in the tree or directly in the 3D viewport to inspect it — selected links are highlighted with a tight bounding box around the link's own visual mesh, and the inspector shows parent/child joints, joint type, axis, limits, mass, center of mass, and associated meshes.
-
-The side panel is organised into tabs: **Joints**, **Inspector**, **Checks**, **Links**, and **Tools**.
-
-![Inspector with fr3_link4 selected](media/screenshots/inspector-selected.png)
-
-*Selecting `fr3_link4` highlights just that link's visual mesh with a tight yellow box; the inspector panel shows its parent joint, axis, limits, child joints, and mesh paths.*
-
-### 🧭 TF Frames & Inertia Overlays
-
-- **Frames** — overlay per-link TF axes for the selected link only or for every link, useful for debugging joint origins and link orientations.
-- **Inertia** — visualize each link's inertia ellipsoid and center of mass alongside the geometry, computed from the URDF `<inertial>` tags.
-
-### 🩺 Model Diagnostics
-
-Real-time analysis of your robot model surfaced as VS Code diagnostics (errors, warnings, info). Catches issues like:
-
-- Missing mesh files
-- Undefined joints or links
-- Xacro expansion problems
-- Invalid joint limits
-
-Diagnostics also appear in the **Checks** panel inside the preview for quick triage.
-
-### 📐 SRDF & Named States
-
-Load SRDF or YAML semantic files to define **joint groups** and **named states** (e.g., "home", "ready", "tucked"). Apply named states with a single click to pose the robot instantly.
-
-### 🛠️ SRDF Authoring — Disable Collisions
-
-From the **Tools** tab, run a Monte-Carlo sampling pass over the joint space to find link pairs that **never collide** in any sampled pose. The result can be written directly into an SRDF file as `<disable_collisions>` entries — the standard input MoveIt expects for self-collision filtering.
-
-### 🎯 Reachability Cloud
-
-Pick a tip link and a sample count, and the **Tools** tab generates a workspace point cloud by sampling random joint configurations and recording the tip's world position. Useful for visualizing reach envelopes or comparing arm designs.
-
-### 💾 Pose Save, Bookmarks & Export
-
-- **Save Pose** — persists the current joint configuration and camera so it's restored on next open.
-- **Bookmarks** — save any pose under a name (e.g. "ready", "tucked") and reapply it from the toolbar dropdown.
-- **Export Pose** — opens a JSON document with the full joint pose and camera snapshot for use in launch files or configuration.
-
-### 📸 Screenshot Capture
-
-Capture a PNG screenshot of the current viewport and save it to your workspace. Perfect for documentation, PRs, or sharing robot configurations.
-
-### ⚙️ Mesh Format Support
-
-Loads common robotics mesh formats out of the box:
-
-- **STL** — with auto-generated normals
-- **COLLADA (.dae)**
-- **OBJ**
-- **glTF / GLB**
-
-### 🔧 Configurable Up Axis
-
-Set the world up axis to **+X**, **+Y**, or **+Z** depending on your robot's coordinate convention. The grid, camera, and orbit controls adjust automatically.
-
-### 🧠 Language Services for URDF & Xacro
-
-Beyond the 3D preview, URDF Studio registers editor language features for `.urdf`, `.urdf.xacro`, and `.xacro` files:
-
-- **Hover** — see joint/link details and resolved mesh paths inline.
-- **Go to Definition / Find References** — jump between joint `parent`/`child` references and their link declarations.
-- **Document Symbols / Outline** — links and joints listed in the breadcrumb and outline view.
-- **CodeLens & Quick Fixes** — actionable hints for common authoring issues.
+| | |
+|---|---|
+| **xacro expansion** | `xacro:include`, `xacro:macro`, `xacro:arg`, `load_yaml`, Python ternary / `**` / slice rewrites. |
+| **`package://` URIs** | Auto-discovered from every `package.xml` in scope. |
+| **Mesh formats** | STL · COLLADA · OBJ · glTF · GLB. DAE / GLTF external assets pre-resolved to blob URLs. |
+| **SRDF** | Joint groups, named states, `disable_collisions`. |
 
 ---
 
-## Quick Start
+## Tested models
 
-**Browser (no install):**
-
-1. Open the deployed URL in Chrome / Edge / Brave / Arc.
-2. Click **Open Folder** and pick the root of your ROS package (e.g. a cloned [`franka_description`](https://github.com/frankarobotics/franka_description)).
-3. Pick a robot file from the dropdown — the preview loads on the spot.
-
-**VS Code extension:**
-
-1. Install from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=deyuf.urdf-studio).
-2. Open any `.urdf` or `.xacro` file.
-3. The 3D preview opens automatically, or use the command **URDF Studio: Open Preview**.
-
-### Tested against real models
-
-| Model | Source | Status |
-|-------|--------|--------|
-| Franka Research 3 (`fr3`) | [franka_description](https://github.com/frankarobotics/franka_description) | ✅ 8 joints, 25 links, 0 diagnostics |
-| Franka Research (`fer`)   | [franka_description](https://github.com/frankarobotics/franka_description) | ✅ 8 joints, 25 links, 0 diagnostics |
-| Franka Production 3 (`fp3`) | [franka_description](https://github.com/frankarobotics/franka_description) | ✅ 8 joints, 25 links, 0 diagnostics |
-
-Reproduce with:
+End-to-end Playwright smoke test against the upstream
+[`franka_description`](https://github.com/frankarobotics/franka_description)
+package. Reproducer:
 
 ```bash
 git clone https://github.com/frankarobotics/franka_description /tmp/franka_description
@@ -210,86 +180,146 @@ npm run web:build
 FRANKA_DIR=/tmp/franka_description node scripts/test-franka.mjs
 ```
 
----
+| Robot | Source | Result |
+|---|---|---|
+| Franka Research 3 (`fr3`) | franka_description | ✅ 8 joints · 25 links · 0 errors · 0 warnings · ~600 ms |
+| Franka Research (`fer`)   | franka_description | ✅ 8 joints · 25 links · 0 errors · 0 warnings · ~800 ms |
+| Franka Production 3 (`fp3`) | franka_description | ✅ 8 joints · 25 links · 0 errors · 0 warnings · ~600 ms |
 
-## Commands
-
-| Command | Description |
-|---------|-------------|
-| `URDF Studio: Open Preview` | Open the 3D preview for the active URDF/xacro file |
-| `URDF Studio: Recenter` | Reset the camera to frame the robot |
-| `URDF Studio: Export Pose` | Export current joint pose as JSON |
-| `URDF Studio: Capture Screenshot` | Save a PNG screenshot of the viewport |
-| `URDF Studio: Sample Reachability Cloud` | Sample random joint poses and visualize the tip workspace |
+The whole pipeline runs in the browser: directory pick, xacro expansion
+(including `load_yaml` for joint limits / inertials YAMLs), package
+resolution, mesh blob URL allocation, Three.js render.
 
 ---
 
-## Settings
+## Configuration
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `urdfStudio.packageRoots` | `[]` | Additional directories to scan for ROS packages |
-| `urdfStudio.defaultXacroArgs` | `{}` | Default argument values for xacro expansion |
-| `urdfStudio.defaultRenderMode` | `"visual"` | Initial geometry layer (`visual`, `collision`, `both`) |
-| `urdfStudio.upAxis` | `"+Z"` | World up axis (`+X`, `+Y`, `+Z`) |
-| `urdfStudio.semanticFiles` | `[]` | SRDF or YAML files for joint groups and named states |
+Both targets expose the same five settings.
+
+| Setting | Default | Effect |
+|---|---|---|
+| Default render mode | `visual` | Geometry layer on first load. |
+| Up axis | `+Z` | World up axis used by camera and grid. |
+| Default xacro args | `{}` | Args merged into every xacro file. |
+| Extra package roots | `[]` | Extra `package.xml` scan roots. |
+| Semantic files | `[]` | SRDF / YAML semantic files. |
+
+**Web:** ⚙ button in the topbar → JSON in `localStorage`.
+**VS Code:** `urdfStudio.*` keys in `settings.json`.
+
+Details: [docs/features/settings →](https://urdf.deyuf.org/docs/features/settings.html)
 
 ---
 
-## Development
+## Architecture
 
-```bash
-npm install
-npm run compile
+A single TypeScript codebase produces both targets:
+
+```
+                src/core/                 — pure logic, no fs/path/DOM imports
+                     ▲
+       ┌─────────────┴─────────────┐
+   io.node.ts                   ioBrowser.ts
+   (jsdom + node:fs)            (FileSystemAccess + native DOM)
+       ▲                              ▲
+  src/extension.ts               src/web/host.ts
+       ▲                              ▲
+       └─────────── postMessage ──────┘
+                     ▼
+              src/renderer/main.ts     — Three.js + URDFLoader, identical
 ```
 
-Open this folder in VS Code and press **F5** to launch the Extension Host. Use `URDF Studio: Open Preview` on any `.urdf`, `.urdf.xacro`, or `.xacro` file.
+The core never touches Node-only modules directly; it queries a
+`CoreIo` interface set by the host. The renderer is bundled separately
+and is identical on both targets — the only thing that differs is the
+postMessage source.
+
+Deep dive: [docs/architecture →](https://urdf.deyuf.org/docs/architecture/)
+
+---
+
+## Local development
 
 ```bash
-npm run test:unit       # Run unit tests
-npm run test:renderer   # Run Playwright renderer tests
+git clone https://github.com/deyuf/urdf-studio
+cd urdf-studio
+npm ci
 ```
 
-### Web build (Cloudflare Pages)
-
-The same codebase also builds a static web app that runs entirely in the
-browser via the File System Access API. Useful for sharing previews
-without VS Code.
+Common loops:
 
 ```bash
-npm run web:dev      # http://127.0.0.1:5173 with file watching
-npm run web:build    # produces dist-web/
+# VS Code extension
+npm run watch              # incremental rebuild; press F5 in VS Code
+
+# Web app
+npm run web:dev            # http://127.0.0.1:5173 with HMR
+
+# Docs only
+npm run docs:watch         # rebuild dist-web/docs on every .md change
+
+# Tests
+npm run test:unit          # 24 node:test cases on src/core
+npx playwright test        # 19 renderer + web shell specs
+
+# Real-world smoke
+FRANKA_DIR=/tmp/franka_description node scripts/test-franka.mjs
 ```
 
-To deploy to Cloudflare Pages, either:
+Production builds:
 
-- **Git integration:** point the project at this repo, set build command
-  to `npm run web:build` and output directory to `dist-web`.
-- **Wrangler CLI:** `npx wrangler pages deploy dist-web --project-name urdf-studio`.
+```bash
+npm run package            # VS Code extension (dist/)
+npm run web:build          # web app + docs (dist-web/)
+npm run vsce:package       # .vsix for sideload / Marketplace
+```
 
-The output is a fully static SPA — no backend, no Workers required. The
-Open Folder button uses File System Access API on Chromium-based
-browsers; Safari and mobile fall back to a `webkitdirectory` file picker.
+More: [docs/development/building →](https://urdf.deyuf.org/docs/development/building.html)
+
+---
+
+## Deployment
+
+Web app and docs auto-deploy to Cloudflare Pages on every push to
+`main`. Three workflows under `.github/workflows/`:
+
+| File | Trigger | Effect |
+|---|---|---|
+| `ci.yml` | every push/PR | type-check + unit + Playwright |
+| `preview-web.yml` | PR | per-PR preview deployment, URL commented on the PR |
+| `deploy-web.yml` | push to `main` | production deployment |
+
+Required GitHub secrets: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`.
+First-time Pages project setup:
+
+```bash
+npx wrangler pages project create urdf-studio --production-branch=main
+```
+
+Custom domain (if your zone is already on Cloudflare): just add
+`urdf.example.com` under **Pages → urdf-studio → Custom domains**.
+CI config doesn't change.
+
+Step-by-step:
+[docs/development/deployment →](https://urdf.deyuf.org/docs/development/deployment.html)
 
 ---
 
 ## Releasing
 
-Publishing to the VS Code Marketplace is automated by [`.github/workflows/publish.yml`](.github/workflows/publish.yml). On every push to `main` the workflow:
+`.github/workflows/publish.yml` publishes to the VS Code Marketplace on
+every push to `main` whose `package.json#version` changed. The web app
+is continuously deployed; no version bump needed.
 
-1. Runs `check-types` and `test:unit` as a gate.
-2. Compares `package.json` `version` against the previous commit.
-3. If the version changed, packages a `.vsix`, publishes it via `vsce publish`, and creates a matching `v<version>` GitHub release with the `.vsix` attached.
-4. If the version is unchanged, skips publish (re-publishing the same version is rejected by the Marketplace anyway).
+To cut an extension release: bump `version`, commit, push to `main`.
 
-Cutting a release is therefore just **bump `version` in `package.json` and merge to `main`**. To force a re-run without a version bump, dispatch the workflow manually with the `force` input set to `true`.
-
-### One-time setup
-
-The workflow needs a `VSCE_PAT` repository secret containing an Azure DevOps Personal Access Token for the `deyuf` publisher with **Marketplace → Manage** scope. Create the token at https://dev.azure.com → User settings → Personal access tokens, then add it under **Settings → Secrets and variables → Actions → New repository secret**.
+More: [docs/development/releasing →](https://urdf.deyuf.org/docs/development/releasing.html)
 
 ---
 
-## License
+## Contributing & license
 
-[MIT](LICENSE)
+PRs welcome. Each PR triggers CI (typecheck + tests) and a Cloudflare
+Pages preview deployment with a URL commented on the PR.
+
+License: [MIT](LICENSE).

@@ -1,22 +1,40 @@
+---
+title: Overview
+---
+
 # URDF Studio
 
-URDF Studio inspects, visualizes and interacts with [URDF](http://wiki.ros.org/urdf) and [xacro](http://wiki.ros.org/xacro) robot models. The same codebase ships in two forms:
+A single TypeScript codebase that lets you inspect, visualize and drive
+ROS robot models — as a **VS Code extension** for in-editor previews, and
+as a **browser app** that runs entirely client-side.
 
-- **VS Code extension** — works on any `.urdf`, `.urdf.xacro` or `.xacro` file in your workspace.
-- **Web app** — runs entirely in the browser via the File System Access API. No server, no upload; everything stays on your machine.
+## What you can do with it
 
-## Pages
+| | |
+|---|---|
+| 🖥 **See the robot** | Three.js viewport with orbit/pan/zoom, preset cameras, fit-to-screen, visual + collision render modes. |
+| 🦾 **Drive joints** | Sliders and numeric inputs for every movable joint, respecting `<limit>` and `<mimic>`. |
+| 🤖 **Expand xacro** | Full `xacro:include`, `xacro:macro`, `xacro:arg`, `load_yaml` support — both in Node and in the browser. |
+| 📦 **Resolve `package://`** | Auto-discovers `package.xml` files in the workspace or chosen folder. |
+| 🧭 **Inspect** | Link tree, parent/child joints, mass, CoM, inertia tensor, mesh paths, tight bounding box. |
+| 🩺 **Validate** | URDF parse errors, missing meshes, non-positive-definite inertias, joint cycles — surfaced inline. |
+| 🛠 **Author** | Reachability sampling, never-colliding pair detection, SRDF authoring. |
+| 💾 **Persist** | Save pose, name bookmarks, export pose JSON, capture PNG screenshots. |
 
-- [Quickstart](./quickstart.html) — Open your first robot in under a minute.
-- [Features](./features.html) — Joints, render modes, frames, inertia, reachability, bookmarks.
-- [Architecture](./architecture.html) — How the VS Code host and the browser host share a single core.
-- [Development](./development.html) — Building, testing, deploying.
+## Which version do I want?
 
-## What you'll see
+- **You write robot descriptions in VS Code** → use the [extension](./quickstart/vscode.html).
+  Inline diagnostics, custom editor, language services.
+- **You want to share a preview** or open a model on someone else's machine
+  → use the [web app](./quickstart/web.html).
+  No install, runs in the browser, files never leave the device.
 
-A full Three.js viewport with orbit/pan/zoom controls, a joint panel with sliders for every movable joint, a render-mode toggle (visual / collision / both), a link tree, and a checks panel that flags malformed URDF, missing meshes, non-positive-definite inertia tensors, and unreachable links.
+Both expose the same feature set on top of the same parser, renderer and
+analyzer. See [Architecture](./architecture/) for how that's organised.
 
-## Source
+## Project layout
 
-- Repository: https://github.com/deyuf/urdf-studio
+- Source: <https://github.com/deyuf/urdf-studio>
+- VS Code Marketplace: [deyuf.urdf-studio](https://marketplace.visualstudio.com/items?itemName=deyuf.urdf-studio)
+- Web app: deployed at any static host (Cloudflare Pages reference deploy)
 - License: MIT
