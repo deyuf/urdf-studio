@@ -8,3 +8,4 @@ out/
 .vscode-test/
 *.log
 tmp-fr3/
+media/ui-audit/
