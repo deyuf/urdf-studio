@@ -156,8 +156,14 @@ body::before {
   display: flex;
   align-items: center;
   gap: var(--us-space-3);
-  padding: var(--us-space-3) var(--us-space-5);
-  min-height: 56px;
+  /* Generous side gutters that breathe more on wider viewports. */
+  padding: var(--us-space-3) clamp(var(--us-space-4), 2.5vw, var(--us-space-8));
+  min-height: 60px;
+  /* Cap the topbar's interactive content on ultra-wide screens so the
+     brand and actions don't drift to the corners of a 2K/4K monitor. */
+  max-width: 1800px;
+  margin: 0 auto;
+  width: 100%;
 }
 
 .brand {
@@ -344,8 +350,10 @@ textarea {
 #app .subtoolbar {
   border-bottom: 1px solid var(--us-border);
   background: color-mix(in srgb, var(--us-bg-elevated) 60%, transparent);
-  padding: 8px 20px;
-  gap: 10px;
+  /* Scale gutters with viewport so the toolbar doesn't look orphaned on
+     ultra-wide screens, but stays compact on a laptop. */
+  padding: 10px clamp(var(--us-space-4), 2.5vw, var(--us-space-8));
+  gap: 12px;
 }
 
 #app .toolbar button,
@@ -386,9 +394,19 @@ textarea {
   color: var(--us-fg-muted);
 }
 
+/* Scale the side panel with the viewport. On a laptop (1280–1600px) it
+   stays near the renderer's default 360–390px. On a 1080p or 1440p
+   monitor it grows to ~420–460px. On a 4K display it caps at 520px so
+   the viewport stays the centre of attention. */
+#app .workspace {
+  grid-template-columns: minmax(0, 1fr) clamp(340px, 24vw, 520px);
+}
+
 #app .side {
   border-left: 1px solid var(--us-border);
   background: var(--us-bg-elevated);
+  /* Match the new row height of .tabs (40px) below. */
+  grid-template-rows: 40px minmax(0, 1fr);
 }
 
 #app .tabs {
@@ -427,6 +445,179 @@ textarea {
   height: 2px;
   background: var(--us-accent);
   border-radius: 2px 2px 0 0;
+}
+
+/* More breathing room inside the side panels at higher resolutions. */
+#app .panel {
+  padding: clamp(12px, 1vw, 18px) clamp(14px, 1.2vw, 22px);
+}
+
+/* Metric tiles (Links / Joints / Movable counts). Bigger numbers on
+   wide screens, with a subtle elevation. */
+#app .summary {
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+#app .metric {
+  padding: 12px 14px;
+  border-radius: var(--us-radius-md);
+  background: var(--us-surface);
+  box-shadow: var(--us-shadow-sm);
+  text-align: center;
+}
+
+#app .metric b {
+  font-size: clamp(20px, 1.4vw, 26px);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--us-fg);
+}
+
+#app .metric span {
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--us-fg-muted);
+}
+
+/* Xacro-args + details cards. */
+#app .xacro-args,
+#app details {
+  border-radius: var(--us-radius-md);
+  border-color: var(--us-border);
+  background: var(--us-surface);
+  box-shadow: var(--us-shadow-sm);
+}
+
+#app details {
+  margin-bottom: 10px;
+}
+
+#app summary {
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--us-fg);
+  user-select: none;
+}
+
+#app summary:hover {
+  background: var(--us-bg-subtle);
+  border-radius: var(--us-radius-md) var(--us-radius-md) 0 0;
+}
+
+#app .detail-body {
+  padding: 4px 12px 12px;
+  gap: 10px;
+}
+
+/* Joint row: give the joint name a bit more room and the slider some
+   real estate when we have it. Font scales lightly. */
+#app .joint-row {
+  grid-template-columns: minmax(110px, 1fr) minmax(120px, 1.8fr) 84px;
+  font-size: clamp(12px, 0.9vw, 13.5px);
+  gap: 12px;
+}
+
+#app .joint-row .joint-name {
+  font-weight: 500;
+  color: var(--us-fg);
+}
+
+#app .joint-row input[type='range'] {
+  height: 24px;
+  background: transparent;
+}
+
+#app .joint-row input[type='number'] {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The joint-filter (search box) at the top of the joints panel. */
+#app .joint-filter {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  border-radius: var(--us-radius-md);
+  background: var(--us-bg-subtle);
+}
+
+#app .joint-filter input[type='search'] {
+  width: 100%;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: var(--us-radius-sm);
+  border: 1px solid var(--us-border);
+  background: var(--us-surface);
+}
+
+#app .joint-filter input[type='search']:focus {
+  outline: none;
+  border-color: var(--us-accent);
+  box-shadow: 0 0 0 3px var(--us-accent-soft);
+}
+
+#app .joint-filter label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--us-fg-muted);
+  white-space: nowrap;
+}
+
+/* Inspector grid — looks better with a bit more vertical air. */
+#app .inspector-grid {
+  grid-template-columns: clamp(96px, 7vw, 132px) minmax(0, 1fr);
+  gap: 8px 14px;
+  font-size: 13px;
+}
+
+#app .inspector-grid .value {
+  color: var(--us-fg);
+}
+
+/* HUD over the 3D viewport — refined glass card. */
+#app .hud {
+  left: 14px;
+  bottom: 14px;
+  padding: 8px 14px;
+  border-radius: var(--us-radius-pill);
+  background: color-mix(in srgb, var(--us-surface) 78%, transparent);
+  border-color: color-mix(in srgb, var(--us-border-strong) 40%, transparent);
+  backdrop-filter: blur(10px) saturate(180%);
+  font-size: 12.5px;
+  color: var(--us-fg-muted);
+  box-shadow: var(--us-shadow-sm);
+}
+
+/* Link tree — the Links tab. */
+#app .panel.tree {
+  font-size: clamp(12px, 0.9vw, 13.5px);
+}
+
+/* Checks panel — keep the diagnostic list legible. */
+#app #panel-checks ul,
+#app #panel-checks ol {
+  padding-left: 20px;
+}
+
+#app #panel-checks li {
+  margin: 6px 0;
+  font-size: 13px;
+}
+
+#app #panel-checks code {
+  font-family: var(--us-font-mono);
+  font-size: 0.88em;
+  background: var(--us-bg-subtle);
+  padding: 1px 5px;
+  border-radius: 4px;
 }
 
 #app input[type='range'] {
