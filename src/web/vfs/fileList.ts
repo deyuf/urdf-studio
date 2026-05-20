@@ -23,7 +23,9 @@ export class FileListVfs implements BrowserVfs {
   private readonly tree: DirNode = { kind: 'dir', children: new Map() };
   private readonly files = new Map<string, File>();
   private readonly textCache = new Map<string, string>();
-  private readonly blobUrls = new Map<string, string>();
+  // See DirectoryHandleVfs for the two-generation strategy these maps back.
+  private currentBlobs = new Map<string, string>();
+  private previousBlobs = new Map<string, string>();
 
   constructor(files: FileList | File[]) {
     const list = files instanceof FileList ? Array.from(files) : files;
@@ -136,21 +138,48 @@ export class FileListVfs implements BrowserVfs {
   }
 
   async getBlobUrl(absPath: string): Promise<string> {
-    const cached = this.blobUrls.get(absPath);
+    const cached = this.currentBlobs.get(absPath);
     if (cached) {
       return cached;
     }
+    const carryOver = this.previousBlobs.get(absPath);
+    if (carryOver) {
+      this.currentBlobs.set(absPath, carryOver);
+      this.previousBlobs.delete(absPath);
+      return carryOver;
+    }
     const file = this.requireFile(absPath);
     const url = URL.createObjectURL(file);
-    this.blobUrls.set(absPath, url);
+    this.currentBlobs.set(absPath, url);
     return url;
   }
 
-  releaseBlobs(): void {
-    for (const url of this.blobUrls.values()) {
+  beginGeneration(): void {
+    for (const url of this.previousBlobs.values()) {
       URL.revokeObjectURL(url);
     }
-    this.blobUrls.clear();
+    this.previousBlobs = this.currentBlobs;
+    this.currentBlobs = new Map();
+  }
+
+  commitGeneration(): void {
+    for (const [absPath, url] of this.previousBlobs) {
+      if (this.currentBlobs.get(absPath) !== url) {
+        URL.revokeObjectURL(url);
+      }
+    }
+    this.previousBlobs.clear();
+  }
+
+  releaseBlobs(): void {
+    for (const url of this.currentBlobs.values()) {
+      URL.revokeObjectURL(url);
+    }
+    for (const url of this.previousBlobs.values()) {
+      URL.revokeObjectURL(url);
+    }
+    this.currentBlobs.clear();
+    this.previousBlobs.clear();
   }
 
   allFiles(): string[] {

@@ -133,9 +133,10 @@ export class WebHost {
       this.active.metadata = metadata;
       this.active.semanticSourceFile = semantic.sourceFile;
 
-      // Free any blob URLs from the previous robot then mint fresh ones for the
-      // meshes this robot needs.
-      vfs.releaseBlobs();
+      // Open a new blob-URL generation. The prior generation stays alive until
+      // the renderer signals geometryLoaded, so any in-flight asset fetches
+      // started against the previous robot can still complete.
+      vfs.beginGeneration();
       this.urlMap.clear();
       await this.preallocateMeshUrls(metadata, vfs);
 
@@ -252,6 +253,14 @@ export class WebHost {
         await this.handleWriteDisableCollisions(message.entries ?? []);
         break;
       case 'geometryLoaded':
+        // The renderer has finished consuming the meshes from the in-flight
+        // load (manager.onLoad waits for every queued asset). Safe to revoke
+        // the previous-generation blob URLs now.
+        try {
+          requireActiveVfs().commitGeneration();
+        } catch {
+          // VFS may have been swapped before this ack arrived; nothing to do.
+        }
         this.setStatus({
           type: 'info',
           message: `Geometry ready: ${message.linkCount ?? 0} links, ${message.jointCount ?? 0} joints, ${message.movableJointCount ?? 0} movable.`

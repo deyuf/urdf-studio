@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<robot name="leak_robot_alt">
+  <link name="base">
+    <visual>
+      <geometry>
+        <mesh filename="package://leak_test/meshes/other.stl"/>
+      </geometry>
+    </visual>
+  </link>
+  <link name="tip">
+    <visual>
+      <geometry>
+        <mesh filename="package://leak_test/meshes/other.stl"/>
+      </geometry>
+    </visual>
+  </link>
+  <joint name="hinge" type="revolute">
+    <parent link="base"/>
+    <child link="tip"/>
+    <origin xyz="0 0 1"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-1.57" upper="1.57" effort="1" velocity="1"/>
+  </joint>
+</robot>

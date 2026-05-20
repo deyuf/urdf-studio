@@ -22,10 +22,24 @@ export interface BrowserVfs {
   /** Eagerly populate the readTextSync cache. */
   warmTextCache(absPaths: string[]): Promise<void>;
 
-  /** Return a transient URL the browser can fetch. Cached until releaseBlobs(). */
+  /** Return a transient URL the browser can fetch. Cached within the current
+   *  generation. Revoked when the generation containing it is committed away. */
   getBlobUrl(absPath: string): Promise<string>;
 
-  /** Drop and revoke every blob URL handed out so far. */
+  /** Mark the start of a new load. The previous generation (if any uncommitted
+   *  one is still around from a load that never completed) is revoked first;
+   *  the current generation moves to "previous" and a fresh "current" begins.
+   *  Two generations are kept alive simultaneously so in-flight asset fetches
+   *  initiated against the prior load can finish without 404s. */
+  beginGeneration(): void;
+
+  /** Mark the current load as fully consumed by the renderer. The previous
+   *  generation is revoked here, with any URLs reused by the current generation
+   *  preserved (we promote URLs across generations to avoid revoke/recreate
+   *  churn when consecutive loads share meshes). */
+  commitGeneration(): void;
+
+  /** Revoke every blob URL across all generations. Used on dispose. */
   releaseBlobs(): void;
 
   /** Enumerate every indexed file path (used by the file picker). */

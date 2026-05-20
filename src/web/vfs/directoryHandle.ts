@@ -43,7 +43,12 @@ export class DirectoryHandleVfs implements BrowserVfs {
   private readonly files = new Map<string, IndexedFile>();
   private readonly dirs = new Map<string, IndexedDir>();
   private readonly textCache = new Map<string, string>();
-  private readonly blobUrls = new Map<string, string>();
+  // Two-generation blob URL cache. currentBlobs holds URLs for the in-flight
+  // load; previousBlobs holds URLs from the prior load, kept alive until the
+  // renderer confirms it has finished consuming them. See beginGeneration /
+  // commitGeneration.
+  private currentBlobs = new Map<string, string>();
+  private previousBlobs = new Map<string, string>();
 
   private constructor(rootHandle: FileSystemDirectoryHandle, rootPath: string) {
     this.label = rootHandle.name;
@@ -156,21 +161,55 @@ export class DirectoryHandleVfs implements BrowserVfs {
   }
 
   async getBlobUrl(absPath: string): Promise<string> {
-    const cached = this.blobUrls.get(absPath);
+    const cached = this.currentBlobs.get(absPath);
     if (cached) {
       return cached;
     }
+    // Promote a URL from the previous generation if this mesh is reused —
+    // common during xacro-args reloads where most meshes are unchanged.
+    const carryOver = this.previousBlobs.get(absPath);
+    if (carryOver) {
+      this.currentBlobs.set(absPath, carryOver);
+      this.previousBlobs.delete(absPath);
+      return carryOver;
+    }
     const file = await this.getFile(absPath);
     const url = URL.createObjectURL(file);
-    this.blobUrls.set(absPath, url);
+    this.currentBlobs.set(absPath, url);
     return url;
   }
 
-  releaseBlobs(): void {
-    for (const url of this.blobUrls.values()) {
+  beginGeneration(): void {
+    // Any prior-generation URLs still around mean the previous load was
+    // abandoned (failed or interrupted) — revoke them so memory does not
+    // accumulate across botched reloads.
+    for (const url of this.previousBlobs.values()) {
       URL.revokeObjectURL(url);
     }
-    this.blobUrls.clear();
+    this.previousBlobs = this.currentBlobs;
+    this.currentBlobs = new Map();
+  }
+
+  commitGeneration(): void {
+    for (const [absPath, url] of this.previousBlobs) {
+      // Only revoke URLs that did not get carried over into the current
+      // generation. Promoted URLs are still referenced by currentBlobs.
+      if (this.currentBlobs.get(absPath) !== url) {
+        URL.revokeObjectURL(url);
+      }
+    }
+    this.previousBlobs.clear();
+  }
+
+  releaseBlobs(): void {
+    for (const url of this.currentBlobs.values()) {
+      URL.revokeObjectURL(url);
+    }
+    for (const url of this.previousBlobs.values()) {
+      URL.revokeObjectURL(url);
+    }
+    this.currentBlobs.clear();
+    this.previousBlobs.clear();
   }
 
   allFiles(): string[] {

@@ -6,6 +6,7 @@ import path from 'node:path';
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const DIST_WEB = path.join(REPO_ROOT, 'dist-web');
 const FIXTURE_DIR = path.join(REPO_ROOT, 'test', 'fixtures');
+const LEAK_FIXTURE_DIR = path.join(REPO_ROOT, 'test', 'fixtures', 'leak_test');
 
 // Files we will inject via the webkitdirectory fallback path. Browsers strip
 // File System Access API from headless contexts unless granted explicit user
@@ -89,6 +90,87 @@ test.describe('web shell', () => {
     await expect(page.locator('#file-select')).toBeDisabled();
     await expect(page.locator('canvas#viewport')).toBeVisible();
     await expect(page.locator('#hud')).toContainText(/Waiting for robot/i);
+  });
+
+  test('reloading the same model does not leak blob URLs', async ({ page, browserName }) => {
+    test.skip(browserName !== 'chromium', 'Headless Firefox does not honour webkitdirectory in CI.');
+
+    // Instrument URL.createObjectURL / revokeObjectURL before app.js runs so
+    // we can count net live blob URLs across multiple loads. The two-generation
+    // strategy guarantees the live count returns to (current URLs only) after
+    // each load completes.
+    await page.addInitScript(() => {
+      const created = new Set<string>();
+      const win = window as unknown as {
+        __blobTracker: { live(): number; created: number; revoked: number };
+      };
+      const origCreate = URL.createObjectURL.bind(URL);
+      const origRevoke = URL.revokeObjectURL.bind(URL);
+      let createdCount = 0;
+      let revokedCount = 0;
+      URL.createObjectURL = (obj: Blob | MediaSource) => {
+        const url = origCreate(obj);
+        created.add(url);
+        createdCount++;
+        return url;
+      };
+      URL.revokeObjectURL = (url: string) => {
+        if (created.delete(url)) {
+          revokedCount++;
+        }
+        origRevoke(url);
+      };
+      win.__blobTracker = {
+        live: () => created.size,
+        get created() { return createdCount; },
+        get revoked() { return revokedCount; }
+      };
+    });
+
+    await page.goto(server.url);
+    await page.setInputFiles('#file-input', LEAK_FIXTURE_DIR);
+    await expect(page.locator('#file-select')).toBeEnabled({ timeout: 10_000 });
+    const targetValue = await page.locator('#file-select option').evaluateAll(options => {
+      const target = options.find(option => /(^|\/)robot\.urdf$/.test((option as HTMLOptionElement).value));
+      return target ? (target as HTMLOptionElement).value : '';
+    });
+    expect(targetValue).not.toEqual('');
+
+    const altTargetValue = await page.locator('#file-select option').evaluateAll(options => {
+      const target = options.find(option => /(^|\/)robot_alt\.urdf$/.test((option as HTMLOptionElement).value));
+      return target ? (target as HTMLOptionElement).value : '';
+    });
+    expect(altTargetValue).not.toEqual('');
+
+    // First load — should mint a blob URL for box.stl.
+    await page.locator('#file-select').selectOption(targetValue);
+    await expect(page.locator('[data-joint-slider="hinge"]')).toBeVisible({ timeout: 15_000 });
+    await page.waitForTimeout(500);
+    const afterFirst = await page.evaluate(() => (window as unknown as { __blobTracker: { live(): number } }).__blobTracker.live());
+
+    // Alternate between two URDFs four times. Each switch generates one fresh
+    // URL and revokes the previous-generation one. Live count must stay bounded
+    // (1 mesh per load), not grow linearly.
+    for (let i = 0; i < 4; i++) {
+      const next = i % 2 === 0 ? altTargetValue : targetValue;
+      await page.locator('#file-select').selectOption('');
+      await page.locator('#file-select').selectOption(next);
+      await expect(page.locator('[data-joint-slider="hinge"]')).toBeVisible({ timeout: 15_000 });
+      await page.waitForTimeout(500);
+    }
+    const afterMany = await page.evaluate(() => {
+      const tracker = (window as unknown as { __blobTracker: { live(): number; created: number; revoked: number } }).__blobTracker;
+      return { live: tracker.live(), created: tracker.created, revoked: tracker.revoked };
+    });
+
+    // Five loads, never more than one mesh URL alive at a time — the live
+    // count must not have grown by more than ~1 from the baseline single load.
+    expect(afterMany.live - afterFirst).toBeLessThanOrEqual(1);
+    // Revocations must have happened — proves the generation logic is wired.
+    expect(afterMany.revoked).toBeGreaterThanOrEqual(2);
+    // And many more URLs were created than are alive — proves we are not just
+    // never allocating in the first place.
+    expect(afterMany.created).toBeGreaterThan(afterMany.live);
   });
 });
 
