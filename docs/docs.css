@@ -8,20 +8,24 @@
 :root {
   color-scheme: light dark;
 
-  --us-bg: #ffffff;
-  --us-bg-elevated: #f8f9fa;
-  --us-bg-subtle: #f1f3f4;
-  --us-surface: #ffffff;
-  --us-fg: #1f1f1f;
-  --us-fg-muted: #5f6368;
-  --us-fg-faint: #80868b;
-  --us-border: #e8eaed;
-  --us-border-strong: #dadce0;
-  --us-accent: #1a73e8;
-  --us-accent-hover: #1967d2;
-  --us-accent-soft: rgba(26, 115, 232, 0.08);
-  --us-on-accent: #ffffff;
-  --us-code-bg: #f6f8fa;
+  --us-bg:            light-dark(#ffffff, #131314);
+  --us-bg-elevated:   light-dark(#f8f9fa, #1e1f20);
+  --us-bg-subtle:     light-dark(#f1f3f4, #28292a);
+  --us-surface:       light-dark(#ffffff, #1e1f20);
+  --us-fg:            light-dark(#1f1f1f, #e3e3e3);
+  --us-fg-muted:      light-dark(#5f6368, #9aa0a6);
+  --us-fg-faint:      light-dark(#80868b, #80868b);
+  --us-border:        light-dark(#e8eaed, #3c4043);
+  --us-border-strong: light-dark(#dadce0, #5f6368);
+  --us-accent:        light-dark(#1a73e8, #8ab4f8);
+  --us-accent-hover:  light-dark(#1967d2, #aecbfa);
+  --us-accent-soft:   light-dark(rgba(26, 115, 232, 0.08), rgba(138, 180, 248, 0.12));
+  --us-on-accent:     light-dark(#ffffff, #062e6f);
+  --us-code-bg:       light-dark(#f6f8fa, #1a1b1c);
+  --us-shadow-sm: light-dark(
+    0 1px 2px rgba(60, 64, 67, 0.08), 0 1px 3px 1px rgba(60, 64, 67, 0.05),
+    0 1px 2px rgba(0, 0, 0, 0.3),     0 1px 3px 1px rgba(0, 0, 0, 0.15)
+  );
 
   --us-font-sans: 'Google Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
   --us-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -30,29 +34,15 @@
   --us-radius-md: 10px;
   --us-radius-lg: 16px;
   --us-radius-pill: 999px;
-
-  --us-shadow-sm: 0 1px 2px rgba(60, 64, 67, 0.08), 0 1px 3px 1px rgba(60, 64, 67, 0.05);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --us-bg: #131314;
-    --us-bg-elevated: #1e1f20;
-    --us-bg-subtle: #28292a;
-    --us-surface: #1e1f20;
-    --us-fg: #e3e3e3;
-    --us-fg-muted: #9aa0a6;
-    --us-fg-faint: #80868b;
-    --us-border: #3c4043;
-    --us-border-strong: #5f6368;
-    --us-accent: #8ab4f8;
-    --us-accent-hover: #aecbfa;
-    --us-accent-soft: rgba(138, 180, 248, 0.12);
-    --us-on-accent: #062e6f;
-    --us-code-bg: #1a1b1c;
-    --us-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 3px 1px rgba(0, 0, 0, 0.15);
-  }
-}
+/* Honour an explicit data-theme override set by the web app (the docs
+   site is served alongside the app and reuses the same theme choice
+   when navigated within the same origin, but the toggle button itself
+   only lives in the app — that's fine: the docs follow the OS until
+   the user visits the app, then both align). */
+:root[data-theme='light'] { color-scheme: light; }
+:root[data-theme='dark']  { color-scheme: dark; }
 
 * {
   box-sizing: border-box;
@@ -75,17 +65,11 @@ body::before {
   inset: 0;
   pointer-events: none;
   z-index: -1;
+  --grad-1: light-dark(rgba(26, 115, 232, 0.06), rgba(138, 180, 248, 0.06));
+  --grad-2: light-dark(rgba(168, 67, 233, 0.04), rgba(197, 138, 248, 0.04));
   background:
-    radial-gradient(1200px 600px at 8% -20%, rgba(26, 115, 232, 0.06), transparent 60%),
-    radial-gradient(900px 500px at 100% 0%, rgba(168, 67, 233, 0.04), transparent 60%);
-}
-
-@media (prefers-color-scheme: dark) {
-  body::before {
-    background:
-      radial-gradient(1200px 600px at 8% -20%, rgba(138, 180, 248, 0.06), transparent 60%),
-      radial-gradient(900px 500px at 100% 0%, rgba(197, 138, 248, 0.04), transparent 60%);
-  }
+    radial-gradient(1200px 600px at 8% -20%, var(--grad-1), transparent 60%),
+    radial-gradient(900px 500px at 100% 0%, var(--grad-2), transparent 60%);
 }
 
 a {
@@ -130,14 +114,8 @@ a:hover {
   width: 28px;
   height: 28px;
   border-radius: var(--us-radius-sm);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 0 0 1px light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.08));
   flex-shrink: 0;
-}
-
-@media (prefers-color-scheme: dark) {
-  .docs-brand-mark {
-    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
-  }
 }
 
 .docs-nav-top {
@@ -274,6 +252,48 @@ a:hover {
   letter-spacing: -0.015em;
   line-height: 1.25;
   scroll-margin-top: 80px;
+}
+
+/* ===== Scroll-driven entry animations =====
+   Each h2 / h3 fades and rises slightly as it enters the viewport. Uses
+   the experimental `animation-timeline: view()` from CSS Scroll-Driven
+   Animations (Chrome 115+). Browsers without it just see static headings
+   — the feature is purely decorative.
+   prefers-reduced-motion below disables the animation everywhere. */
+
+@keyframes docs-section-enter {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@supports (animation-timeline: view()) {
+  .docs-article h2,
+  .docs-article h3 {
+    animation: docs-section-enter linear both;
+    animation-timeline: view();
+    animation-range: entry 0% entry 40%;
+  }
+  .docs-article > p,
+  .docs-article > table,
+  .docs-article > pre,
+  .docs-article > blockquote {
+    animation: docs-section-enter linear both;
+    animation-timeline: view();
+    animation-range: entry 0% entry 30%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  @supports (animation-timeline: view()) {
+    .docs-article h2,
+    .docs-article h3,
+    .docs-article > p,
+    .docs-article > table,
+    .docs-article > pre,
+    .docs-article > blockquote {
+      animation: none;
+    }
+  }
 }
 
 .docs-article h1 {

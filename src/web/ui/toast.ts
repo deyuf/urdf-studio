@@ -83,9 +83,8 @@ export function mountToast(): ToastApi {
 
     container.appendChild(node);
     active.push(entry);
-
-    // Trigger entrance animation on next frame.
-    requestAnimationFrame(() => node.classList.add('toast-entered'));
+    // No JS-driven entrance class — @starting-style in web.css handles the
+    // fade/translate-in transition when the node is first connected.
   }
 
   function clear(): void {

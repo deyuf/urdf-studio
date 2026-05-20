@@ -8,6 +8,7 @@ import type { BrowserVfs } from '../vfs/types';
 import type { WebHost, HostStatus } from '../host';
 import { mountOnboarding, shouldShowOnboarding } from './onboarding';
 import { mountToast } from './toast';
+import { mountThemeSwitcher } from './theme';
 
 const URDF_PATTERNS = /\.(urdf|xacro|urdf\.xacro)$/i;
 
@@ -54,6 +55,7 @@ export class AppShell {
             <option value="">No folder loaded</option>
           </select>
           <a id="docs-link" class="ghost-link" href="./docs/" title="Open documentation" target="_blank" rel="noopener">Docs</a>
+          <div id="theme-mount" class="theme-mount"></div>
           <button id="help-btn" class="ghost" aria-label="Show onboarding tour" title="Show the onboarding tour">?</button>
           <button id="settings-btn" class="ghost" aria-label="Settings">⚙</button>
         </div>
@@ -127,6 +129,9 @@ export class AppShell {
     });
     settingsBtn.addEventListener('click', () => this.openSettings());
     helpBtn.addEventListener('click', () => this.onboarding.open());
+
+    const themeMount = document.getElementById('theme-mount') as HTMLElement;
+    mountThemeSwitcher(themeMount);
   }
 
   private async handleOpenDirectory(): Promise<void> {
