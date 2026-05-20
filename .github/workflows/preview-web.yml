@@ -1,0 +1,60 @@
+name: Preview web app on Cloudflare Pages
+
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'public/**'
+      - 'media/**'
+      - 'docs/**'
+      - 'esbuild.mjs'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig.json'
+
+concurrency:
+  group: preview-web-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+      deployments: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build web bundle and docs
+        run: |
+          npm run web:build
+          npm run docs:build
+
+      - name: Deploy preview to Cloudflare Pages
+        id: pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy dist-web --project-name=urdf-studio --branch=pr-${{ github.event.pull_request.number }}
+
+      - name: Comment preview URL on PR
+        if: success()
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: cloudflare-pages-preview
+          message: |
+            ### 🚀 Cloudflare Pages preview
+            Branch alias: `pr-${{ github.event.pull_request.number }}.urdf-studio.pages.dev`
+            Deployment ID: `${{ steps.pages.outputs.deployment-url }}`
+            (Refresh this comment after a fresh deploy.)

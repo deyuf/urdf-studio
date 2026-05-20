@@ -40,6 +40,7 @@ export class AppShell {
           <select id="file-select" disabled>
             <option value="">No folder loaded</option>
           </select>
+          <a id="docs-link" class="ghost-link" href="./docs/" title="Open documentation" target="_blank" rel="noopener">Docs</a>
           <button id="settings-btn" class="ghost" aria-label="Settings">⚙</button>
         </div>
       </div>

@@ -114,6 +114,23 @@ button.ghost:hover {
   background: var(--vscode-toolbar-hoverBackground);
 }
 
+a.ghost-link {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 9px;
+  font: inherit;
+  color: var(--vscode-foreground);
+  background: transparent;
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 4px;
+  text-decoration: none;
+}
+
+a.ghost-link:hover {
+  background: var(--vscode-toolbar-hoverBackground);
+}
+
 .topbar-status {
   padding: 4px 12px 6px;
   font-size: 12px;
