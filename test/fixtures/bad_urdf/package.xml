@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>bad_urdf</name>
+  <version>0.0.1</version>
+  <description>Fixture with a deliberate diagnostic.</description>
+  <maintainer email="noreply@example.com">URDF Studio</maintainer>
+  <license>MIT</license>
+</package>

@@ -1,7 +1,6 @@
-import { promises as fs } from 'node:fs';
-import path from 'node:path';
 import YAML from 'yaml';
 import { directChildren, parseXml } from './xml';
+import { getCoreIo } from './io';
 import type { DisableCollisionEntry, PackageMap, SemanticGroup, SemanticMetadata, SemanticState, StudioDiagnostic } from './types';
 
 interface RawGroup {
@@ -10,6 +9,7 @@ interface RawGroup {
 }
 
 export async function loadSemanticMetadata(files: string[], packages: PackageMap): Promise<SemanticMetadata> {
+  const io = getCoreIo();
   const discoveredFiles = files.length > 0 ? files : await findDefaultSemanticFiles(packages);
   const groups = new Map<string, SemanticGroup>();
   const states: SemanticState[] = [];
@@ -18,9 +18,9 @@ export async function loadSemanticMetadata(files: string[], packages: PackageMap
   let sourceFile: string | undefined;
 
   for (const file of discoveredFiles) {
-    const extension = path.extname(file).toLowerCase();
+    const extension = io.extname(file).toLowerCase();
     try {
-      const content = await fs.readFile(file, 'utf8');
+      const content = await io.readText(file);
       if (extension === '.srdf') {
         const parsed = parseSrdf(content, file);
         for (const group of parsed.groups) {
@@ -143,18 +143,22 @@ function parseInitialPositionsYaml(content: string, file: string): Pick<Semantic
 }
 
 async function findDefaultSemanticFiles(packages: PackageMap): Promise<string[]> {
+  const io = getCoreIo();
   const result: string[] = [];
   for (const entry of Object.values(packages)) {
-    const configDir = path.join(entry.path, 'config');
-    let files: string[];
+    const configDir = io.join(entry.path, 'config');
+    let entries: Awaited<ReturnType<typeof io.readdir>>;
     try {
-      files = await fs.readdir(configDir);
+      entries = await io.readdir(configDir);
     } catch {
       continue;
     }
-    for (const file of files) {
-      if (file.endsWith('.srdf') || file === 'initial_positions.yaml') {
-        result.push(path.join(configDir, file));
+    for (const item of entries) {
+      if (item.isDirectory) {
+        continue;
+      }
+      if (item.name.endsWith('.srdf') || item.name === 'initial_positions.yaml') {
+        result.push(io.join(configDir, item.name));
       }
     }
   }
@@ -187,7 +191,6 @@ export function mergeDisableCollisionsIntoSrdf(content: string, entries: Disable
   }
 
   const existing = new Set<string>();
-  // Collect existing disable_collisions to avoid duplicates.
   const existingRegex = /<disable_collisions\s+([^/>]*)\/>/g;
   let match: RegExpExecArray | null;
   while ((match = existingRegex.exec(content)) !== null) {

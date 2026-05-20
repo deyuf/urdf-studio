@@ -1,6 +1,7 @@
 node_modules/
 test-results/
 dist/
+dist-web/
 out/
 *.vsix
 .DS_Store

@@ -136,7 +136,11 @@
     "test:unit": "node esbuild.mjs --tests && node --test dist/test/*.test.cjs",
     "test:renderer": "npm run compile && playwright test",
     "test": "npm run test:unit",
-    "vsce:package": "npm run package && vsce package"
+    "vsce:package": "npm run package && vsce package",
+    "web:dev": "node esbuild.mjs --web --serve",
+    "web:build": "npm run check-types && node esbuild.mjs --web --production && npm run docs:build",
+    "docs:build": "node scripts/build-docs.mjs",
+    "docs:watch": "node scripts/build-docs.mjs --watch"
   },
   "dependencies": {
     "@xmldom/xmldom": "^0.8.11",
@@ -156,6 +160,7 @@
     "@vscode/test-electron": "^2.5.2",
     "@vscode/vsce": "^3.9.1",
     "esbuild": "^0.28.0",
+    "marked": "^18.0.4",
     "typescript": "^6.0.3"
   }
 }
