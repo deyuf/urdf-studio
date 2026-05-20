@@ -1,8 +1,7 @@
-import { existsSync } from 'node:fs';
-import path from 'node:path';
 import { directChildren, firstDirectChild, lineForNeedle, parseXml, readNumber, readVector } from './xml';
 import { resolveModelUriToFile } from './packageMap';
 import { inertiaEigenvalues } from './inertia';
+import { getCoreIo } from './io';
 import type { InertialInfo, JointInfo, LinkInfo, LinkTreeNode, MimicInfo, PackageMap, RobotMetadata, StudioDiagnostic } from './types';
 
 export { inertiaEigenvalues, ellipsoidSemiAxes } from './inertia';
@@ -10,6 +9,7 @@ export { inertiaEigenvalues, ellipsoidSemiAxes } from './inertia';
 const MOVABLE_JOINT_TYPES = new Set(['revolute', 'continuous', 'prismatic', 'floating', 'planar']);
 
 export function analyzeUrdf(urdf: string, sourcePath: string, packages: PackageMap): RobotMetadata {
+  const io = getCoreIo();
   const diagnostics: StudioDiagnostic[] = [];
   let doc: Document;
   try {
@@ -19,8 +19,8 @@ export function analyzeUrdf(urdf: string, sourcePath: string, packages: PackageM
   }
 
   const robot = doc.documentElement;
-  const robotName = robot.getAttribute('name') || path.basename(sourcePath);
-  const documentDir = path.dirname(sourcePath);
+  const robotName = robot.getAttribute('name') || io.basename(sourcePath);
+  const documentDir = io.dirname(sourcePath);
   const links: Record<string, LinkInfo> = {};
   const joints: Record<string, JointInfo> = {};
   const childToParentJoint = new Map<string, string>();
@@ -130,7 +130,7 @@ export function analyzeUrdf(urdf: string, sourcePath: string, packages: PackageM
         return [];
       }
       const resolved = resolveModelUriToFile(filename, packages, documentDir);
-      const exists = resolved.resolvedPath ? existsSync(resolved.resolvedPath) : false;
+      const exists = resolved.resolvedPath ? io.existsSync(resolved.resolvedPath) : false;
       const line = lineForNeedle(urdf, filename);
       if (filename.startsWith('package://') && !resolved.packageName) {
         diagnostics.push({ severity: 'error', message: `Mesh URI "${filename}" has no package name.`, code: 'mesh.packageMalformed', target: linkName, file: sourcePath, line });

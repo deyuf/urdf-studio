@@ -1,8 +1,6 @@
-import { promises as fs, readFileSync } from 'node:fs';
-import path from 'node:path';
-import { JSDOM } from 'jsdom';
 import YAML from 'yaml';
 import { XacroParser } from '../vendor/xacro-parser/XacroParser.js';
+import { getCoreIo } from './io';
 import type { PackageMap, RenderedRobotDocument, StudioDiagnostic, XacroArgument } from './types';
 
 type LogFn = (message: string) => void;
@@ -18,7 +16,8 @@ export async function renderRobotDocument(
   packages: PackageMap,
   xacroArguments: Record<string, unknown>
 ): Promise<RenderedRobotDocument> {
-  const content = await fs.readFile(sourcePath, 'utf8');
+  const io = getCoreIo();
+  const content = await io.readText(sourcePath);
   const isXacro = sourcePath.endsWith('.xacro') || sourcePath.endsWith('.urdf.xacro');
   if (!isXacro) {
     return {
@@ -40,17 +39,17 @@ export async function renderXacroFile(
   packages: PackageMap,
   xacroArguments: Record<string, unknown>
 ): Promise<RenderedRobotDocument> {
+  const io = getCoreIo();
   const diagnostics: StudioDiagnostic[] = [];
   const includedFiles = new Set<string>();
-  const window = new JSDOM('<root/>', { contentType: 'text/xml' }).window;
-  const previousDomParser = (globalThis as { DOMParser?: typeof window.DOMParser }).DOMParser;
-  const previousXmlSerializer = (globalThis as { XMLSerializer?: typeof window.XMLSerializer }).XMLSerializer;
-  (globalThis as { DOMParser?: typeof window.DOMParser }).DOMParser = window.DOMParser;
-  (globalThis as { XMLSerializer?: typeof window.XMLSerializer }).XMLSerializer = window.XMLSerializer;
+  const previousDomParser = (globalThis as { DOMParser?: typeof DOMParser }).DOMParser;
+  const previousXmlSerializer = (globalThis as { XMLSerializer?: typeof XMLSerializer }).XMLSerializer;
+  (globalThis as { DOMParser?: typeof DOMParser }).DOMParser = io.DOMParser as unknown as typeof DOMParser;
+  (globalThis as { XMLSerializer?: typeof XMLSerializer }).XMLSerializer = io.XMLSerializer as unknown as typeof XMLSerializer;
 
   try {
     const xml = await parseXacroWithRecovery(sourcePath, content, packages, xacroArguments, diagnostics, includedFiles);
-    const serializer = new window.XMLSerializer();
+    const serializer = new io.XMLSerializer();
     return {
       sourcePath,
       format: 'xacro',
@@ -77,9 +76,8 @@ export async function renderXacroFile(
       diagnostics
     };
   } finally {
-    (globalThis as { DOMParser?: typeof window.DOMParser }).DOMParser = previousDomParser;
-    (globalThis as { XMLSerializer?: typeof window.XMLSerializer }).XMLSerializer = previousXmlSerializer;
-    window.close();
+    (globalThis as { DOMParser?: typeof DOMParser }).DOMParser = previousDomParser;
+    (globalThis as { XMLSerializer?: typeof XMLSerializer }).XMLSerializer = previousXmlSerializer;
   }
 }
 
@@ -132,19 +130,20 @@ function createXacroParser(
   skippedExpressions: ReadonlySet<string>,
   includedFiles: Set<string>
 ): XacroParser {
+  const io = getCoreIo();
   const parser = new XacroParser();
   parser.inOrder = true;
   parser.requirePrefix = true;
   parser.localProperties = true;
-  parser.workingPath = `${path.dirname(sourcePath)}${path.sep}`;
+  parser.workingPath = `${io.dirname(sourcePath)}${io.sep}`;
   parser.arguments = stringifyArgs(xacroArguments);
   parser.getFileContents = async includePath => {
     try {
-      includedFiles.add(path.resolve(includePath));
+      includedFiles.add(io.resolve(includePath));
     } catch {
       // ignore unresolvable paths
     }
-    const includeContent = await fs.readFile(includePath, 'utf8');
+    const includeContent = await io.readText(includePath);
     return sanitizeXacroContent(applyXacroCompatibilityRewrites(includeContent), skippedExpressions);
   };
   parser.rospackCommands = ((command: string, ...args: string[]) => {
@@ -167,12 +166,12 @@ function createXacroParser(
   const parserWithExpressions = parser as XacroParser & { expressionParser: { functions: Record<string, unknown> } };
   const functions = parserWithExpressions.expressionParser.functions;
   functions.load_yaml = (yamlPath: string) => {
-    const resolvedPath = path.isAbsolute(yamlPath) ? yamlPath : path.resolve(path.dirname(sourcePath), yamlPath);
+    const resolvedPath = io.isAbsolute(yamlPath) ? yamlPath : io.resolve(io.dirname(sourcePath), yamlPath);
     includedFiles.add(resolvedPath);
     // Tolerate duplicate keys — some real-world ROS packages (e.g. franka fp3's
     // inertials.yaml) ship YAML with repeated keys, and Python's loader accepts
     // them silently. The last entry wins.
-    return YAML.parse(readFileSync(resolvedPath, 'utf8'), { uniqueKeys: false });
+    return YAML.parse(io.readTextSync(resolvedPath), { uniqueKeys: false });
   };
   functions.bool = (value: unknown) => value === true || value === 'true' || value === 1 || value === '1';
   functions.float = (value: unknown) => Number(value);
@@ -261,8 +260,6 @@ export function applyXacroCompatibilityRewrites(content: string): string {
 }
 
 function rewriteListSlice(content: string): string {
-  // Translate Python slice notation `list[a:b]`, `list[a:]`, `list[:b]` to
-  // helper function calls. expr-eval doesn't understand the `:` inside `[]`.
   return content.replace(/\$\{([^{}]*)\}/g, (_match, expression: string) => {
     let rewritten = expression;
     rewritten = rewritten.replace(
@@ -282,9 +279,6 @@ function rewriteListSlice(content: string): string {
 }
 
 function rewriteStringSplit(content: string): string {
-  // Translate Python-style `<id>.split(<sep>)[N]` to a flat function call.
-  // expr-eval-fork rejects method calls on member access, so we route this
-  // through a `split_n` helper registered on the expression parser.
   return content.replace(/\$\{([^{}]*)\}/g, (_match, expression: string) => {
     const rewritten = expression.replace(
       /([A-Za-z_]\w*)\s*\.split\s*\(([^)]*)\)\s*\[\s*(\d+)\s*\]/g,
@@ -315,9 +309,6 @@ function rewritePythonTernary(content: string): string {
     let prev: string;
     do {
       prev = current;
-      // Wrap the condition with `__pytruthy__` so strings like "false"/"0" are
-      // treated as falsy the same way Python xacro evaluates them — JS would
-      // otherwise see them as truthy non-empty strings.
       current = current.replace(
         /^(.+?)\s+if\s+(.+?)\s+else\s+(.+)$/,
         '(__pytruthy__($2) ? ($1) : ($3))'

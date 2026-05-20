@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import path from 'node:path';
 import { promises as fs } from 'node:fs';
+import './core/io.node';
 import { discoverPackages } from './core/packageMap';
 import { renderRobotDocument, setLogger } from './core/xacro';
 import { analyzeUrdf } from './core/urdfAnalysis';

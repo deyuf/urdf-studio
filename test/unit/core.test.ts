@@ -3,6 +3,7 @@ import test from 'node:test';
 import path from 'node:path';
 import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
+import '../../src/core/io.node';
 import { analyzeUrdf } from '../../src/core/urdfAnalysis';
 import { ellipsoidSemiAxes, inertiaEigenvalues } from '../../src/core/inertia';
 import { buildMimicGraph, propagateMimicValue } from '../../src/core/mimic';
