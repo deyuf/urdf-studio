@@ -70,63 +70,52 @@ Full docs: **<https://urdf.deyuf.org/docs/>**.
 
 ## How it looks
 
-### Onboarding tour
+### Web app — Franka FR3 loaded
 
-<img src="media/screenshots-web/01-welcome.png" alt="Welcome dialog with a 4-step tour">
+<img src="media/screenshots-web/03-fr3-posed.png" alt="Franka Research 3 loaded in the web app">
 
-The first visit shows a four-step tour explaining what the app does, how
-to open a folder, where the joint controls live, and how to save your
-work. It dismisses itself after the last step; the **?** button in the
-topbar re-opens it at any time. The dismissed state is remembered per
-browser profile.
+The browser app loads a real ROS package off the local disk. The
+screenshot above is the upstream
+[`franka_description`](https://github.com/frankarobotics/franka_description)
+checkout, picked through **Open Folder**: xacro is expanded
+client-side, every `package://` URI is resolved to a blob URL by the
+host, and the meshes stream in via Three.js's `LoadingManager`. Joint
+sliders on the right drive the model in real time; the three joints in
+this shot are flexed to ~0.8 / -1.2 / 1.6 rad.
 
-### Dark theme
+### VS Code extension — same robot, in-editor
 
-<img src="media/screenshots-web/06-fr3-dark.png" alt="Franka FR3 in dark mode">
+<img src="media/screenshots/viewer-joints.png" alt="URDF Studio open as a VS Code custom editor">
 
-Light / dark theme follows `prefers-color-scheme`. The viewport
-background, panel chrome, side bar, and gradient backdrop all swap
-together; no per-component overrides. The Franka FR3 above is loaded
-from a local `franka_description` checkout with two joints flexed.
+In VS Code, opening any `.urdf`, `.urdf.xacro`, or `.xacro` file
+through the custom editor yields the same viewport, the same joint
+panel, the same Inspector / Checks / Links / Tools tabs. The host shell
+differs (extension process + webview vs browser-side host) but the
+renderer and analyser are byte-for-byte identical — see
+[Architecture](docs/architecture/) for how the two hosts share core.
 
-### Checks panel
+### Inspector — link details on click
 
-<img src="media/screenshots-web/04-checks.png" alt="Checks panel with diagnostics">
+<img src="media/screenshots/inspector-selected.png" alt="Inspector showing link details with bounding box highlight">
 
-Every parse error, malformed inertia, missing mesh, or invalid joint
-limit shows up in the **Checks** tab. Each diagnostic has a severity
-(`error` / `warning` / `info`), a stable code, and an optional file
-line. In the VS Code build the same items also appear in the Problems
-panel.
-
-### Inspector
-
-<img src="media/screenshots-web/05-inspector.png" alt="Inspector tab showing link details">
-
-Click any link in the viewport or in the **Links** tree to populate the
+Click any link in the viewport or in the **Links** tree to open the
 Inspector. It shows the parent and child joints with type/axis/limits,
-mass, center of mass, the full inertia tensor with eigenvalues, and the
-resolved absolute paths of every visual and collision mesh referenced
-by that link. The selected link gets a tight yellow bounding box on
-its own visual geometry.
+mass, center of mass, the full inertia tensor with eigenvalues, and
+the resolved absolute paths of every visual and collision mesh
+referenced by that link. The selected link gets a tight yellow
+bounding box on its own visual geometry.
 
-### Docs site
+### Diagnostics surface as a bottom-corner toast
 
-<img src="media/screenshots-web/08-docs-overview.png" alt="Documentation site landing">
+<img src="media/screenshots-web/11-toast-error.png" alt="Error toast pop-up listing parse problems">
 
-The same Cloudflare Pages deployment serves the documentation at
-`/docs/`. Three-column layout: section-grouped sidebar on the left, the
-article in the middle, an in-page "On this page" TOC on the right.
-Sidebar groups stay sticky while you scroll.
-
-### Diagnostic catalog
-
-<img src="media/screenshots-web/10-docs-diagnostics.png" alt="Documentation page listing every diagnostic code">
-
-The diagnostics page in the docs enumerates every check by stable code,
-groups them by category (XML / xacro, tree structure, joints, meshes,
-inertial, semantic), and explains what triggers each one and how to
-silence it. Useful as a reference when authoring a URDF.
+When the parser or analyser finds problems, they are surfaced two ways
+at once. Every diagnostic shows up in the **Checks** panel with its
+severity, stable code, and source line. Errors and warnings also
+trigger a bottom-right toast: it pops up automatically, lists the
+first three messages, and links the user back to the Checks panel via
+the "see Checks tab" overflow line. Error toasts are sticky (manual
+dismiss); warning toasts auto-fade after a few seconds.
 
 ## Features
 
@@ -293,25 +282,31 @@ More: [docs/development/building →](https://urdf.deyuf.org/docs/development/bu
 
 ## Deployment
 
-Web app and docs auto-deploy to Cloudflare Pages on every push to
-`main`. Three workflows under `.github/workflows/`:
+Five workflows under `.github/workflows/`, all gated on CI:
 
 | File | Trigger | Effect |
 |---|---|---|
-| `ci.yml` | every push/PR | type-check + unit + Playwright |
-| `preview-web.yml` | PR | per-PR preview deployment, URL commented on the PR |
-| `deploy-web.yml` | push to `main` | production deployment |
+| `ci.yml` | every push (any branch) + every PR | type-check + unit + Playwright |
+| `deploy-web.yml` | `workflow_run` after CI succeeds on `main` | Cloudflare Pages production |
+| `publish.yml` | `workflow_run` after CI succeeds on `main` | VS Code Marketplace publish (only if version bumped) |
+| `deploy-docs.yml` | `workflow_run` after **both** `deploy-web` *and* `publish` succeed | docs to GitHub Pages |
+| `preview-web.yml` | manual dispatch only | ad-hoc preview deploy for any branch |
 
-Required GitHub secrets: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`.
-First-time Pages project setup:
+Required GitHub secrets:
+
+- `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` — for web app deploy.
+- `VSCE_PAT` — for Marketplace publish.
+
+First-time Cloudflare project setup:
 
 ```bash
 npx wrangler pages project create urdf-studio --production-branch=main
 ```
 
-Custom domain (if your zone is already on Cloudflare): just add
-`urdf.example.com` under **Pages → urdf-studio → Custom domains**.
-CI config doesn't change.
+First-time GitHub Pages: **Settings → Pages → Source: GitHub Actions**.
+
+Custom domain (Cloudflare): add `urdf.example.com` under **Pages →
+urdf-studio → Custom domains**. CI config doesn't change.
 
 Step-by-step:
 [docs/development/deployment →](https://urdf.deyuf.org/docs/development/deployment.html)

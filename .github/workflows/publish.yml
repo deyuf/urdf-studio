@@ -1,7 +1,12 @@
 name: Publish to VS Code Marketplace
 
+# Triggered only after the CI workflow finishes successfully on main. CI
+# already covers type-check + unit + Playwright; we don't repeat that here.
+# Manual dispatch is still allowed (gated to main via the job-level if).
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
   workflow_dispatch:
     inputs:
@@ -19,10 +24,15 @@ concurrency:
 
 jobs:
   publish:
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
+          # Pin to the exact commit CI ran on; need history for version diff.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           fetch-depth: 2
 
       - uses: actions/setup-node@v4
@@ -31,12 +41,6 @@ jobs:
           cache: npm
 
       - run: npm ci
-
-      - name: Type-check
-        run: npm run check-types
-
-      - name: Unit tests
-        run: npm run test:unit
 
       - name: Detect version change
         id: version

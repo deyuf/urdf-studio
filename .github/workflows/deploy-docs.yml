@@ -1,0 +1,118 @@
+name: Deploy docs to GitHub Pages
+
+# Fires whenever either of the two upstream workflows (deploy-web, publish)
+# completes on main. The job below double-checks that BOTH have succeeded on
+# the same commit before deploying — so we only ship docs once everything else
+# the docs describe is already live.
+#
+# Workflow-dispatch is available for ad-hoc redeploys.
+on:
+  workflow_run:
+    workflows:
+      - Deploy web app to Cloudflare Pages
+      - Publish to VS Code Marketplace
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+# GitHub Pages cooperates with the deploy-pages action via these permissions.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Pages allows one concurrent deployment per environment; coalesce repeated
+# triggers for the same commit.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy-docs:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Pin to the exact SHA the upstream workflow ran on so docs match
+          # what was just deployed / published.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      # When this run is triggered by workflow_run, confirm BOTH upstream
+      # workflows have already concluded successfully on the same commit.
+      # If the second hasn't finished yet, skip silently — it will be fired
+      # again when the other one finishes.
+      - name: Gate on deploy + publish success
+        id: gate
+        if: github.event_name == 'workflow_run'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          sha='${{ github.event.workflow_run.head_sha }}'
+          required=("Deploy web app to Cloudflare Pages" "Publish to VS Code Marketplace")
+          all_good=true
+          for wf in "${required[@]}"; do
+            line=$(gh run list \
+              --workflow="$wf" \
+              --branch=main \
+              --commit="$sha" \
+              --json status,conclusion \
+              --limit 1 \
+              | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d[0]["status"], d[0]["conclusion"]) if d else print("missing", "missing")')
+            status=$(echo "$line" | awk '{print $1}')
+            conclusion=$(echo "$line" | awk '{print $2}')
+            echo "  $wf — status=$status conclusion=$conclusion"
+            if [ "$status" != "completed" ]; then
+              echo "::notice::'$wf' not yet completed on $sha; will retry when it finishes."
+              all_good=false
+            elif [ "$conclusion" != "success" ]; then
+              echo "::error::'$wf' did not succeed on $sha (conclusion=$conclusion); aborting docs deploy."
+              exit 1
+            fi
+          done
+          if [ "$all_good" = "true" ]; then
+            echo "proceed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v4
+        if: github.event_name == 'workflow_dispatch' || steps.gate.outputs.proceed == 'true'
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        if: github.event_name == 'workflow_dispatch' || steps.gate.outputs.proceed == 'true'
+        run: npm ci
+
+      - name: Build docs
+        if: github.event_name == 'workflow_dispatch' || steps.gate.outputs.proceed == 'true'
+        run: |
+          npm run docs:build
+          test -f dist-web/docs/index.html || { echo "::error::dist-web/docs/index.html missing"; exit 1; }
+          echo "Docs build output:"
+          ls -la dist-web/docs | head
+
+      - name: Configure GitHub Pages
+        if: github.event_name == 'workflow_dispatch' || steps.gate.outputs.proceed == 'true'
+        uses: actions/configure-pages@v5
+
+      - name: Upload docs artifact
+        if: github.event_name == 'workflow_dispatch' || steps.gate.outputs.proceed == 'true'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # Just the docs subtree — the web app itself is on Cloudflare Pages.
+          path: dist-web/docs
+
+      - name: Deploy to GitHub Pages
+        if: github.event_name == 'workflow_dispatch' || steps.gate.outputs.proceed == 'true'
+        id: deployment
+        uses: actions/deploy-pages@v4
