@@ -294,6 +294,19 @@ export class WebHost {
           this.downloadScreenshot(message.dataUrl);
         }
         break;
+      case 'requestSaveBom':
+        if (typeof message.csv === 'string') {
+          this.downloadBom(message.csv, typeof message.filename === 'string' ? message.filename : undefined);
+        }
+        break;
+      case 'requestSaveReport':
+        if (typeof message.base64 === 'string') {
+          this.downloadReport(message.base64, typeof message.filename === 'string' ? message.filename : undefined);
+        }
+        break;
+      case 'requestRevealRange':
+        // Browser shell has its own Source tab; no separate editor to reveal.
+        break;
       case 'requestWriteDisableCollisions':
         await this.handleWriteDisableCollisions(message.entries ?? []);
         break;
@@ -417,6 +430,29 @@ export class WebHost {
     document.body.appendChild(link);
     link.click();
     link.remove();
+  }
+
+  private downloadBom(csv: string, filename?: string): void {
+    if (!this.active) {
+      return;
+    }
+    const name = filename || `${posixPath.basename(this.active.path)}-bom.csv`;
+    triggerDownload(new Blob([csv], { type: 'text/csv' }), name);
+    this.setStatus({ type: 'info', message: `BOM downloaded: ${name}` });
+  }
+
+  private downloadReport(base64: string, filename?: string): void {
+    if (!this.active) {
+      return;
+    }
+    const name = filename || `${posixPath.basename(this.active.path)}-report.pdf`;
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    triggerDownload(new Blob([bytes], { type: 'application/pdf' }), name);
+    this.setStatus({ type: 'info', message: `Report downloaded: ${name}` });
   }
 
   private async handleWriteDisableCollisions(entries: DisableCollisionEntry[]): Promise<void> {

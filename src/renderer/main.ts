@@ -22,6 +22,8 @@ import type {
 } from '../core/types';
 import { ellipsoidSemiAxes } from '../core/inertia';
 import { buildMimicGraph, propagateMimicValue, type MimicGraph } from '../core/mimic';
+import { buildBomCsv } from '../core/bom';
+import { LabelsOverlay, type LabelsMode } from './labels';
 
 (THREE.Mesh.prototype as unknown as { raycast: typeof acceleratedRaycast }).raycast = acceleratedRaycast;
 (THREE.BufferGeometry.prototype as unknown as { computeBoundsTree: typeof computeBoundsTree }).computeBoundsTree = computeBoundsTree;
@@ -84,6 +86,12 @@ let robotBoundsRadius = 0.5;
 
 let framesMode: FramesMode = 'off';
 const linkAxesHelpers = new Map<string, THREE.AxesHelper>();
+let labelsOverlay: LabelsOverlay | undefined;
+let labelsMode: LabelsMode = 'off';
+let measureMode = false;
+const measurePoints: THREE.Vector3[] = [];
+let measureLine: THREE.Line | undefined;
+const measureMarkers: THREE.Mesh[] = [];
 let inertiaVisible = false;
 const inertiaHelpers = new Map<string, THREE.Group>();
 let totalCoMMarker: THREE.Mesh | undefined;
@@ -134,6 +142,14 @@ document.getElementById('app')!.innerHTML = `
       </select>
     </label>
     <label title="Show inertia ellipsoids and centers of mass"><input id="inertia-toggle" type="checkbox"> Inertia</label>
+    <label>
+      <select id="labels-mode" title="3D labels for joints and links">
+        <option value="off">Labels: off</option>
+        <option value="joints">Labels: joints</option>
+        <option value="links">Labels: links</option>
+        <option value="both">Labels: both</option>
+      </select>
+    </label>
   </div>
   <div class="workspace">
     <div class="viewport-wrap">
@@ -146,12 +162,14 @@ document.getElementById('app')!.innerHTML = `
         <button class="tab" data-tab="inspector">Inspector</button>
         <button class="tab" data-tab="checks">Checks</button>
         <button class="tab" data-tab="links">Links</button>
+        <button class="tab" data-tab="source">Source</button>
         <button class="tab" data-tab="tools">Tools</button>
       </div>
       <section id="panel-joints" class="panel active"></section>
       <section id="panel-inspector" class="panel"></section>
       <section id="panel-checks" class="panel"></section>
       <section id="panel-links" class="panel tree"></section>
+      <section id="panel-source" class="panel"></section>
       <section id="panel-tools" class="panel"></section>
     </aside>
   </div>
@@ -221,9 +239,11 @@ function initThree(): void {
   axes = new THREE.AxesHelper(0.75);
   scene.add(axes);
 
+  labelsOverlay = new LabelsOverlay(canvas.parentElement!);
+
   observeViewportSize();
   window.addEventListener('resize', resize);
-  canvas.addEventListener('click', event => selectFromPointer(event));
+  canvas.addEventListener('click', event => onCanvasClick(event));
 
   // VS Code's webview preload forwards bubble-phase wheel events to scroll the
   // outer host panel.  The capture listener cancels the browser default; the
@@ -290,6 +310,11 @@ function bindChrome(): void {
     applyInertiaVisibility();
     publishTestState();
   });
+  qs<HTMLSelectElement>('#labels-mode').addEventListener('change', event => {
+    labelsMode = (event.target as HTMLSelectElement).value as LabelsMode;
+    labelsOverlay?.setMode(labelsMode);
+    dirty = true;
+  });
   qs('#save-pose').addEventListener('click', () => {
     vscode.postMessage({ type: 'requestSavePose', pose: getPose(), camera: getCameraSnapshot() });
   });
@@ -337,6 +362,8 @@ async function loadRobot(data: LoadRobotMessage, forceCollisionGeometry = false)
   disposeInertiaHelpers();
   disposeFrameHelpers();
   disposeReachability();
+  clearMeasurement();
+  labelsOverlay?.clear();
 
   if (robot) {
     scene.remove(robot);
@@ -353,6 +380,7 @@ async function loadRobot(data: LoadRobotMessage, forceCollisionGeometry = false)
   renderXacroArgs(data);
   renderChecks(data);
   renderLinks(data.metadata.tree);
+  renderSource(data);
   renderInspector();
   renderToolsPanel();
   renderBookmarkSelect();
@@ -373,6 +401,7 @@ async function loadRobot(data: LoadRobotMessage, forceCollisionGeometry = false)
       applyFramesMode();
       buildCollisionGeometryIndex();
       buildVisualMaterialIndex();
+      buildLabels();
     }
     robotReady = true;
     renderer.domElement.style.opacity = '1';
@@ -811,9 +840,17 @@ function formatMimic(mimic: MimicInfo): string {
   return escapeHtml(`${mimic.joint} × ${mimic.multiplier} + ${mimic.offset}`);
 }
 
-function selectFromPointer(event: MouseEvent): void {
-  if (!robot) {
+function onCanvasClick(event: MouseEvent): void {
+  if (measureMode) {
+    addMeasurePoint(event);
     return;
+  }
+  selectFromPointer(event);
+}
+
+function raycastRobot(event: MouseEvent): THREE.Intersection | undefined {
+  if (!robot) {
+    return undefined;
   }
   const rect = renderer.domElement.getBoundingClientRect();
   const mouse = new THREE.Vector2(
@@ -822,7 +859,11 @@ function selectFromPointer(event: MouseEvent): void {
   );
   const raycaster = new THREE.Raycaster();
   raycaster.setFromCamera(mouse, camera);
-  const hit = raycaster.intersectObject(robot, true)[0];
+  return raycaster.intersectObject(robot, true)[0];
+}
+
+function selectFromPointer(event: MouseEvent): void {
+  const hit = raycastRobot(event);
   selectLink(hit ? findOwningLink(hit.object) : undefined);
 }
 
@@ -854,6 +895,8 @@ function selectLink(linkName: string | undefined): void {
   }
   renderInspector();
   applyFramesMode();
+  highlightSourceForLink(linkName);
+  requestRevealForLink(linkName);
   switchTab('inspector');
   dirty = true;
 }
@@ -955,6 +998,14 @@ function applyUpAxis(axis: '+X' | '+Y' | '+Z'): void {
 function switchTab(name: string): void {
   qsa('.tab').forEach(tab => tab.classList.toggle('active', (tab as HTMLElement).dataset.tab === name));
   qsa('.panel').forEach(panel => panel.classList.toggle('active', panel.id === `panel-${name}`));
+  if (name === 'source') {
+    // The active line was marked while the panel was hidden, so scrollIntoView
+    // was a no-op then. Re-scroll now that the panel has layout.
+    const active = document.querySelector<HTMLDivElement>('#panel-source .source-line.active');
+    if (active) {
+      active.scrollIntoView({ block: 'center' });
+    }
+  }
 }
 
 function resize(): boolean {
@@ -968,6 +1019,7 @@ function resize(): boolean {
   currentViewportWidth = width;
   currentViewportHeight = height;
   renderer.setSize(width, height, false);
+  labelsOverlay?.setSize(width, height);
   camera.aspect = width / height;
   camera.updateProjectionMatrix();
   dirty = true;
@@ -1016,6 +1068,7 @@ function renderNow(): void {
     selectedBox.update();
   }
   renderer.render(scene, camera);
+  labelsOverlay?.render(scene, camera);
   hasRenderedOnce = true;
   dirty = false;
 }
@@ -1535,6 +1588,15 @@ function renderToolsPanel(): void {
       .join('')
     : '';
   panel.innerHTML = `
+    <h3>Measure</h3>
+    <div class="tool-block">
+      <div class="row-buttons">
+        <button id="measure-toggle" class="primary">Start measuring</button>
+        <button id="measure-clear">Clear</button>
+      </div>
+      <div class="muted" id="measure-status">Click two points on the robot to measure distance.</div>
+      <div id="measure-readout" class="measure-readout"></div>
+    </div>
     <h3>Reachability</h3>
     <div class="tool-block">
       <label>Tip link <select id="reach-tip">${tipOptions}</select></label>
@@ -1551,11 +1613,394 @@ function renderToolsPanel(): void {
       <div class="muted" id="srdf-status">Run analysis to find never-colliding pairs.</div>
       <ul id="srdf-results" class="srdf-results"></ul>
     </div>
+    <h3>Export</h3>
+    <div class="tool-block">
+      <div class="row-buttons">
+        <button id="export-bom">Export BOM (CSV)</button>
+        <button id="export-report">Export Report (PDF)</button>
+      </div>
+      <div class="muted" id="export-status">One row per link; PDF bundles screenshot + checks + summary.</div>
+    </div>
   `;
+  qs('#measure-toggle').addEventListener('click', () => toggleMeasureMode());
+  qs('#measure-clear').addEventListener('click', () => clearMeasurement());
   qs('#reach-run').addEventListener('click', () => void sampleReachability());
   qs('#reach-clear').addEventListener('click', () => disposeReachability());
   qs('#srdf-run').addEventListener('click', () => void analyzeCollisionPairs());
   qs('#srdf-write').addEventListener('click', () => writeCollisionPairs());
+  qs('#export-bom').addEventListener('click', () => exportBom());
+  qs('#export-report').addEventListener('click', () => void exportPdfReport());
+  refreshMeasureUi();
+}
+
+// =============================================================================
+// Source pane
+// =============================================================================
+
+function renderSource(data: LoadRobotMessage): void {
+  const panel = qs('#panel-source');
+  const lines = data.urdf.split('\n');
+  const numWidth = String(lines.length).length;
+  panel.innerHTML = `
+    <div class="source-meta muted">${escapeHtml(data.fileName)} · ${lines.length} lines${data.format === 'xacro' ? ' (expanded xacro)' : ''}</div>
+    <pre class="source-view"><code>${lines.map((line, index) => {
+      const lineNo = index + 1;
+      const padded = String(lineNo).padStart(numWidth, ' ');
+      return `<div class="source-line" data-source-line="${lineNo}"><span class="source-gutter">${padded}</span><span class="source-text">${escapeHtml(line) || ' '}</span></div>`;
+    }).join('')}</code></pre>
+  `;
+}
+
+function highlightSourceForLink(linkName: string | undefined): void {
+  const panel = document.getElementById('panel-source');
+  if (!panel) {
+    return;
+  }
+  panel.querySelectorAll('.source-line.active').forEach(el => el.classList.remove('active'));
+  if (!linkName || !currentData) {
+    return;
+  }
+  const line = currentData.metadata.links[linkName]?.line;
+  if (!line) {
+    return;
+  }
+  const target = panel.querySelector<HTMLDivElement>(`[data-source-line="${line}"]`);
+  if (target) {
+    target.classList.add('active');
+    target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
+}
+
+function requestRevealForLink(linkName: string | undefined): void {
+  // Only meaningful for plain URDF: the line numbers we track refer to the
+  // expanded document, which equals the original file for .urdf but not for
+  // .xacro. Skip xacro to avoid revealing the wrong range in the editor.
+  if (!linkName || !currentData || currentData.format !== 'urdf') {
+    return;
+  }
+  const line = currentData.metadata.links[linkName]?.line;
+  if (!line) {
+    return;
+  }
+  vscode.postMessage({ type: 'requestRevealRange', line, link: linkName });
+}
+
+// =============================================================================
+// Labels overlay (joints / links)
+// =============================================================================
+
+function buildLabels(): void {
+  if (!labelsOverlay || !robot || !currentData) {
+    return;
+  }
+  labelsOverlay.clear();
+  for (const jointName of Object.keys(robot.joints ?? {})) {
+    labelsOverlay.addJoint(jointName, robot.joints[jointName] as THREE.Object3D);
+  }
+  for (const linkName of Object.keys(robot.links ?? {})) {
+    labelsOverlay.addLink(linkName, robot.links[linkName] as THREE.Object3D);
+  }
+  labelsOverlay.setMode(labelsMode);
+}
+
+// =============================================================================
+// Measurement tool
+// =============================================================================
+
+function toggleMeasureMode(): void {
+  measureMode = !measureMode;
+  if (!measureMode) {
+    // Keep the existing markers; just stop accepting clicks. Clear button
+    // wipes the line.
+  } else {
+    // Starting a fresh measurement: reset the previous one.
+    clearMeasurement();
+    measureMode = true;
+  }
+  refreshMeasureUi();
+}
+
+function addMeasurePoint(event: MouseEvent): void {
+  const hit = raycastRobot(event);
+  if (!hit) {
+    setMeasureStatus('Click on the robot geometry.');
+    return;
+  }
+  if (measurePoints.length >= 2) {
+    // Already have two points: a new click starts a new measurement.
+    clearMeasurement();
+    measureMode = true;
+  }
+  const point = hit.point.clone();
+  measurePoints.push(point);
+  addMeasureMarker(point);
+  if (measurePoints.length === 2) {
+    buildMeasureLine();
+    measureMode = false;
+  }
+  refreshMeasureUi();
+  dirty = true;
+}
+
+function addMeasureMarker(point: THREE.Vector3): void {
+  const size = Math.max(0.006, robotBoundsRadius * 0.012);
+  const marker = new THREE.Mesh(
+    new THREE.SphereGeometry(size, 14, 10),
+    new THREE.MeshBasicMaterial({ color: 0xffd866, depthTest: false })
+  );
+  marker.renderOrder = 999;
+  marker.position.copy(point);
+  scene.add(marker);
+  measureMarkers.push(marker);
+}
+
+function buildMeasureLine(): void {
+  if (measurePoints.length !== 2) {
+    return;
+  }
+  const geometry = new THREE.BufferGeometry().setFromPoints(measurePoints);
+  const material = new THREE.LineBasicMaterial({ color: 0xffd866, depthTest: false });
+  measureLine = new THREE.Line(geometry, material);
+  measureLine.renderOrder = 998;
+  scene.add(measureLine);
+}
+
+function clearMeasurement(): void {
+  for (const marker of measureMarkers) {
+    scene.remove(marker);
+    marker.geometry.dispose();
+    (marker.material as THREE.Material).dispose();
+  }
+  measureMarkers.length = 0;
+  if (measureLine) {
+    scene.remove(measureLine);
+    measureLine.geometry.dispose();
+    (measureLine.material as THREE.Material).dispose();
+    measureLine = undefined;
+  }
+  measurePoints.length = 0;
+  measureMode = false;
+  refreshMeasureUi();
+  dirty = true;
+}
+
+function refreshMeasureUi(): void {
+  const toggle = document.getElementById('measure-toggle');
+  if (toggle) {
+    toggle.textContent = measureMode
+      ? (measurePoints.length === 0 ? 'Pick point 1…' : 'Pick point 2…')
+      : 'Start measuring';
+    toggle.classList.toggle('primary', !measureMode);
+    toggle.classList.toggle('active', measureMode);
+  }
+  const readout = document.getElementById('measure-readout');
+  if (readout) {
+    if (measurePoints.length === 2) {
+      const a = measurePoints[0];
+      const b = measurePoints[1];
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const dz = b.z - a.z;
+      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      readout.innerHTML = `
+        <div><b>Distance</b> ${dist.toFixed(4)} m</div>
+        <div><b>Δx</b> ${dx.toFixed(4)} <b>Δy</b> ${dy.toFixed(4)} <b>Δz</b> ${dz.toFixed(4)}</div>
+        <div class="muted">A (${a.x.toFixed(3)}, ${a.y.toFixed(3)}, ${a.z.toFixed(3)})</div>
+        <div class="muted">B (${b.x.toFixed(3)}, ${b.y.toFixed(3)}, ${b.z.toFixed(3)})</div>
+      `;
+    } else {
+      readout.innerHTML = '';
+    }
+  }
+  setMeasureStatus(measureMode
+    ? 'Click on the robot to drop a point. Click off to cancel.'
+    : measurePoints.length === 2
+      ? 'Measurement set. Click "Start measuring" for a new one.'
+      : 'Click two points on the robot to measure distance.');
+}
+
+function setMeasureStatus(text: string): void {
+  const status = document.getElementById('measure-status');
+  if (status) {
+    status.textContent = text;
+  }
+}
+
+// =============================================================================
+// Export: BOM (CSV) and Report (PDF)
+// =============================================================================
+
+function exportBom(): void {
+  if (!currentData) {
+    return;
+  }
+  const csv = buildBomCsv(currentData.metadata);
+  const baseName = currentData.fileName.replace(/\.[^./\\]+$/, '') || 'robot';
+  vscode.postMessage({ type: 'requestSaveBom', csv, filename: `${baseName}-bom.csv` });
+  flashExportStatus(`BOM ready (${currentData.metadata.counts.links} links).`);
+}
+
+async function exportPdfReport(): Promise<void> {
+  if (!currentData) {
+    return;
+  }
+  flashExportStatus('Building PDF…');
+  // Force a render so the screenshot reflects the current frame.
+  dirty = true;
+  renderNow();
+  const dataUrl = renderer.domElement.toDataURL('image/png');
+  try {
+    const { jsPDF } = await import('jspdf');
+    const pdf = new jsPDF({ unit: 'pt', format: 'a4' });
+    buildReportPdf(pdf, currentData, dataUrl);
+    const blob = pdf.output('blob');
+    const arrayBuffer = await blob.arrayBuffer();
+    const base64 = bytesToBase64(new Uint8Array(arrayBuffer));
+    const baseName = currentData.fileName.replace(/\.[^./\\]+$/, '') || 'robot';
+    vscode.postMessage({
+      type: 'requestSaveReport',
+      base64,
+      filename: `${baseName}-report.pdf`
+    });
+    flashExportStatus('PDF ready.');
+  } catch (error) {
+    flashExportStatus(`PDF failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+function buildReportPdf(
+  pdf: import('jspdf').jsPDF,
+  data: LoadRobotMessage,
+  screenshotDataUrl: string
+): void {
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const pageHeight = pdf.internal.pageSize.getHeight();
+  const margin = 36;
+  let cursorY = margin;
+
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(18);
+  pdf.text('URDF Studio Report', margin, cursorY);
+  cursorY += 22;
+
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(10);
+  pdf.text(data.metadata.robotName || data.fileName, margin, cursorY);
+  cursorY += 14;
+  pdf.text(`Source: ${data.sourcePath}`, margin, cursorY);
+  cursorY += 12;
+  pdf.text(`Generated: ${new Date().toISOString()}`, margin, cursorY);
+  cursorY += 18;
+
+  // Counts row.
+  pdf.setFont('helvetica', 'bold');
+  pdf.text('Counts', margin, cursorY);
+  cursorY += 12;
+  pdf.setFont('helvetica', 'normal');
+  const counts = data.metadata.counts;
+  const summaryParts = [
+    `${counts.links} links`,
+    `${counts.joints} joints`,
+    `${counts.movableJoints} movable`,
+    `${counts.visualMeshes} visual meshes`,
+    `${counts.collisionMeshes} collision meshes`,
+    `total mass ${data.metadata.totalMass.toFixed(3)} kg`
+  ];
+  pdf.text(summaryParts.join(' · '), margin, cursorY);
+  cursorY += 18;
+
+  // Screenshot.
+  try {
+    const imgWidth = pageWidth - margin * 2;
+    const imgHeight = Math.min(360, pageHeight - cursorY - margin - 220);
+    pdf.addImage(screenshotDataUrl, 'PNG', margin, cursorY, imgWidth, imgHeight, undefined, 'FAST');
+    cursorY += imgHeight + 14;
+  } catch {
+    // Skip image silently if jsPDF can't decode it.
+  }
+
+  // Diagnostics.
+  pdf.setFont('helvetica', 'bold');
+  pdf.text(`Checks (${data.diagnostics.length})`, margin, cursorY);
+  cursorY += 12;
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(9);
+  if (data.diagnostics.length === 0) {
+    pdf.text('No diagnostics.', margin, cursorY);
+    cursorY += 12;
+  } else {
+    for (const diag of data.diagnostics.slice(0, 60)) {
+      if (cursorY > pageHeight - margin) {
+        pdf.addPage();
+        cursorY = margin;
+      }
+      const tag = `[${diag.severity.toUpperCase()}${diag.code ? ' ' + diag.code : ''}${diag.line ? ' :' + diag.line : ''}]`;
+      const text = `${tag} ${diag.message}`;
+      const lines = pdf.splitTextToSize(text, pageWidth - margin * 2);
+      pdf.text(lines, margin, cursorY);
+      cursorY += lines.length * 11;
+    }
+    if (data.diagnostics.length > 60) {
+      pdf.text(`… and ${data.diagnostics.length - 60} more`, margin, cursorY);
+      cursorY += 12;
+    }
+  }
+  cursorY += 6;
+
+  // Links table.
+  pdf.addPage();
+  cursorY = margin;
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(12);
+  pdf.text('Links', margin, cursorY);
+  cursorY += 16;
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(9);
+  const colWidths = [180, 70, 200];
+  const headers = ['Link', 'Mass (kg)', 'Parent joint'];
+  let x = margin;
+  pdf.setFont('helvetica', 'bold');
+  for (let i = 0; i < headers.length; i += 1) {
+    pdf.text(headers[i], x, cursorY);
+    x += colWidths[i];
+  }
+  cursorY += 12;
+  pdf.setFont('helvetica', 'normal');
+  const sortedLinks = Object.values(data.metadata.links).sort((a, b) => a.name.localeCompare(b.name));
+  for (const link of sortedLinks) {
+    if (cursorY > pageHeight - margin) {
+      pdf.addPage();
+      cursorY = margin;
+    }
+    const cells = [
+      link.name,
+      link.inertial ? link.inertial.mass.toFixed(4) : '—',
+      link.parentJoint ?? '—'
+    ];
+    x = margin;
+    for (let i = 0; i < cells.length; i += 1) {
+      pdf.text(pdf.splitTextToSize(cells[i], colWidths[i] - 4), x, cursorY);
+      x += colWidths[i];
+    }
+    cursorY += 11;
+  }
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  // Chunked btoa to avoid stack overflows on big buffers.
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunkSize)) as number[]);
+  }
+  return btoa(binary);
+}
+
+function flashExportStatus(text: string): void {
+  const status = document.getElementById('export-status');
+  if (status) {
+    status.textContent = text;
+  }
 }
 
 async function sampleReachability(): Promise<void> {

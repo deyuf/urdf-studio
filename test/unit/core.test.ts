@@ -14,6 +14,7 @@ import {
   loadSemanticMetadata
 } from '../../src/core/srdf';
 import { applyXacroCompatibilityRewrites, renderRobotDocument } from '../../src/core/xacro';
+import { buildBomCsv } from '../../src/core/bom';
 
 // `__dirname` after esbuild bundling resolves to dist/test, so we anchor
 // fixtures to the project root via process.cwd() (npm runs tests from there).
@@ -353,4 +354,66 @@ test('renderRobotDocument exposes empty includedFiles for plain URDF', async () 
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true });
   }
+});
+
+// =============================================================================
+// buildBomCsv
+// =============================================================================
+
+test('buildBomCsv emits one row per link with mass / CoM / mesh paths', () => {
+  const csv = buildBomCsv({
+    robotName: 'r',
+    counts: { links: 2, joints: 1, movableJoints: 1, visualMeshes: 1, collisionMeshes: 0 },
+    links: {
+      base: { name: 'base', childJoints: ['hinge'] },
+      tip: {
+        name: 'tip',
+        parentJoint: 'hinge',
+        childJoints: [],
+        inertial: { mass: 1.25, origin: [0.1, 0, 0.2], rotation: [0, 0, 0], ixx: 0.1, ixy: 0, ixz: 0, iyy: 0.2, iyz: 0, izz: 0.3 }
+      }
+    },
+    joints: {
+      hinge: { name: 'hinge', type: 'revolute', parent: 'base', child: 'tip', axis: [0, 0, 1], limit: {} }
+    },
+    meshes: [
+      { link: 'tip', kind: 'visual', filename: 'meshes/tip.stl', resolvedPath: '/abs/meshes/tip.stl', exists: true },
+      { link: 'tip', kind: 'collision', filename: 'meshes/missing.stl', exists: false }
+    ],
+    rootLinks: ['base'],
+    movableJointNames: ['hinge'],
+    tree: [{ link: 'base', children: [{ link: 'tip', joint: 'hinge', children: [] }] }],
+    totalMass: 1.25,
+    diagnostics: []
+  });
+  const lines = csv.trim().split('\n');
+  assert.equal(lines.length, 3);
+  assert.match(lines[0], /^link,parent_joint,parent_joint_type,mass_kg/);
+  // Rows are sorted alphabetically: base, tip.
+  assert.match(lines[1], /^base,,,/);
+  const tipRow = lines[2].split(',');
+  assert.equal(tipRow[0], 'tip');
+  assert.equal(tipRow[1], 'hinge');
+  assert.equal(tipRow[2], 'revolute');
+  assert.equal(Number(tipRow[3]), 1.25);
+  assert.match(lines[2], /\/abs\/meshes\/tip\.stl/);
+  assert.match(lines[2], /missing\.stl/);
+});
+
+test('buildBomCsv escapes commas and quotes in mesh paths', () => {
+  const csv = buildBomCsv({
+    robotName: 'r',
+    counts: { links: 1, joints: 0, movableJoints: 0, visualMeshes: 1, collisionMeshes: 0 },
+    links: { weird: { name: 'weird', childJoints: [] } },
+    joints: {},
+    meshes: [
+      { link: 'weird', kind: 'visual', filename: 'a,b.stl', resolvedPath: 'a,b "q".stl', exists: true }
+    ],
+    rootLinks: ['weird'],
+    movableJointNames: [],
+    tree: [{ link: 'weird', children: [] }],
+    totalMass: 0,
+    diagnostics: []
+  });
+  assert.match(csv, /"a,b ""q""\.stl"/);
 });
