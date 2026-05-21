@@ -192,7 +192,10 @@ button.primary:hover {
 
 .tabs {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  /* minmax(0, 1fr) — not 1fr — so columns stay equal even when tab labels
+     are wider than the column's natural share. With plain 1fr the auto
+     minimum blows columns out and the row visually wraps. */
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   border-bottom: 1px solid var(--vscode-panel-border);
 }
 
@@ -201,6 +204,11 @@ button.primary:hover {
   border-radius: 0;
   background: transparent;
   color: var(--vscode-foreground);
+  min-width: 0;
+  padding: 0 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .tab.active {
@@ -500,7 +508,11 @@ summary {
   font-family: var(--vscode-editor-font-family, ui-monospace, Menlo, Consolas, monospace);
   font-size: 11.5px;
   line-height: 1.45;
-  white-space: pre;
+  /* pre-wrap (not pre) so attribute-heavy URDF lines wrap inside the panel
+     instead of forcing horizontal scroll; overflow-wrap: anywhere is the
+     escape hatch for un-breakable runs (long paths, URIs). */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   overflow: auto;
   min-height: 0;
 }
@@ -511,7 +523,9 @@ summary {
 
 .source-line {
   display: flex;
-  align-items: baseline;
+  /* Pin the gutter to the top so the line number stays aligned with the
+     first wrapped row when a long line spans several lines. */
+  align-items: flex-start;
   padding: 0 10px 0 0;
   gap: 8px;
 }
@@ -526,6 +540,11 @@ summary {
   color: var(--vscode-editorLineNumber-foreground, var(--vscode-descriptionForeground));
   user-select: none;
   text-align: right;
+  /* Don't let the inherited overflow-wrap: anywhere split multi-digit
+     line numbers; the gutter must never shrink under flex either. */
+  white-space: nowrap;
+  overflow-wrap: normal;
+  flex-shrink: 0;
 }
 
 .source-text {

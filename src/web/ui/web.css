@@ -428,10 +428,10 @@ textarea {
 #app .tabs {
   border-bottom: 1px solid var(--us-border);
   background: var(--us-bg-elevated);
-  /* Let the row shrink below its content's intrinsic size if needed —
-     the renderer ships `repeat(5, 1fr)` (auto-min), which refuses to
-     shrink below content and overflows the panel on narrow viewports. */
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  /* Six tabs (Joints / Inspector / Checks / Links / Source / Tools).
+     minmax(0, 1fr) — not 1fr — so columns can shrink below content
+     width when the panel is narrow; otherwise the row visually wraps. */
+  grid-template-columns: repeat(6, minmax(0, 1fr));
 }
 
 #app .tab {
@@ -1239,6 +1239,20 @@ dialog#settings-dialog[open]::backdrop {
 #app .side {
   container-type: inline-size;
   container-name: side;
+}
+
+/* At common side-panel widths (≤480 px → most laptops) the 14px Inspector
+   label + 8px horizontal padding doesn't fit a six-tab row. Step the
+   tab typography down so labels render in full instead of ellipsising. */
+@container side (max-width: 480px) {
+  #app .tab {
+    font-size: 12px;
+    padding: 14px 4px 12px;
+  }
+  #app .tab.active::after {
+    left: 6px;
+    right: 6px;
+  }
 }
 
 @container side (max-width: 360px) {
