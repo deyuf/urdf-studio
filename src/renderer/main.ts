@@ -23,7 +23,6 @@ import type {
 } from '../core/types';
 import { ellipsoidSemiAxes } from '../core/inertia';
 import { buildMimicGraph, propagateMimicValue, type MimicGraph } from '../core/mimic';
-import { buildBomCsv } from '../core/bom';
 import { LabelsOverlay, type LabelsMode } from './labels';
 import { buildDisplayGroups as buildDisplayGroupsPure, jointRange as jointRangePure } from './logic/displayGroups';
 import {
@@ -33,6 +32,11 @@ import {
 } from './logic/selfCollision';
 import { mountSourcePane, type SourcePane } from './logic/sourcePane';
 import { html, setInnerHtml } from './html';
+import {
+  exportBom as exportBomFeature,
+  exportPdfReport as exportPdfReportFeature,
+  type ExportableDocument
+} from './features/export';
 
 (THREE.Mesh.prototype as unknown as { raycast: typeof acceleratedRaycast }).raycast = acceleratedRaycast;
 (THREE.BufferGeometry.prototype as unknown as { computeBoundsTree: typeof computeBoundsTree }).computeBoundsTree = computeBoundsTree;
@@ -1830,167 +1834,37 @@ function exportBom(): void {
   if (!currentData) {
     return;
   }
-  const csv = buildBomCsv(currentData.metadata);
-  const baseName = currentData.fileName.replace(/\.[^./\\]+$/, '') || 'robot';
-  vscode.postMessage({ type: 'requestSaveBom', csv, filename: `${baseName}-bom.csv` });
-  flashExportStatus(`BOM ready (${currentData.metadata.counts.links} links).`);
+  exportBomFeature(toExportableDocument(currentData), exportHost);
 }
 
 async function exportPdfReport(): Promise<void> {
   if (!currentData) {
     return;
   }
-  flashExportStatus('Building PDF…');
   // Force a render so the screenshot reflects the current frame.
   dirty = true;
   renderNow();
-  const dataUrl = renderer.domElement.toDataURL('image/png');
-  try {
-    const { jsPDF } = await import('jspdf');
-    const pdf = new jsPDF({ unit: 'pt', format: 'a4' });
-    buildReportPdf(pdf, currentData, dataUrl);
-    const blob = pdf.output('blob');
-    const arrayBuffer = await blob.arrayBuffer();
-    const base64 = bytesToBase64(new Uint8Array(arrayBuffer));
-    const baseName = currentData.fileName.replace(/\.[^./\\]+$/, '') || 'robot';
-    vscode.postMessage({
-      type: 'requestSaveReport',
-      base64,
-      filename: `${baseName}-report.pdf`
-    });
-    flashExportStatus('PDF ready.');
-  } catch (error) {
-    flashExportStatus(`PDF failed: ${error instanceof Error ? error.message : String(error)}`);
-  }
+  const screenshotDataUrl = renderer.domElement.toDataURL('image/png');
+  await exportPdfReportFeature(
+    toExportableDocument(currentData),
+    { screenshotDataUrl },
+    exportHost
+  );
 }
 
-function buildReportPdf(
-  pdf: import('jspdf').jsPDF,
-  data: LoadRobotMessage,
-  screenshotDataUrl: string
-): void {
-  const pageWidth = pdf.internal.pageSize.getWidth();
-  const pageHeight = pdf.internal.pageSize.getHeight();
-  const margin = 36;
-  let cursorY = margin;
-
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(18);
-  pdf.text('URDF Studio Report', margin, cursorY);
-  cursorY += 22;
-
-  pdf.setFont('helvetica', 'normal');
-  pdf.setFontSize(10);
-  pdf.text(data.metadata.robotName || data.fileName, margin, cursorY);
-  cursorY += 14;
-  pdf.text(`Source: ${data.sourcePath}`, margin, cursorY);
-  cursorY += 12;
-  pdf.text(`Generated: ${new Date().toISOString()}`, margin, cursorY);
-  cursorY += 18;
-
-  // Counts row.
-  pdf.setFont('helvetica', 'bold');
-  pdf.text('Counts', margin, cursorY);
-  cursorY += 12;
-  pdf.setFont('helvetica', 'normal');
-  const counts = data.metadata.counts;
-  const summaryParts = [
-    `${counts.links} links`,
-    `${counts.joints} joints`,
-    `${counts.movableJoints} movable`,
-    `${counts.visualMeshes} visual meshes`,
-    `${counts.collisionMeshes} collision meshes`,
-    `total mass ${data.metadata.totalMass.toFixed(3)} kg`
-  ];
-  pdf.text(summaryParts.join(' · '), margin, cursorY);
-  cursorY += 18;
-
-  // Screenshot.
-  try {
-    const imgWidth = pageWidth - margin * 2;
-    const imgHeight = Math.min(360, pageHeight - cursorY - margin - 220);
-    pdf.addImage(screenshotDataUrl, 'PNG', margin, cursorY, imgWidth, imgHeight, undefined, 'FAST');
-    cursorY += imgHeight + 14;
-  } catch {
-    // Skip image silently if jsPDF can't decode it.
-  }
-
-  // Diagnostics.
-  pdf.setFont('helvetica', 'bold');
-  pdf.text(`Checks (${data.diagnostics.length})`, margin, cursorY);
-  cursorY += 12;
-  pdf.setFont('helvetica', 'normal');
-  pdf.setFontSize(9);
-  if (data.diagnostics.length === 0) {
-    pdf.text('No diagnostics.', margin, cursorY);
-    cursorY += 12;
-  } else {
-    for (const diag of data.diagnostics.slice(0, 60)) {
-      if (cursorY > pageHeight - margin) {
-        pdf.addPage();
-        cursorY = margin;
-      }
-      const tag = `[${diag.severity.toUpperCase()}${diag.code ? ' ' + diag.code : ''}${diag.line ? ' :' + diag.line : ''}]`;
-      const text = `${tag} ${diag.message}`;
-      const lines = pdf.splitTextToSize(text, pageWidth - margin * 2);
-      pdf.text(lines, margin, cursorY);
-      cursorY += lines.length * 11;
-    }
-    if (data.diagnostics.length > 60) {
-      pdf.text(`… and ${data.diagnostics.length - 60} more`, margin, cursorY);
-      cursorY += 12;
-    }
-  }
-  cursorY += 6;
-
-  // Links table.
-  pdf.addPage();
-  cursorY = margin;
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(12);
-  pdf.text('Links', margin, cursorY);
-  cursorY += 16;
-  pdf.setFont('helvetica', 'normal');
-  pdf.setFontSize(9);
-  const colWidths = [180, 70, 200];
-  const headers = ['Link', 'Mass (kg)', 'Parent joint'];
-  let x = margin;
-  pdf.setFont('helvetica', 'bold');
-  for (let i = 0; i < headers.length; i += 1) {
-    pdf.text(headers[i], x, cursorY);
-    x += colWidths[i];
-  }
-  cursorY += 12;
-  pdf.setFont('helvetica', 'normal');
-  const sortedLinks = Object.values(data.metadata.links).sort((a, b) => a.name.localeCompare(b.name));
-  for (const link of sortedLinks) {
-    if (cursorY > pageHeight - margin) {
-      pdf.addPage();
-      cursorY = margin;
-    }
-    const cells = [
-      link.name,
-      link.inertial ? link.inertial.mass.toFixed(4) : '—',
-      link.parentJoint ?? '—'
-    ];
-    x = margin;
-    for (let i = 0; i < cells.length; i += 1) {
-      pdf.text(pdf.splitTextToSize(cells[i], colWidths[i] - 4), x, cursorY);
-      x += colWidths[i];
-    }
-    cursorY += 11;
-  }
+function toExportableDocument(data: LoadRobotMessage): ExportableDocument {
+  return {
+    fileName: data.fileName,
+    sourcePath: data.sourcePath,
+    metadata: data.metadata,
+    diagnostics: data.diagnostics
+  };
 }
 
-function bytesToBase64(bytes: Uint8Array): string {
-  // Chunked btoa to avoid stack overflows on big buffers.
-  let binary = '';
-  const chunkSize = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunkSize)) as number[]);
-  }
-  return btoa(binary);
-}
+const exportHost = {
+  postMessage: (message: unknown) => vscode.postMessage(message),
+  reportStatus: (text: string) => flashExportStatus(text)
+};
 
 function flashExportStatus(text: string): void {
   const status = document.getElementById('export-status');
