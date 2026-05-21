@@ -37,6 +37,7 @@ import {
   exportPdfReport as exportPdfReportFeature,
   type ExportableDocument
 } from './features/export';
+import { Measurement } from './features/measurement';
 
 (THREE.Mesh.prototype as unknown as { raycast: typeof acceleratedRaycast }).raycast = acceleratedRaycast;
 (THREE.BufferGeometry.prototype as unknown as { computeBoundsTree: typeof computeBoundsTree }).computeBoundsTree = computeBoundsTree;
@@ -108,10 +109,7 @@ const linkAxesHelpers = new Map<string, THREE.AxesHelper>();
 let labelsOverlay: LabelsOverlay | undefined;
 let sourcePane: SourcePane | undefined;
 let labelsMode: LabelsMode = 'off';
-let measureMode = false;
-const measurePoints: THREE.Vector3[] = [];
-let measureLine: THREE.Line | undefined;
-const measureMarkers: THREE.Mesh[] = [];
+let measurement: Measurement | undefined;
 let inertiaVisible = false;
 const inertiaHelpers = new Map<string, THREE.Group>();
 let totalCoMMarker: THREE.Mesh | undefined;
@@ -857,8 +855,7 @@ function formatMimic(mimic: MimicInfo): string {
 }
 
 function onCanvasClick(event: MouseEvent): void {
-  if (measureMode) {
-    addMeasurePoint(event);
+  if (ensureMeasurement().handleClick(event)) {
     return;
   }
   selectFromPointer(event);
@@ -1225,9 +1222,7 @@ function publishTestState(): void {
   const visibleJointLabels = labelsOverlay?.visibleCount('joint') ?? 0;
   const visibleLinkLabels = labelsOverlay?.visibleCount('link') ?? 0;
   const totalLabels = labelsOverlay?.totalCount() ?? 0;
-  const measureDistance = measurePoints.length === 2
-    ? measurePoints[0].distanceTo(measurePoints[1])
-    : null;
+  const measureSnap = measurement?.snapshot() ?? { mode: false, pointCount: 0, distance: null };
   (window as unknown as { __urdfStudio?: TestState }).__urdfStudio = {
     framesMode,
     visibleLinkAxes,
@@ -1240,9 +1235,9 @@ function publishTestState(): void {
     visibleJointLabels,
     visibleLinkLabels,
     totalLabels,
-    measureMode,
-    measurePointCount: measurePoints.length,
-    measureDistance
+    measureMode: measureSnap.mode,
+    measurePointCount: measureSnap.pointCount,
+    measureDistance: measureSnap.distance
   };
 }
 
@@ -1703,128 +1698,25 @@ function buildLabels(): void {
 }
 
 // =============================================================================
-// Measurement tool
+// Measurement tool (delegates to features/measurement.ts)
 // =============================================================================
 
-function toggleMeasureMode(): void {
-  measureMode = !measureMode;
-  if (!measureMode) {
-    // Keep the existing markers; just stop accepting clicks. Clear button
-    // wipes the line.
-  } else {
-    // Starting a fresh measurement: reset the previous one.
-    clearMeasurement();
-    measureMode = true;
+function ensureMeasurement(): Measurement {
+  if (!measurement) {
+    measurement = new Measurement({
+      scene,
+      raycastFromEvent: event => raycastRobot(event),
+      getBoundsRadius: () => robotBoundsRadius,
+      requestRedraw: () => { dirty = true; },
+      onStateChange: () => publishTestState()
+    });
   }
-  refreshMeasureUi();
+  return measurement;
 }
 
-function addMeasurePoint(event: MouseEvent): void {
-  const hit = raycastRobot(event);
-  if (!hit) {
-    setMeasureStatus('Click on the robot geometry.');
-    return;
-  }
-  if (measurePoints.length >= 2) {
-    // Already have two points: a new click starts a new measurement.
-    clearMeasurement();
-    measureMode = true;
-  }
-  const point = hit.point.clone();
-  measurePoints.push(point);
-  addMeasureMarker(point);
-  if (measurePoints.length === 2) {
-    buildMeasureLine();
-    measureMode = false;
-  }
-  refreshMeasureUi();
-  dirty = true;
-}
-
-function addMeasureMarker(point: THREE.Vector3): void {
-  const size = Math.max(0.006, robotBoundsRadius * 0.012);
-  const marker = new THREE.Mesh(
-    new THREE.SphereGeometry(size, 14, 10),
-    new THREE.MeshBasicMaterial({ color: 0xffd866, depthTest: false })
-  );
-  marker.renderOrder = 999;
-  marker.position.copy(point);
-  scene.add(marker);
-  measureMarkers.push(marker);
-}
-
-function buildMeasureLine(): void {
-  if (measurePoints.length !== 2) {
-    return;
-  }
-  const geometry = new THREE.BufferGeometry().setFromPoints(measurePoints);
-  const material = new THREE.LineBasicMaterial({ color: 0xffd866, depthTest: false });
-  measureLine = new THREE.Line(geometry, material);
-  measureLine.renderOrder = 998;
-  scene.add(measureLine);
-}
-
-function clearMeasurement(): void {
-  for (const marker of measureMarkers) {
-    scene.remove(marker);
-    marker.geometry.dispose();
-    (marker.material as THREE.Material).dispose();
-  }
-  measureMarkers.length = 0;
-  if (measureLine) {
-    scene.remove(measureLine);
-    measureLine.geometry.dispose();
-    (measureLine.material as THREE.Material).dispose();
-    measureLine = undefined;
-  }
-  measurePoints.length = 0;
-  measureMode = false;
-  refreshMeasureUi();
-  dirty = true;
-}
-
-function refreshMeasureUi(): void {
-  publishTestState();
-  const toggle = document.getElementById('measure-toggle');
-  if (toggle) {
-    toggle.textContent = measureMode
-      ? (measurePoints.length === 0 ? 'Pick point 1…' : 'Pick point 2…')
-      : 'Start measuring';
-    toggle.classList.toggle('primary', !measureMode);
-    toggle.classList.toggle('active', measureMode);
-  }
-  const readout = document.getElementById('measure-readout');
-  if (readout) {
-    if (measurePoints.length === 2) {
-      const a = measurePoints[0];
-      const b = measurePoints[1];
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      const dz = b.z - a.z;
-      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-      setInnerHtml(readout, html`
-        <div><b>Distance</b> ${dist.toFixed(4)} m</div>
-        <div><b>Δx</b> ${dx.toFixed(4)} <b>Δy</b> ${dy.toFixed(4)} <b>Δz</b> ${dz.toFixed(4)}</div>
-        <div class="muted">A (${a.x.toFixed(3)}, ${a.y.toFixed(3)}, ${a.z.toFixed(3)})</div>
-        <div class="muted">B (${b.x.toFixed(3)}, ${b.y.toFixed(3)}, ${b.z.toFixed(3)})</div>
-      `);
-    } else {
-      readout.replaceChildren();
-    }
-  }
-  setMeasureStatus(measureMode
-    ? 'Click on the robot to drop a point. Click off to cancel.'
-    : measurePoints.length === 2
-      ? 'Measurement set. Click "Start measuring" for a new one.'
-      : 'Click two points on the robot to measure distance.');
-}
-
-function setMeasureStatus(text: string): void {
-  const status = document.getElementById('measure-status');
-  if (status) {
-    status.textContent = text;
-  }
-}
+function toggleMeasureMode(): void { ensureMeasurement().toggle(); }
+function clearMeasurement(): void { ensureMeasurement().clear(); }
+function refreshMeasureUi(): void { ensureMeasurement().refresh(); }
 
 // =============================================================================
 // Export: BOM (CSV) and Report (PDF)
