@@ -38,6 +38,7 @@ import {
   type ExportableDocument
 } from './features/export';
 import { Measurement } from './features/measurement';
+import { Reachability } from './features/reachability';
 
 (THREE.Mesh.prototype as unknown as { raycast: typeof acceleratedRaycast }).raycast = acceleratedRaycast;
 (THREE.BufferGeometry.prototype as unknown as { computeBoundsTree: typeof computeBoundsTree }).computeBoundsTree = computeBoundsTree;
@@ -121,7 +122,7 @@ const linkVisualMaterials = new Map<string, THREE.MeshStandardMaterial[]>();
 const originalVisualColors = new Map<THREE.MeshStandardMaterial, THREE.Color>();
 const highlightedCollisionLinks = new Set<string>();
 
-let reachabilityPoints: THREE.Points | undefined;
+let reachability: Reachability | undefined;
 
 document.getElementById('app')!.innerHTML = `
 <div class="shell">
@@ -1207,9 +1208,7 @@ interface TestState {
 
 function publishTestState(): void {
   const visibleLinkAxes = Array.from(linkAxesHelpers.values()).filter(helper => helper.visible).length;
-  const reachabilityPointCount = reachabilityPoints
-    ? (reachabilityPoints.geometry.getAttribute('position')?.count ?? 0)
-    : 0;
+  const reachabilityPointCount = reachability?.pointCount() ?? 0;
   const jointAngles: Record<string, number> = {};
   for (const jointName of currentData?.metadata.movableJointNames ?? []) {
     jointAngles[jointName] = Number(robot?.joints?.[jointName]?.angle ?? 0);
@@ -1765,124 +1764,50 @@ function flashExportStatus(text: string): void {
   }
 }
 
+function ensureReachability(): Reachability {
+  if (!reachability) {
+    reachability = new Reachability({
+      scene,
+      fitCameraToBox: box => fitCameraToBox(box),
+      requestRedraw: () => { dirty = true; },
+      onStateChange: () => publishTestState()
+    });
+  }
+  return reachability;
+}
+
 async function sampleReachability(): Promise<void> {
   if (!currentData || !robot) {
     return;
   }
   const tip = (document.getElementById('reach-tip') as HTMLSelectElement | null)?.value;
-  const sampleCount = Math.max(1, Math.min(20000, Number((document.getElementById('reach-samples') as HTMLInputElement | null)?.value ?? 1000) || 1000));
-  if (!tip || !robot.links?.[tip]) {
+  const sampleCount = Math.max(
+    1,
+    Math.min(
+      20000,
+      Number((document.getElementById('reach-samples') as HTMLInputElement | null)?.value ?? 1000) || 1000
+    )
+  );
+  if (!tip) {
     setStatus('Pick a valid tip link first.');
     return;
   }
-  const status = document.getElementById('reach-status');
-  if (status) {
-    status.textContent = `Sampling ${sampleCount}…`;
-  }
-
-  const movable = currentData.metadata.movableJointNames;
-  if (movable.length === 0) {
-    if (status) {
-      status.textContent = 'No movable joints to sample.';
-    }
-    return;
-  }
-  const ranges = movable.map(name => jointRange(currentData!.metadata.joints[name]));
-  const previousPose = getPose();
-
-  disposeReachability();
-
-  // URDFLoader clamps setJointValue to its OWN parsed limits, which may
-  // default to [0, 0] when the URDF omits <limit>.  Bypass clamping during
-  // sampling so the cloud reflects our metadata's joint ranges.
-  const previousIgnoreLimits: Record<string, boolean> = {};
-  for (const name of movable) {
-    const joint = robot.joints?.[name];
-    if (joint) {
-      previousIgnoreLimits[name] = !!joint.ignoreLimits;
-      joint.ignoreLimits = true;
-    }
-  }
-  // Mimic followers are also driven and need ignoreLimits.
-  for (const [name, info] of Object.entries(currentData.metadata.joints)) {
-    if (info.mimic && robot.joints?.[name]) {
-      previousIgnoreLimits[name] = !!robot.joints[name].ignoreLimits;
-      robot.joints[name].ignoreLimits = true;
-    }
-  }
-
-  const positions = new Float32Array(sampleCount * 3);
-  const colors = new Float32Array(sampleCount * 3);
-  const tmp = new THREE.Vector3();
-  let minX = Infinity, minY = Infinity, minZ = Infinity;
-  let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
-
-  for (let i = 0; i < sampleCount; i += 1) {
-    for (let j = 0; j < movable.length; j += 1) {
-      const [min, max] = ranges[j];
-      const value = min + Math.random() * (max - min);
-      robot.setJointValue(movable[j], value);
-    }
-    applyMimicValuesAfterSample();
-    robot.updateMatrixWorld(true);
-    (robot.links[tip] as Object3D).getWorldPosition(tmp);
-    positions[i * 3] = tmp.x;
-    positions[i * 3 + 1] = tmp.y;
-    positions[i * 3 + 2] = tmp.z;
-    if (tmp.x < minX) minX = tmp.x;
-    if (tmp.y < minY) minY = tmp.y;
-    if (tmp.z < minZ) minZ = tmp.z;
-    if (tmp.x > maxX) maxX = tmp.x;
-    if (tmp.y > maxY) maxY = tmp.y;
-    if (tmp.z > maxZ) maxZ = tmp.z;
-    if (i % 200 === 0 && i > 0) {
-      await new Promise<void>(resolve => setTimeout(resolve, 0));
-    }
-  }
-
-  // Restore ignoreLimits flags.
-  for (const [name, value] of Object.entries(previousIgnoreLimits)) {
-    if (robot.joints?.[name]) {
-      robot.joints[name].ignoreLimits = value;
-    }
-  }
-
-  // Color points by relative height for legibility (so dense regions are
-  // distinguishable from a flat sphere).
-  const span = Math.max(1e-6, maxZ - minZ);
-  for (let i = 0; i < sampleCount; i += 1) {
-    const t = (positions[i * 3 + 2] - minZ) / span;
-    colors[i * 3] = 0.2 + 0.8 * t;
-    colors[i * 3 + 1] = 0.9 - 0.4 * t;
-    colors[i * 3 + 2] = 0.4 + 0.5 * (1 - t);
-  }
-
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  const reachExtent = Math.max(maxX - minX, maxY - minY, maxZ - minZ, 1e-3);
-  const pointSize = Math.max(0.01, reachExtent * 0.015);
-  const material = new THREE.PointsMaterial({ size: pointSize, sizeAttenuation: true, vertexColors: true });
-  reachabilityPoints = new THREE.Points(geometry, material);
-  scene.add(reachabilityPoints);
-
-  applyPose(previousPose);
-  if (status) {
-    status.textContent = `${sampleCount} samples · X[${minX.toFixed(2)}, ${maxX.toFixed(2)}] Y[${minY.toFixed(2)}, ${maxY.toFixed(2)}] Z[${minZ.toFixed(2)}, ${maxZ.toFixed(2)}].`;
-  }
-  // Refit camera so the cloud is in view alongside the robot.
-  fitCameraToCloud();
-  dirty = true;
-  publishTestState();
+  await ensureReachability().sample({
+    robot,
+    metadata: currentData.metadata,
+    tipLinkName: tip,
+    sampleCount,
+    poseBeforeSampling: getPose(),
+    applyPose: pose => applyPose(pose),
+    propagateMimics: (r, m) => applyMimicValuesAfterSample(r, m)
+  });
 }
 
-function fitCameraToCloud(): void {
-  if (!robot || !reachabilityPoints) {
-    return;
-  }
-  const robotBox = new THREE.Box3().setFromObject(robot);
-  const cloudBox = new THREE.Box3().setFromObject(reachabilityPoints);
-  const combined = robotBox.union(cloudBox);
+function disposeReachability(): void {
+  ensureReachability().dispose();
+}
+
+function fitCameraToBox(combined: THREE.Box3): void {
   if (combined.isEmpty()) {
     return;
   }
@@ -1902,32 +1827,13 @@ function fitCameraToCloud(): void {
   controls.update();
 }
 
-function applyMimicValuesAfterSample(): void {
-  if (!currentData || !robot) {
-    return;
-  }
-  const activeRobot = robot;
-  for (const [name, info] of Object.entries(currentData.metadata.joints)) {
+function applyMimicValuesAfterSample(activeRobot: URDFRobot, metadata: RobotMetadata): void {
+  for (const [name, info] of Object.entries(metadata.joints)) {
     if (info.mimic) {
       const masterValue = Number(activeRobot.joints?.[info.mimic.joint]?.angle ?? 0);
       activeRobot.setJointValue(name, masterValue * info.mimic.multiplier + info.mimic.offset);
     }
   }
-}
-
-function disposeReachability(): void {
-  if (reachabilityPoints) {
-    scene.remove(reachabilityPoints);
-    reachabilityPoints.geometry.dispose();
-    (reachabilityPoints.material as THREE.Material).dispose();
-    reachabilityPoints = undefined;
-    dirty = true;
-  }
-  const status = document.getElementById('reach-status');
-  if (status) {
-    status.textContent = '';
-  }
-  publishTestState();
 }
 
 let lastCollisionAnalysis: DisableCollisionEntry[] = [];
@@ -1968,7 +1874,7 @@ async function analyzeCollisionPairs(): Promise<void> {
       const value = min + Math.random() * (max - min);
       robot.setJointValue(movable[j], value);
     }
-    applyMimicValuesAfterSample();
+    applyMimicValuesAfterSample(robot, currentData.metadata);
     robot.updateMatrixWorld(true);
     const result = collectCollidingLinks();
     for (const [a, b] of result.pairs) {
