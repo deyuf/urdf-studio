@@ -138,6 +138,15 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
         case 'screenshotResult':
           await this.saveScreenshot(document.uri, message.dataUrl);
           break;
+        case 'requestSaveBom':
+          await this.saveBom(document.uri, message.csv, message.filename);
+          break;
+        case 'requestSaveReport':
+          await this.saveReport(document.uri, message.base64, message.filename);
+          break;
+        case 'requestRevealRange':
+          await this.revealRangeForLink(document.uri, message.line, message.link);
+          break;
         case 'geometryLoaded':
           void vscode.window.setStatusBarMessage(
             `URDF Studio: ${message.linkCount ?? 0} links, ${message.jointCount ?? 0} joints, ${message.movableJointCount ?? 0} movable.`,
@@ -473,6 +482,80 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
     const bytes = Buffer.from(dataUrl.slice('data:image/png;base64,'.length), 'base64');
     await vscode.workspace.fs.writeFile(out, bytes);
     void vscode.window.showInformationMessage(`URDF Studio screenshot saved: ${vscode.workspace.asRelativePath(out)}`);
+  }
+
+  private async saveBom(uri: vscode.Uri, csv: unknown, filenameHint: unknown): Promise<void> {
+    if (typeof csv !== 'string') {
+      return;
+    }
+    const baseName = typeof filenameHint === 'string' && filenameHint
+      ? filenameHint
+      : `${path.basename(uri.fsPath)}-bom.csv`;
+    const defaultUri = vscode.Uri.file(path.join(path.dirname(uri.fsPath), baseName));
+    const target = await vscode.window.showSaveDialog({
+      title: 'Save BOM',
+      defaultUri,
+      filters: { CSV: ['csv'] }
+    });
+    if (!target) {
+      return;
+    }
+    try {
+      await vscode.workspace.fs.writeFile(target, Buffer.from(csv, 'utf8'));
+      void vscode.window.showInformationMessage(`URDF Studio BOM saved: ${vscode.workspace.asRelativePath(target)}`);
+    } catch (error) {
+      log(`saveBom failed: ${String(error)}`);
+      void vscode.window.showErrorMessage(`URDF Studio: could not write BOM (${error instanceof Error ? error.message : String(error)}).`);
+    }
+  }
+
+  private async saveReport(uri: vscode.Uri, base64: unknown, filenameHint: unknown): Promise<void> {
+    if (typeof base64 !== 'string' || !base64) {
+      void vscode.window.showWarningMessage('URDF Studio could not build the PDF report.');
+      return;
+    }
+    const baseName = typeof filenameHint === 'string' && filenameHint
+      ? filenameHint
+      : `${path.basename(uri.fsPath)}-report.pdf`;
+    const defaultUri = vscode.Uri.file(path.join(path.dirname(uri.fsPath), baseName));
+    const target = await vscode.window.showSaveDialog({
+      title: 'Save Report',
+      defaultUri,
+      filters: { PDF: ['pdf'] }
+    });
+    if (!target) {
+      return;
+    }
+    try {
+      await vscode.workspace.fs.writeFile(target, Buffer.from(base64, 'base64'));
+      void vscode.window.showInformationMessage(`URDF Studio report saved: ${vscode.workspace.asRelativePath(target)}`);
+    } catch (error) {
+      log(`saveReport failed: ${String(error)}`);
+      void vscode.window.showErrorMessage(`URDF Studio: could not write PDF (${error instanceof Error ? error.message : String(error)}).`);
+    }
+  }
+
+  private async revealRangeForLink(uri: vscode.Uri, line: unknown, _link: unknown): Promise<void> {
+    if (typeof line !== 'number' || !Number.isFinite(line) || line < 1) {
+      return;
+    }
+    // Only reveal if the user already has a text editor open for this URDF.
+    // Auto-opening an editor on every link click would be far too intrusive,
+    // and the URDF preview already shows the link in its own Source tab.
+    const target = vscode.window.visibleTextEditors.find(editor =>
+      editor.document.uri.toString() === uri.toString()
+    );
+    if (!target) {
+      return;
+    }
+    try {
+      const targetLine = Math.min(Math.max(0, Math.floor(line) - 1), target.document.lineCount - 1);
+      const range = target.document.lineAt(targetLine).range;
+      target.selection = new vscode.Selection(range.start, range.end);
+      target.revealRange(range, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+    } catch (error) {
+      log(`revealRange failed: ${String(error)}`);
+    }
   }
 
   private async writeDisableCollisions(preview: ActivePreview, entries: DisableCollisionEntry[]): Promise<void> {

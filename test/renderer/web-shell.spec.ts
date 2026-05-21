@@ -307,6 +307,79 @@ test.describe('web shell', () => {
     // never allocating in the first place.
     expect(afterMany.created).toBeGreaterThan(afterMany.live);
   });
+
+  test('Export BOM drives the browser host download path (captures a real CSV blob)', async ({ page, browserName }) => {
+    test.skip(browserName !== 'chromium', 'Headless Firefox does not honour webkitdirectory in CI.');
+
+    // Instrument createObjectURL to capture downloaded blobs and intercept the
+    // anchor click so the test never triggers a real navigation/download.
+    await page.addInitScript(() => {
+      const win = window as unknown as {
+        __downloads: Array<{ type: string; size: number; text: string; name?: string; url: string }>;
+      };
+      win.__downloads = [];
+      const origCreate = URL.createObjectURL.bind(URL);
+      URL.createObjectURL = (obj: Blob | MediaSource) => {
+        const url = origCreate(obj);
+        if (obj instanceof Blob) {
+          const entry: { type: string; size: number; text: string; name?: string; url: string } = {
+            type: obj.type,
+            size: obj.size,
+            text: '',
+            url
+          };
+          win.__downloads.push(entry);
+          void obj.text().then(text => { entry.text = text; });
+        }
+        return url;
+      };
+      // Patch HTMLAnchorElement.click to swallow downloads in the test runner
+      // while still recording the filename against the right blob entry.
+      const origClick = HTMLAnchorElement.prototype.click;
+      HTMLAnchorElement.prototype.click = function () {
+        if (this.download) {
+          const entry = win.__downloads.find(d => d.url === this.href);
+          if (entry) {
+            entry.name = this.download;
+          }
+          return;
+        }
+        return origClick.call(this);
+      };
+    });
+
+    await page.goto(server.url);
+    if (await page.locator('dialog.onboarding').isVisible()) {
+      await page.locator('[data-action="skip"]').click();
+    }
+    await page.setInputFiles('#file-input', FIXTURE_DIR);
+    await expect(page.locator('#file-select')).toBeEnabled({ timeout: 10_000 });
+    const targetValue = await page.locator('#file-select option').evaluateAll(options => {
+      const target = options.find(option => /(^|\/)model\.xacro$/.test((option as HTMLOptionElement).value));
+      return target ? (target as HTMLOptionElement).value : '';
+    });
+    await page.locator('#file-select').selectOption(targetValue);
+    await expect(page.locator('[data-joint-slider="fixture_joint"]')).toBeVisible({ timeout: 15_000 });
+
+    // Switch to Tools tab and click Export BOM.
+    await page.locator('.tab[data-tab="tools"]').click();
+    await page.locator('#export-bom').click();
+
+    // Wait until the host has produced a CSV-typed blob with text + filename.
+    await page.waitForFunction(() => {
+      const downloads = (window as any).__downloads as Array<{ type: string; text: string; name?: string }>;
+      return downloads.some(d => d.type === 'text/csv' && d.text.length > 0 && d.name);
+    }, { timeout: 5_000 });
+
+    const csvDownload = await page.evaluate(() => {
+      const downloads = (window as any).__downloads as Array<{ type: string; size: number; text: string; name?: string }>;
+      return downloads.find(d => d.type === 'text/csv');
+    });
+    expect(csvDownload).toBeTruthy();
+    expect(csvDownload!.size).toBeGreaterThan(0);
+    expect(csvDownload!.text).toContain('link,parent_joint');
+    expect(csvDownload!.name).toMatch(/\.csv$/);
+  });
 });
 
 async function startStaticServer(root: string): Promise<{ url: string; close(): Promise<void> }> {

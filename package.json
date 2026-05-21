@@ -145,6 +145,7 @@
   "dependencies": {
     "@xmldom/xmldom": "^0.8.11",
     "jsdom": "^26.1.0",
+    "jspdf": "^3.0.4",
     "three": "^0.184.0",
     "three-mesh-bvh": "^0.7.8",
     "urdf-loader": "^0.12.7",
