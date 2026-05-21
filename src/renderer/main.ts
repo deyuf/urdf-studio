@@ -21,12 +21,10 @@ import type {
   StudioDiagnostic,
   XacroArgument
 } from '../core/types';
-import { ellipsoidSemiAxes } from '../core/inertia';
 import { buildMimicGraph, propagateMimicValue, type MimicGraph } from '../core/mimic';
 import { LabelsOverlay, type LabelsMode } from './labels';
 import { buildDisplayGroups as buildDisplayGroupsPure, jointRange as jointRangePure } from './logic/displayGroups';
 import {
-  buildDisabledPairSet,
   canonicalPair as canonicalPairPure,
   isAdjacent as isAdjacentPure
 } from './logic/selfCollision';
@@ -39,13 +37,15 @@ import {
 } from './features/export';
 import { Measurement } from './features/measurement';
 import { Reachability } from './features/reachability';
+import { InertiaVisualisation } from './features/inertia';
+import { FramesOverlay, type FramesMode } from './features/frames';
+import { SelfCollision } from './features/selfCollision';
 
 (THREE.Mesh.prototype as unknown as { raycast: typeof acceleratedRaycast }).raycast = acceleratedRaycast;
 (THREE.BufferGeometry.prototype as unknown as { computeBoundsTree: typeof computeBoundsTree }).computeBoundsTree = computeBoundsTree;
 (THREE.BufferGeometry.prototype as unknown as { disposeBoundsTree: typeof disposeBoundsTree }).disposeBoundsTree = disposeBoundsTree;
 
 type RenderMode = 'visual' | 'collision' | 'both';
-type FramesMode = 'off' | 'selected' | 'all';
 
 interface LoadRobotMessage {
   type: 'loadRobot';
@@ -105,22 +105,13 @@ let mimicGraph: MimicGraph = { followers: new Map() };
 let bookmarks: PoseBookmark[] = [];
 let robotBoundsRadius = 0.5;
 
-let framesMode: FramesMode = 'off';
-const linkAxesHelpers = new Map<string, THREE.AxesHelper>();
+let framesOverlay: FramesOverlay | undefined;
 let labelsOverlay: LabelsOverlay | undefined;
 let sourcePane: SourcePane | undefined;
 let labelsMode: LabelsMode = 'off';
 let measurement: Measurement | undefined;
-let inertiaVisible = false;
-const inertiaHelpers = new Map<string, THREE.Group>();
-let totalCoMMarker: THREE.Mesh | undefined;
-let selfCollisionEnabled = false;
-let selfCollisionPending = false;
-const collisionMeshGeometry = new Map<string, { mesh: THREE.Mesh; ownerLink: string }>();
-const linkCollisionMaterials = new Map<string, THREE.MeshStandardMaterial[]>();
-const linkVisualMaterials = new Map<string, THREE.MeshStandardMaterial[]>();
-const originalVisualColors = new Map<THREE.MeshStandardMaterial, THREE.Color>();
-const highlightedCollisionLinks = new Set<string>();
+let inertia: InertiaVisualisation | undefined;
+let selfCollision: SelfCollision | undefined;
 
 let reachability: Reachability | undefined;
 
@@ -321,13 +312,10 @@ function bindChrome(): void {
     }
   });
   qs<HTMLSelectElement>('#frames-mode').addEventListener('change', event => {
-    framesMode = (event.target as HTMLSelectElement).value as FramesMode;
-    applyFramesMode();
+    applyFramesMode((event.target as HTMLSelectElement).value as FramesMode);
   });
   qs<HTMLInputElement>('#inertia-toggle').addEventListener('change', event => {
-    inertiaVisible = (event.target as HTMLInputElement).checked;
-    applyInertiaVisibility();
-    publishTestState();
+    applyInertiaVisibility((event.target as HTMLInputElement).checked);
   });
   qs<HTMLSelectElement>('#labels-mode').addEventListener('change', event => {
     labelsMode = (event.target as HTMLSelectElement).value as LabelsMode;
@@ -374,11 +362,7 @@ async function loadRobot(data: LoadRobotMessage, forceCollisionGeometry = false)
   linkNames = new Set(Object.keys(data.metadata.links));
   mimicGraph = buildMimicGraph(data.metadata.joints);
 
-  clearSelfCollisionHighlights();
-  collisionMeshGeometry.clear();
-  linkCollisionMaterials.clear();
-  linkVisualMaterials.clear();
-  originalVisualColors.clear();
+  ensureSelfCollision().dispose();
   disposeInertiaHelpers();
   disposeFrameHelpers();
   disposeReachability();
@@ -420,7 +404,6 @@ async function loadRobot(data: LoadRobotMessage, forceCollisionGeometry = false)
       buildInertiaHelpers();
       applyFramesMode();
       buildCollisionGeometryIndex();
-      buildVisualMaterialIndex();
       buildLabels();
     }
     robotReady = true;
@@ -730,15 +713,15 @@ function setJointValue(jointName: string, value: number, notify: boolean): void 
   if (selectedBox) {
     selectedBox.update();
   }
-  if (inertiaVisible) {
+  if (inertia?.isVisible()) {
     updateTotalCoMMarker();
   }
   dirty = true;
   if (notify) {
     vscode.postMessage({ type: 'jointChanged', joint: jointName, value });
   }
-  if (selfCollisionEnabled) {
-    void scheduleSelfCollisionCheck();
+  if (selfCollision?.isEnabled()) {
+    scheduleSelfCollisionCheck();
   }
   publishTestState();
 }
@@ -1147,46 +1130,23 @@ function renderBookmarkSelect(): void {
 // Frames overlay
 // =============================================================================
 
-function disposeFrameHelpers(): void {
-  for (const helper of linkAxesHelpers.values()) {
-    helper.parent?.remove(helper);
-    helper.dispose();
+function ensureFramesOverlay(): FramesOverlay {
+  if (!framesOverlay) {
+    framesOverlay = new FramesOverlay({
+      getBoundsRadius: () => robotBoundsRadius,
+      requestRedraw: () => { dirty = true; },
+      onStateChange: () => publishTestState()
+    });
   }
-  linkAxesHelpers.clear();
+  return framesOverlay;
 }
 
-function applyFramesMode(): void {
-  if (!robot?.links) {
-    publishTestState();
-    return;
-  }
-  const visibleLinks = new Set<string>();
-  if (framesMode === 'all') {
-    for (const linkName of Object.keys(robot.links)) {
-      visibleLinks.add(linkName);
-    }
-  } else if (framesMode === 'selected' && selectedLink) {
-    visibleLinks.add(selectedLink);
-  }
-  const size = Math.max(0.05, robotBoundsRadius * 0.06);
-  for (const linkName of Object.keys(robot.links)) {
-    const linkObject = robot.links[linkName] as Object3D;
-    let helper = linkAxesHelpers.get(linkName);
-    if (visibleLinks.has(linkName)) {
-      if (!helper) {
-        helper = new THREE.AxesHelper(size);
-        linkAxesHelpers.set(linkName, helper);
-        linkObject.add(helper);
-      } else {
-        helper.scale.setScalar(size / 0.5);
-      }
-      helper.visible = true;
-    } else if (helper) {
-      helper.visible = false;
-    }
-  }
-  publishTestState();
-  dirty = true;
+function disposeFrameHelpers(): void {
+  ensureFramesOverlay().dispose();
+}
+
+function applyFramesMode(mode?: FramesMode): void {
+  ensureFramesOverlay().apply(mode, robot, selectedLink);
 }
 
 interface TestState {
@@ -1207,7 +1167,7 @@ interface TestState {
 }
 
 function publishTestState(): void {
-  const visibleLinkAxes = Array.from(linkAxesHelpers.values()).filter(helper => helper.visible).length;
+  const visibleLinkAxes = framesOverlay?.visibleCount() ?? 0;
   const reachabilityPointCount = reachability?.pointCount() ?? 0;
   const jointAngles: Record<string, number> = {};
   for (const jointName of currentData?.metadata.movableJointNames ?? []) {
@@ -1223,11 +1183,11 @@ function publishTestState(): void {
   const totalLabels = labelsOverlay?.totalCount() ?? 0;
   const measureSnap = measurement?.snapshot() ?? { mode: false, pointCount: 0, distance: null };
   (window as unknown as { __urdfStudio?: TestState }).__urdfStudio = {
-    framesMode,
+    framesMode: framesOverlay?.current() ?? 'off',
     visibleLinkAxes,
     bookmarkCount: bookmarks.length,
-    inertiaVisible,
-    selfCollisionEnabled,
+    inertiaVisible: inertia?.isVisible() ?? false,
+    selfCollisionEnabled: selfCollision?.isEnabled() ?? false,
     reachabilityPointCount,
     jointAngles,
     labelsMode,
@@ -1244,328 +1204,90 @@ function publishTestState(): void {
 // Inertia & CoM
 // =============================================================================
 
-function disposeInertiaHelpers(): void {
-  for (const group of inertiaHelpers.values()) {
-    group.parent?.remove(group);
-    group.traverse(object => {
-      const mesh = object as THREE.Mesh;
-      if (mesh.isMesh) {
-        mesh.geometry?.dispose();
-        forEachMaterial(mesh, material => material.dispose());
-      }
+function ensureInertia(): InertiaVisualisation {
+  if (!inertia) {
+    inertia = new InertiaVisualisation({
+      scene,
+      getBoundsRadius: () => robotBoundsRadius,
+      requestRedraw: () => { dirty = true; },
+      onStateChange: () => publishTestState()
     });
   }
-  inertiaHelpers.clear();
-  if (totalCoMMarker) {
-    scene.remove(totalCoMMarker);
-    totalCoMMarker.geometry.dispose();
-    (totalCoMMarker.material as THREE.Material).dispose();
-    totalCoMMarker = undefined;
-  }
+  return inertia;
+}
+
+function disposeInertiaHelpers(): void {
+  ensureInertia().dispose();
 }
 
 function buildInertiaHelpers(): void {
-  if (!currentData || !robot?.links) {
+  if (!currentData || !robot) {
     return;
   }
-  for (const link of Object.values(currentData.metadata.links)) {
-    const inertial = link.inertial;
-    if (!inertial || inertial.mass <= 0) {
-      continue;
-    }
-    const linkObject = robot.links[link.name] as Object3D | undefined;
-    if (!linkObject) {
-      continue;
-    }
-    const group = new THREE.Group();
-    group.position.set(inertial.origin[0], inertial.origin[1], inertial.origin[2]);
-    group.rotation.set(inertial.rotation[0], inertial.rotation[1], inertial.rotation[2]);
-
-    const semi = ellipsoidSemiAxes(inertial);
-    const ellipsoidGeometry = new THREE.SphereGeometry(1, 24, 16);
-    ellipsoidGeometry.scale(Math.max(semi[0], 1e-4), Math.max(semi[1], 1e-4), Math.max(semi[2], 1e-4));
-    const ellipsoidMaterial = new THREE.MeshStandardMaterial({
-      color: 0x9ad7ff,
-      transparent: true,
-      opacity: 0.35,
-      roughness: 0.5,
-      metalness: 0,
-      depthWrite: false
-    });
-    group.add(new THREE.Mesh(ellipsoidGeometry, ellipsoidMaterial));
-
-    const sphereSize = Math.max(0.005, robotBoundsRadius * 0.01);
-    const comMarker = new THREE.Mesh(
-      new THREE.SphereGeometry(sphereSize, 14, 10),
-      new THREE.MeshBasicMaterial({ color: 0xffaa44 })
-    );
-    group.add(comMarker);
-
-    group.visible = inertiaVisible;
-    linkObject.add(group);
-    inertiaHelpers.set(link.name, group);
-  }
-
-  if (currentData.metadata.totalMass > 0) {
-    const sphereSize = Math.max(0.01, robotBoundsRadius * 0.018);
-    totalCoMMarker = new THREE.Mesh(
-      new THREE.SphereGeometry(sphereSize, 18, 12),
-      new THREE.MeshBasicMaterial({ color: 0xff8855 })
-    );
-    totalCoMMarker.visible = inertiaVisible;
-    scene.add(totalCoMMarker);
-    updateTotalCoMMarker();
-  }
+  ensureInertia().build(robot, currentData.metadata);
 }
 
 function updateTotalCoMMarker(): void {
-  if (!totalCoMMarker || !currentData || !robot?.links) {
+  if (!currentData || !robot) {
     return;
   }
-  const com = new THREE.Vector3();
-  let totalMass = 0;
-  const linkLocal = new THREE.Vector3();
-  for (const link of Object.values(currentData.metadata.links)) {
-    const inertial = link.inertial;
-    const linkObject = robot.links[link.name] as Object3D | undefined;
-    if (!inertial || inertial.mass <= 0 || !linkObject) {
-      continue;
-    }
-    linkObject.updateWorldMatrix(true, false);
-    linkLocal.set(inertial.origin[0], inertial.origin[1], inertial.origin[2]);
-    const world = linkLocal.applyMatrix4(linkObject.matrixWorld);
-    com.addScaledVector(world, inertial.mass);
-    totalMass += inertial.mass;
-  }
-  if (totalMass > 0) {
-    com.multiplyScalar(1 / totalMass);
-    totalCoMMarker.position.copy(com);
-  }
+  ensureInertia().refreshTotal(robot, currentData.metadata);
 }
 
-function applyInertiaVisibility(): void {
-  for (const group of inertiaHelpers.values()) {
-    group.visible = inertiaVisible;
-  }
-  if (totalCoMMarker) {
-    totalCoMMarker.visible = inertiaVisible;
-  }
-  if (inertiaVisible) {
-    updateTotalCoMMarker();
-  }
-  dirty = true;
+function applyInertiaVisibility(visible: boolean): void {
+  ensureInertia().setVisible(visible, robot, currentData?.metadata);
 }
 
 // =============================================================================
 // Self-collision detection
 // =============================================================================
 
+function ensureSelfCollision(): SelfCollision {
+  if (!selfCollision) {
+    selfCollision = new SelfCollision({
+      requestRedraw: () => { dirty = true; },
+      onStateChange: () => publishTestState()
+    });
+  }
+  return selfCollision;
+}
+
+function currentCollisionContext() {
+  if (!robot || !currentData) {
+    return undefined;
+  }
+  return {
+    robot,
+    metadata: currentData.metadata,
+    semantic: currentData.semantic
+  };
+}
+
 function buildCollisionGeometryIndex(): void {
-  if (!robot?.colliders) {
+  if (!robot) {
     return;
   }
-  for (const [linkName, collider] of Object.entries(robot.colliders)) {
-    const obj = collider as Object3D;
-    obj.traverse(child => {
-      const mesh = child as THREE.Mesh;
-      if (mesh.isMesh && mesh.geometry instanceof THREE.BufferGeometry) {
-        const geometry = mesh.geometry as THREE.BufferGeometry & { boundsTree?: MeshBVH; computeBoundsTree?: () => void };
-        if (!geometry.boundsTree) {
-          try {
-            geometry.computeBoundsTree?.();
-          } catch {
-            return;
-          }
-        }
-        collisionMeshGeometry.set(`${linkName}::${mesh.uuid}`, { mesh, ownerLink: linkName });
-        if (!linkCollisionMaterials.has(linkName)) {
-          linkCollisionMaterials.set(linkName, []);
-        }
-        forEachMaterial(mesh, material => linkCollisionMaterials.get(linkName)!.push(material));
-      }
-    });
-  }
-}
-
-function buildVisualMaterialIndex(): void {
-  linkVisualMaterials.clear();
-  originalVisualColors.clear();
-  if (!robot?.visual) {
-    return;
-  }
-  for (const [linkName, visual] of Object.entries(robot.visual)) {
-    const obj = visual as Object3D;
-    const materials: THREE.MeshStandardMaterial[] = [];
-    obj.traverse(child => {
-      const mesh = child as THREE.Mesh;
-      if (mesh.isMesh) {
-        forEachMaterial(mesh, material => {
-          materials.push(material);
-          if (!originalVisualColors.has(material)) {
-            originalVisualColors.set(material, material.color.clone());
-          }
-        });
-      }
-    });
-    if (materials.length > 0) {
-      linkVisualMaterials.set(linkName, materials);
-    }
-  }
-}
-
-function getDisabledPairs(): Set<string> {
-  if (!currentData) {
-    return new Set<string>();
-  }
-  return buildDisabledPairSet(currentData.semantic.disableCollisions);
-}
-
-function isAdjacent(linkA: string, linkB: string): boolean {
-  if (!currentData) {
-    return false;
-  }
-  return isAdjacentPure(linkA, linkB, currentData.metadata.links, currentData.metadata.joints);
-}
-
-function canonicalPair(a: string, b: string): string {
-  return canonicalPairPure(a, b);
-}
-
-function collectCollidingLinks(): { pairs: Array<[string, string]>; links: Set<string> } {
-  const pairs: Array<[string, string]> = [];
-  const links = new Set<string>();
-  if (collisionMeshGeometry.size === 0 || !robot) {
-    return { pairs, links };
-  }
-  robot.updateMatrixWorld(true);
-
-  const disabled = getDisabledPairs();
-  const checked = new Set<string>();
-  const meshes = Array.from(collisionMeshGeometry.values());
-
-  const worldBoxes = new Map<string, THREE.Box3>();
-  for (const entry of meshes) {
-    const box = new THREE.Box3().setFromObject(entry.mesh);
-    worldBoxes.set(entry.mesh.uuid, box);
-  }
-
-  for (let i = 0; i < meshes.length; i += 1) {
-    for (let j = i + 1; j < meshes.length; j += 1) {
-      const a = meshes[i];
-      const b = meshes[j];
-      if (a.ownerLink === b.ownerLink) {
-        continue;
-      }
-      const key = canonicalPair(a.ownerLink, b.ownerLink);
-      if (checked.has(key) || disabled.has(key) || isAdjacent(a.ownerLink, b.ownerLink)) {
-        continue;
-      }
-      const boxA = worldBoxes.get(a.mesh.uuid)!;
-      const boxB = worldBoxes.get(b.mesh.uuid)!;
-      if (!boxA.intersectsBox(boxB)) {
-        continue;
-      }
-      const geomA = a.mesh.geometry as THREE.BufferGeometry & { boundsTree?: MeshBVH };
-      const geomB = b.mesh.geometry as THREE.BufferGeometry & { boundsTree?: MeshBVH };
-      if (!geomA.boundsTree || !geomB.boundsTree) {
-        continue;
-      }
-      a.mesh.updateMatrixWorld(true);
-      b.mesh.updateMatrixWorld(true);
-      const inverseB = new THREE.Matrix4().copy(b.mesh.matrixWorld).invert();
-      const aToB = new THREE.Matrix4().multiplyMatrices(inverseB, a.mesh.matrixWorld);
-      const intersects = geomA.boundsTree.intersectsGeometry(geomB, aToB);
-      if (intersects) {
-        checked.add(key);
-        pairs.push([a.ownerLink, b.ownerLink]);
-        links.add(a.ownerLink);
-        links.add(b.ownerLink);
-      }
-    }
-  }
-  return { pairs, links };
-}
-
-async function scheduleSelfCollisionCheck(): Promise<void> {
-  if (selfCollisionPending || !selfCollisionEnabled) {
-    return;
-  }
-  selfCollisionPending = true;
-  await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
-  selfCollisionPending = false;
-  if (!selfCollisionEnabled) {
-    return;
-  }
-  const result = collectCollidingLinks();
-  applySelfCollisionHighlights(result.links, result.pairs.length);
-}
-
-function applySelfCollisionHighlights(links: Set<string>, pairCount = 0): void {
-  // Restore previously-highlighted links that are no longer colliding.
-  for (const link of highlightedCollisionLinks) {
-    if (!links.has(link)) {
-      restoreLinkColors(link);
-    }
-  }
-  // Tint the colliding links red on BOTH visual and collision meshes so the
-  // user sees the highlight regardless of the active render mode.
-  for (const link of links) {
-    tintLinkRed(link);
-  }
-  highlightedCollisionLinks.clear();
-  for (const link of links) {
-    highlightedCollisionLinks.add(link);
-  }
-  updateCollideHud(pairCount);
-  dirty = true;
-}
-
-function tintLinkRed(linkName: string): void {
-  const collisionMaterials = linkCollisionMaterials.get(linkName) ?? [];
-  for (const material of collisionMaterials) {
-    material.color.set(0xff4040);
-    material.needsUpdate = true;
-  }
-  const visualMaterials = linkVisualMaterials.get(linkName) ?? [];
-  for (const material of visualMaterials) {
-    material.color.set(0xff4040);
-    material.needsUpdate = true;
-  }
-}
-
-function restoreLinkColors(linkName: string): void {
-  const collisionMaterials = linkCollisionMaterials.get(linkName) ?? [];
-  for (const material of collisionMaterials) {
-    // Collision meshes are recolored to cyan by applyRenderMode, just match.
-    material.color.set(0x71d0ff);
-    material.needsUpdate = true;
-  }
-  const visualMaterials = linkVisualMaterials.get(linkName) ?? [];
-  for (const material of visualMaterials) {
-    const original = originalVisualColors.get(material);
-    if (original) {
-      material.color.copy(original);
-    }
-    material.needsUpdate = true;
-  }
+  ensureSelfCollision().rebuildIndex(robot);
 }
 
 function clearSelfCollisionHighlights(): void {
-  applySelfCollisionHighlights(new Set(), 0);
+  ensureSelfCollision().clearHighlights();
 }
 
-function updateCollideHud(pairCount: number): void {
-  const hud = document.getElementById('collide-hud');
-  if (!hud) {
+function scheduleSelfCollisionCheck(): void {
+  const ctx = currentCollisionContext();
+  if (!ctx) {
     return;
   }
-  if (!selfCollisionEnabled) {
-    hud.textContent = '';
-    return;
+  ensureSelfCollision().schedule(ctx);
+}
+
+function collectCollidingLinks(): { pairs: Array<[string, string]>; links: Set<string> } {
+  const ctx = currentCollisionContext();
+  if (!ctx) {
+    return { pairs: [], links: new Set() };
   }
-  hud.textContent = pairCount === 0
-    ? 'No self-collisions.'
-    : `${pairCount} self-collision pair${pairCount === 1 ? '' : 's'}.`;
+  return ensureSelfCollision().computeCollisions(ctx);
 }
 
 function computeRobotBoundsRadius(): void {
@@ -1847,7 +1569,7 @@ async function analyzeCollisionPairs(): Promise<void> {
     qs('#srdf-status').textContent = 'Load collision geometry first.';
     return;
   }
-  if (collisionMeshGeometry.size === 0) {
+  if (!ensureSelfCollision().hasGeometryIndex()) {
     qs('#srdf-status').textContent = 'No collision meshes available.';
     return;
   }
@@ -1862,8 +1584,8 @@ async function analyzeCollisionPairs(): Promise<void> {
   const linkNamesArr = Object.keys(currentData.metadata.links);
   for (let i = 0; i < linkNamesArr.length; i += 1) {
     for (let j = i + 1; j < linkNamesArr.length; j += 1) {
-      if (!isAdjacent(linkNamesArr[i], linkNamesArr[j])) {
-        allPairs.add(canonicalPair(linkNamesArr[i], linkNamesArr[j]));
+      if (!isAdjacentPure(linkNamesArr[i], linkNamesArr[j], currentData.metadata.links, currentData.metadata.joints)) {
+        allPairs.add(canonicalPairPure(linkNamesArr[i], linkNamesArr[j]));
       }
     }
   }
@@ -1878,7 +1600,7 @@ async function analyzeCollisionPairs(): Promise<void> {
     robot.updateMatrixWorld(true);
     const result = collectCollidingLinks();
     for (const [a, b] of result.pairs) {
-      colliding.add(canonicalPair(a, b));
+      colliding.add(canonicalPairPure(a, b));
     }
     if (s % 50 === 0 && s > 0) {
       qs('#srdf-status').textContent = `Sampling ${s}/${samples}…`;
