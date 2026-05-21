@@ -408,8 +408,12 @@ textarea {
    monitor it grows to ~420–460px. On a 4K display it caps at 520px so
    the viewport stays the centre of attention. */
 #app .workspace {
-  grid-template-columns: minmax(0, 1fr) clamp(340px, 24vw, 520px);
+  /* Floor bumped 340 → 390 so the five tab labels (Joints / Inspector /
+     Checks / Links / Tools) fit at 14px font without overflowing the
+     row on a 1440px viewport. */
+  grid-template-columns: minmax(0, 1fr) clamp(390px, 24vw, 520px);
 }
+
 
 #app .side {
   border-left: 1px solid var(--us-border);
@@ -424,6 +428,10 @@ textarea {
 #app .tabs {
   border-bottom: 1px solid var(--us-border);
   background: var(--us-bg-elevated);
+  /* Let the row shrink below its content's intrinsic size if needed —
+     the renderer ships `repeat(5, 1fr)` (auto-min), which refuses to
+     shrink below content and overflows the panel on narrow viewports. */
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 #app .tab {
@@ -435,9 +443,19 @@ textarea {
   font-weight: 500;
   /* Bumped from 13px so labels read clearly against the 48px row. */
   font-size: 14px;
+  /* The renderer's media/styles.css forces `button { height: 28px }`,
+     which clamps this tab to 28px regardless of padding. Override with
+     `height: auto` so the padding below actually controls the tab's
+     vertical extent — without this, the active underline below ends up
+     drawn through the label. */
+  height: auto;
   /* Asymmetric vertical padding leaves a clear 6px gap between the
-     label baseline and the underline. */
-  padding: 14px 16px 12px;
+     label baseline and the underline. Horizontal kept tight so the
+     five tabs fit a 390px panel. */
+  padding: 14px 8px 12px;
+  /* Allow the tab to shrink under tight panels — paired with
+     `minmax(0, 1fr)` on .tabs above. */
+  min-width: 0;
   cursor: pointer;
   transition: color 120ms ease;
 }
@@ -530,21 +548,31 @@ textarea {
 }
 
 /* Joint row: give the joint name a bit more room and the slider some
-   real estate when we have it. Font scales lightly. */
+   real estate when we have it. Font scales lightly.
+   First column uses `minmax(0, ...)` so the joint name can shrink and
+   ellipsize rather than push the row past the panel edge — common with
+   long fr3_joint_finger_X names. */
 #app .joint-row {
-  grid-template-columns: minmax(110px, 1fr) minmax(120px, 1.8fr) 84px;
+  grid-template-columns: minmax(0, 1fr) minmax(100px, 1.8fr) 78px;
   font-size: clamp(12px, 0.9vw, 13.5px);
-  gap: 12px;
+  gap: 10px;
 }
 
 #app .joint-row .joint-name {
   font-weight: 500;
   color: var(--us-fg);
+  /* Truncate rather than overflow. */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 #app .joint-row input[type='range'] {
   height: 24px;
   background: transparent;
+  min-width: 0;
+  width: 100%;
 }
 
 #app .joint-row input[type='number'] {
@@ -613,9 +641,17 @@ textarea {
   box-shadow: var(--us-shadow-sm);
 }
 
-/* Link tree — the Links tab. */
+/* Link tree — the Links tab. Long link names (e.g.
+   fr3_link0_accelerometer_top) will horizontally scroll within the panel
+   rather than burst out the side. */
 #app .panel.tree {
   font-size: clamp(12px, 0.9vw, 13.5px);
+  overflow-x: auto;
+}
+
+#app .panel.tree ul,
+#app .panel.tree li {
+  min-width: 0;
 }
 
 /* Checks panel — keep the diagnostic list legible. */
@@ -644,12 +680,27 @@ textarea {
 #app input[type='number'],
 #app input[type='text'],
 #app input[type='search'] {
+  /* `min-width: 0` lets these shrink inside grid / flex parents whose
+     other tracks would otherwise force horizontal overflow. Without it
+     the joint numeric input and the Tools panel's tip-link select both
+     pushed past the right edge of the side panel on big viewports. */
+  min-width: 0;
+  width: 100%;
   border-radius: var(--us-radius-sm);
   border: 1px solid var(--us-border);
   background: var(--us-surface);
   padding: 6px 10px;
   font-family: var(--us-font-mono);
   font-size: 12.5px;
+}
+
+/* Same fix for <select> elements in the panels (most visible in the
+   Tools tab where a tip-link dropdown can list every link with a long
+   name). Truncate overflow with native ellipsis. */
+#app .panel select {
+  max-width: 100%;
+  min-width: 0;
+  text-overflow: ellipsis;
 }
 
 #app input[type='number']:focus,
