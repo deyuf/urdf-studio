@@ -120,6 +120,11 @@ export function analyzeUrdf(urdf: string, sourcePath: string, packages: PackageM
     }
   }
 
+  // Collect package names where the fallback resolver had to step in, so
+  // we can emit one summary warning per missing package instead of N×72
+  // identical errors for every mesh that referenced it.
+  const fallbackPackagesWarned = new Set<string>();
+
   const meshes = directChildren(robot, 'link').flatMap(link => {
     const linkName = link.getAttribute('name')?.trim() ?? '';
     return (['visual', 'collision'] as const).flatMap(kind => directChildren(link, kind).flatMap(visualOrCollision => {
@@ -135,7 +140,26 @@ export function analyzeUrdf(urdf: string, sourcePath: string, packages: PackageM
       if (filename.startsWith('package://') && !resolved.packageName) {
         diagnostics.push({ severity: 'error', message: `Mesh URI "${filename}" has no package name.`, code: 'mesh.packageMalformed', target: linkName, file: sourcePath, line });
       } else if (filename.startsWith('package://') && resolved.packageName && !packages[resolved.packageName]) {
-        diagnostics.push({ severity: 'error', message: `Missing ROS package "${resolved.packageName}" for mesh "${filename}".`, code: 'mesh.packageMissing', target: linkName, file: sourcePath, line });
+        if (resolved.viaFallback && exists) {
+          // Fallback succeeded — emit one summary warning per missing
+          // package, not per mesh, so the Checks panel and toast stay
+          // useful.
+          if (!fallbackPackagesWarned.has(resolved.packageName)) {
+            fallbackPackagesWarned.add(resolved.packageName);
+            diagnostics.push({
+              severity: 'warning',
+              message:
+                `Package "${resolved.packageName}" has no package.xml in the loaded folder. ` +
+                `Meshes were located by walking the URDF's parent directories — looks like the folder is the package's contents rather than the package root. ` +
+                `For cleaner resolution, upload the folder that contains package.xml.`,
+              code: 'mesh.packageFallback',
+              target: resolved.packageName,
+              file: sourcePath
+            });
+          }
+        } else {
+          diagnostics.push({ severity: 'error', message: `Missing ROS package "${resolved.packageName}" for mesh "${filename}".`, code: 'mesh.packageMissing', target: linkName, file: sourcePath, line });
+        }
       } else if (resolved.resolvedPath && !exists) {
         diagnostics.push({ severity: 'error', message: `Missing ${kind} mesh "${filename}".`, code: 'mesh.missing', target: linkName, file: sourcePath, line });
       }

@@ -8,27 +8,43 @@
  * ==================================================================== */
 
 :root {
-  /* Palette — light. */
-  --us-bg: #ffffff;
-  --us-bg-elevated: #f8f9fa;
-  --us-bg-subtle: #f1f3f4;
-  --us-surface: #ffffff;
-  --us-fg: #1f1f1f;
-  --us-fg-muted: #5f6368;
-  --us-fg-faint: #80868b;
-  --us-border: #e8eaed;
-  --us-border-strong: #dadce0;
-  --us-accent: #1a73e8;
-  --us-accent-hover: #1967d2;
-  --us-accent-soft: rgba(26, 115, 232, 0.08);
-  --us-accent-soft-hover: rgba(26, 115, 232, 0.14);
-  --us-on-accent: #ffffff;
-  --us-success: #1e8e3e;
-  --us-warning: #f29900;
-  --us-danger: #d93025;
-  --us-shadow-sm: 0 1px 2px rgba(60, 64, 67, 0.08), 0 1px 3px 1px rgba(60, 64, 67, 0.05);
-  --us-shadow-md: 0 1px 3px rgba(60, 64, 67, 0.1), 0 4px 8px 3px rgba(60, 64, 67, 0.05);
-  --us-shadow-lg: 0 2px 6px rgba(60, 64, 67, 0.1), 0 8px 24px 4px rgba(60, 64, 67, 0.1);
+  /* `color-scheme` lights up the CSS `light-dark()` function — without
+     this, `light-dark()` falls back to its `light` argument. The
+     theme-toggle button below switches this between `light` and `dark`
+     to override prefers-color-scheme on demand. */
+  color-scheme: light dark;
+
+  /* Palette — one declaration per token using light-dark() instead of a
+     duplicated @media (prefers-color-scheme: dark) block. */
+  --us-bg:             light-dark(#ffffff, #131314);
+  --us-bg-elevated:    light-dark(#f8f9fa, #1e1f20);
+  --us-bg-subtle:      light-dark(#f1f3f4, #28292a);
+  --us-surface:        light-dark(#ffffff, #1e1f20);
+  --us-fg:             light-dark(#1f1f1f, #e3e3e3);
+  --us-fg-muted:       light-dark(#5f6368, #9aa0a6);
+  --us-fg-faint:       light-dark(#80868b, #80868b);
+  --us-border:         light-dark(#e8eaed, #3c4043);
+  --us-border-strong:  light-dark(#dadce0, #5f6368);
+  --us-accent:         light-dark(#1a73e8, #8ab4f8);
+  --us-accent-hover:   light-dark(#1967d2, #aecbfa);
+  --us-accent-soft:    light-dark(rgba(26, 115, 232, 0.08), rgba(138, 180, 248, 0.12));
+  --us-accent-soft-hover: light-dark(rgba(26, 115, 232, 0.14), rgba(138, 180, 248, 0.2));
+  --us-on-accent:      light-dark(#ffffff, #062e6f);
+  --us-success:        light-dark(#1e8e3e, #81c995);
+  --us-warning:        light-dark(#f29900, #fdd663);
+  --us-danger:         light-dark(#d93025, #f28b82);
+  --us-shadow-sm: light-dark(
+    0 1px 2px rgba(60, 64, 67, 0.08), 0 1px 3px 1px rgba(60, 64, 67, 0.05),
+    0 1px 2px rgba(0, 0, 0, 0.3),     0 1px 3px 1px rgba(0, 0, 0, 0.15)
+  );
+  --us-shadow-md: light-dark(
+    0 1px 3px rgba(60, 64, 67, 0.1),  0 4px 8px 3px rgba(60, 64, 67, 0.05),
+    0 1px 3px rgba(0, 0, 0, 0.4),     0 4px 8px 3px rgba(0, 0, 0, 0.15)
+  );
+  --us-shadow-lg: light-dark(
+    0 2px 6px rgba(60, 64, 67, 0.1),  0 8px 24px 4px rgba(60, 64, 67, 0.1),
+    0 2px 6px rgba(0, 0, 0, 0.4),     0 8px 24px 4px rgba(0, 0, 0, 0.3)
+  );
 
   /* Spacing scale (8px grid). */
   --us-space-1: 4px;
@@ -73,28 +89,30 @@
   --vscode-editorInfo-foreground: var(--us-accent);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --us-bg: #131314;
-    --us-bg-elevated: #1e1f20;
-    --us-bg-subtle: #28292a;
-    --us-surface: #1e1f20;
-    --us-fg: #e3e3e3;
-    --us-fg-muted: #9aa0a6;
-    --us-fg-faint: #80868b;
-    --us-border: #3c4043;
-    --us-border-strong: #5f6368;
-    --us-accent: #8ab4f8;
-    --us-accent-hover: #aecbfa;
-    --us-accent-soft: rgba(138, 180, 248, 0.12);
-    --us-accent-soft-hover: rgba(138, 180, 248, 0.2);
-    --us-on-accent: #062e6f;
-    --us-success: #81c995;
-    --us-warning: #fdd663;
-    --us-danger: #f28b82;
-    --us-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 3px 1px rgba(0, 0, 0, 0.15);
-    --us-shadow-md: 0 1px 3px rgba(0, 0, 0, 0.4), 0 4px 8px 3px rgba(0, 0, 0, 0.15);
-    --us-shadow-lg: 0 2px 6px rgba(0, 0, 0, 0.4), 0 8px 24px 4px rgba(0, 0, 0, 0.3);
+/* Theme override. The default `color-scheme: light dark` lets
+   `light-dark()` follow the OS; pinning it forces either side. */
+:root[data-theme='light'] { color-scheme: light; }
+:root[data-theme='dark']  { color-scheme: dark; }
+/* data-theme='system' is the default — no override needed. */
+
+/* View Transitions API: a smooth crossfade when the theme flips. The
+   transition swaps the whole page, so we pick generous timings. */
+@supports (view-transition-name: root) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 380ms;
+    animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+}
+
+/* Respect reduced motion across the entire app. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
 
@@ -129,17 +147,11 @@ body::before {
   inset: 0;
   pointer-events: none;
   z-index: -1;
+  --backdrop-1: light-dark(rgba(26, 115, 232, 0.08), rgba(138, 180, 248, 0.07));
+  --backdrop-2: light-dark(rgba(168, 67, 233, 0.05), rgba(197, 138, 248, 0.05));
   background:
-    radial-gradient(1200px 600px at 8% -20%, rgba(26, 115, 232, 0.08), transparent 60%),
-    radial-gradient(900px 500px at 100% 0%, rgba(168, 67, 233, 0.05), transparent 60%);
-}
-
-@media (prefers-color-scheme: dark) {
-  body::before {
-    background:
-      radial-gradient(1200px 600px at 8% -20%, rgba(138, 180, 248, 0.07), transparent 60%),
-      radial-gradient(900px 500px at 100% 0%, rgba(197, 138, 248, 0.05), transparent 60%);
-  }
+    radial-gradient(1200px 600px at 8% -20%, var(--backdrop-1), transparent 60%),
+    radial-gradient(900px 500px at 100% 0%, var(--backdrop-2), transparent 60%);
 }
 
 /* ===== Topbar ===== */
@@ -156,14 +168,11 @@ body::before {
   display: flex;
   align-items: center;
   gap: var(--us-space-3);
-  /* Generous side gutters that breathe more on wider viewports. */
+  /* Same fluid gutters as the renderer toolbar below so the left/right
+     edges of all three rows (topbar / toolbar / subtoolbar) stay flush.
+     The previous max-width: 1800px caused a ~12px offset on wide screens. */
   padding: var(--us-space-3) clamp(var(--us-space-4), 2.5vw, var(--us-space-8));
   min-height: 60px;
-  /* Cap the topbar's interactive content on ultra-wide screens so the
-     brand and actions don't drift to the corners of a 2K/4K monitor. */
-  max-width: 1800px;
-  margin: 0 auto;
-  width: 100%;
 }
 
 .brand {
@@ -184,13 +193,7 @@ body::before {
   display: block;
   flex-shrink: 0;
   /* Tiny rim so the icon doesn't blend into the topbar bg. */
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06);
-}
-
-@media (prefers-color-scheme: dark) {
-  .brand-icon {
-    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
-  }
+  box-shadow: 0 0 0 1px light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.08));
 }
 
 .brand-tag {
@@ -229,8 +232,11 @@ textarea {
 #topbar a.ghost-link,
 #topbar select {
   height: 36px;
-  padding: 0 16px;
-  border-radius: var(--us-radius-pill);
+  padding: 0 14px;
+  /* Rounded rectangle (matches dialog actions, renderer toolbar buttons,
+     and the segmented theme switcher). Previous pill style felt heavy
+     against the page's geometry. */
+  border-radius: var(--us-radius-md);
   border: 1px solid var(--us-border-strong);
   background: var(--us-surface);
   color: var(--us-fg);
@@ -284,13 +290,16 @@ textarea {
   color: var(--us-fg);
 }
 
-/* Round icon-buttons (Settings, Help). */
+/* Icon-only buttons (Settings, Help). Match the height (36px) of the
+   adjacent labelled buttons but use a larger glyph so the ⚙ and ?
+   carry the same visual weight as text-bearing siblings. */
 #help-btn,
 #settings-btn {
-  width: 36px;
+  width: 40px;
   padding: 0;
-  font-size: 16px;
+  font-size: 20px;
   font-weight: 500;
+  line-height: 1;
   justify-content: center;
 }
 
@@ -406,7 +415,10 @@ textarea {
   border-left: 1px solid var(--us-border);
   background: var(--us-bg-elevated);
   /* Match the new row height of .tabs (40px) below. */
-  grid-template-rows: 40px minmax(0, 1fr);
+  /* Slightly taller than the renderer's default so the new tab font /
+     padding (see #app .tab below) gets enough headroom and the active
+     underline floats a few pixels below the text. */
+  grid-template-rows: 48px minmax(0, 1fr);
 }
 
 #app .tabs {
@@ -421,10 +433,13 @@ textarea {
   border-radius: 0;
   color: var(--us-fg-muted);
   font-weight: 500;
-  font-size: 13px;
-  padding: 12px 16px;
+  /* Bumped from 13px so labels read clearly against the 48px row. */
+  font-size: 14px;
+  /* Asymmetric vertical padding leaves a clear 6px gap between the
+     label baseline and the underline. */
+  padding: 14px 16px 12px;
   cursor: pointer;
-  transition: color 100ms ease;
+  transition: color 120ms ease;
 }
 
 #app .tab:hover {
@@ -441,10 +456,12 @@ textarea {
   position: absolute;
   left: 12px;
   right: 12px;
-  bottom: 0;
+  /* Float the underline a few pixels above the row border instead of
+     hugging the text. Visually balances the typography. */
+  bottom: 4px;
   height: 2px;
   background: var(--us-accent);
-  border-radius: 2px 2px 0 0;
+  border-radius: 2px;
 }
 
 /* More breathing room inside the side panels at higher resolutions. */
@@ -770,17 +787,6 @@ dialog.onboarding::backdrop {
   position: relative;
 }
 
-.onboarding-card::before {
-  /* A subtle gradient accent strip on top of the dialog. */
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 4px;
-  background: linear-gradient(90deg, #4285f4 0%, #a142f4 50%, #ea4335 100%);
-}
-
 .onboarding-step {
   font-size: 11px;
   text-transform: uppercase;
@@ -1031,6 +1037,174 @@ dialog.onboarding::backdrop {
 .toast-close:hover {
   background: var(--us-bg-subtle);
   color: var(--us-fg);
+}
+
+/* ===== Theme switcher (segmented control) ===== */
+
+.theme-mount {
+  display: inline-flex;
+  align-items: center;
+}
+
+.theme-switcher {
+  display: inline-flex;
+  align-items: center;
+  height: 36px;
+  padding: 3px;
+  border: 1px solid var(--us-border-strong);
+  border-radius: var(--us-radius-md);
+  background: var(--us-bg-elevated);
+  gap: 2px;
+  position: relative;
+}
+
+.theme-switcher-btn {
+  /* Override the topbar pill rule above — segmented buttons sit inside
+     a rounded container, share its inner radius. */
+  appearance: none;
+  height: 28px !important;
+  min-width: 36px;
+  padding: 0 8px !important;
+  border: 1px solid transparent !important;
+  border-radius: calc(var(--us-radius-md) - 4px) !important;
+  background: transparent !important;
+  color: var(--us-fg-muted) !important;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease, transform 100ms ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.theme-switcher-btn:hover {
+  background: var(--us-bg-subtle) !important;
+  color: var(--us-fg) !important;
+}
+
+.theme-switcher-btn[data-active='true'] {
+  background: var(--us-surface) !important;
+  color: var(--us-fg) !important;
+  box-shadow: var(--us-shadow-sm);
+  /* View Transitions: name the active pill so it tweens between
+     segments when the user picks a new mode. */
+  view-transition-name: theme-pill;
+}
+
+@supports (view-transition-name: theme-pill) {
+  ::view-transition-old(theme-pill),
+  ::view-transition-new(theme-pill) {
+    animation-duration: 220ms;
+  }
+}
+
+/* ===== @starting-style: pure-CSS entrance animations =====
+   Each rule pairs a `transition` on the steady state with a
+   `@starting-style` block that defines the from-state. The element
+   animates from the @starting-style value to the steady-state value
+   when first connected to the DOM (toast) or when the dialog goes
+   from closed → open. Replaces JS-driven `.toast-entered` class. */
+
+.toast {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 220ms cubic-bezier(0.2, 0, 0.2, 1),
+              transform 220ms cubic-bezier(0.2, 0, 0.2, 1);
+}
+
+@starting-style {
+  .toast {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+.toast-leaving {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+/* Dialogs animate in and out symmetrically.
+   - The closed state (no [open]) carries the hidden values (opacity 0,
+     translated down). That state is what the dialog tweens TO when
+     close() is called.
+   - The [open] state carries the visible values.
+   - @starting-style copies the hidden state for the opening transition.
+   - allow-discrete on `display` + `overlay` keeps the dialog rendered
+     during the close animation; without these two, the dialog would
+     vanish instantly and the transition would never play, which is the
+     "laggy" behaviour the previous rule produced. */
+dialog.onboarding,
+dialog#settings-dialog {
+  opacity: 0;
+  transform: translateY(10px) scale(0.985);
+  transition: opacity 180ms cubic-bezier(0.2, 0, 0.2, 1),
+              transform 180ms cubic-bezier(0.2, 0, 0.2, 1),
+              overlay   180ms allow-discrete,
+              display   180ms allow-discrete;
+}
+
+dialog.onboarding[open],
+dialog#settings-dialog[open] {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+@starting-style {
+  dialog.onboarding[open],
+  dialog#settings-dialog[open] {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+}
+
+dialog.onboarding::backdrop,
+dialog#settings-dialog::backdrop {
+  background: rgba(15, 17, 21, 0);
+  backdrop-filter: blur(0);
+  transition: background 180ms ease,
+              backdrop-filter 180ms ease,
+              display 180ms allow-discrete;
+}
+
+dialog.onboarding[open]::backdrop,
+dialog#settings-dialog[open]::backdrop {
+  background: rgba(15, 17, 21, 0.5);
+  backdrop-filter: blur(4px);
+  opacity: 1;
+}
+
+@starting-style {
+  dialog.onboarding[open]::backdrop,
+  dialog#settings-dialog[open]::backdrop {
+    background: rgba(15, 17, 21, 0);
+    backdrop-filter: blur(0);
+  }
+}
+
+/* ===== Container queries — side panel re-stacks at narrow widths ===== */
+
+#app .side {
+  container-type: inline-size;
+  container-name: side;
+}
+
+@container side (max-width: 360px) {
+  #app .joint-row {
+    /* When the side panel is genuinely narrow (typically because the
+       user pulled the workspace toward a portrait layout), stack the
+       slider beneath the label so the numeric input doesn't get
+       crushed. */
+    grid-template-columns: minmax(0, 1fr) 72px;
+    grid-template-areas:
+      'name input'
+      'slider slider';
+    row-gap: 4px;
+  }
+  #app .joint-row .joint-name { grid-area: name; }
+  #app .joint-row input[type='number'] { grid-area: input; }
+  #app .joint-row input[type='range'] { grid-area: slider; }
 }
 
 /* ===== Responsive niceties ===== */

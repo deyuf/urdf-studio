@@ -1,8 +1,13 @@
 // Web entry point. Order of side effects is important:
-//   1. Install CoreIo (browser implementation).
-//   2. Install acquireVsCodeApi shim before the renderer module evaluates.
-//   3. Mount the UI shell so #app and other DOM nodes exist.
-//   4. Lazy-import the renderer.
+//   1. Apply the stored theme on <html> immediately (before paint) so the
+//      first frame doesn't flash the wrong palette.
+//   2. Install CoreIo (browser implementation).
+//   3. Install acquireVsCodeApi shim before the renderer module evaluates.
+//   4. Mount the UI shell so #app and other DOM nodes exist.
+//   5. Lazy-import the renderer.
+
+import { applyThemeImmediate, loadTheme } from './ui/theme';
+applyThemeImmediate(loadTheme());
 
 import './ioBrowser';
 import { WebHost } from './host';

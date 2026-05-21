@@ -156,6 +156,41 @@ test.describe('web shell', () => {
     expect(saved.upAxis).toBe('+Y');
   });
 
+  test('theme switcher persists across reloads and flips data-theme', async ({ page }) => {
+    await page.goto(server.url);
+    if (await page.locator('dialog.onboarding').isVisible()) {
+      await page.locator('[data-action="skip"]').click();
+    }
+
+    // System default — no data-theme override needed; light-dark() follows OS.
+    const initial = await page.evaluate(() => document.documentElement.getAttribute('data-theme'));
+    expect(initial).toBe('system');
+
+    // Pick dark. startViewTransition runs its callback asynchronously,
+    // so the data-theme attribute updates a frame or two after the click.
+    await page.locator('.theme-switcher-btn[data-theme="dark"]').click();
+    await expect(page.locator('.theme-switcher-btn[data-theme="dark"]')).toHaveAttribute('data-active', 'true');
+    await expect.poll(
+      () => page.evaluate(() => document.documentElement.getAttribute('data-theme'))
+    ).toBe('dark');
+
+    // Choice persists via localStorage.
+    expect(await page.evaluate(() => localStorage.getItem('urdf-studio:theme:v1'))).toBe('dark');
+
+    // Reload — dark sticks.
+    await page.reload();
+    expect(await page.evaluate(() => document.documentElement.getAttribute('data-theme'))).toBe('dark');
+
+    // Flip to light.
+    if (await page.locator('dialog.onboarding').isVisible()) {
+      await page.locator('[data-action="skip"]').click();
+    }
+    await page.locator('.theme-switcher-btn[data-theme="light"]').click();
+    await expect.poll(
+      () => page.evaluate(() => document.documentElement.getAttribute('data-theme'))
+    ).toBe('light');
+  });
+
   test('shows a helpful empty state before any folder is loaded', async ({ page }) => {
     await page.goto(server.url);
     await expect(page.locator('#file-select')).toBeDisabled();
