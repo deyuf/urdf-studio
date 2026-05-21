@@ -108,8 +108,9 @@ test('renderer escapes URDF-supplied strings into all panels', async ({ page }) 
     await expect(page.locator('#panel-joints')).toContainText(/Links/);
 
     // Cycle through every tab so each renderer is exercised against the
-    // hostile URDF in turn.
-    for (const tab of ['joints', 'inspector', 'checks', 'links', 'source']) {
+    // hostile URDF in turn — including Tools, which renders the
+    // malicious link name into a <select> of tip-link options.
+    for (const tab of ['joints', 'inspector', 'checks', 'links', 'source', 'tools']) {
       await page.locator(`.tab[data-tab="${tab}"]`).click();
     }
     // Force the inspector to load by selecting the malicious link from the
@@ -121,7 +122,7 @@ test('renderer escapes URDF-supplied strings into all panels', async ({ page }) 
     }
 
     // No <script> child should have been parsed from the payload anywhere.
-    const scriptCount = await page.locator('#panel-joints script, #panel-inspector script, #panel-checks script, #panel-links script, #panel-source script').count();
+    const scriptCount = await page.locator('#panel-joints script, #panel-inspector script, #panel-checks script, #panel-links script, #panel-source script, #panel-tools script').count();
     expect(scriptCount, 'no <script> tag may be parsed out of URDF-controlled text').toBe(0);
 
     // No inline handler fired. We didn't define window.__xssExecuted; the

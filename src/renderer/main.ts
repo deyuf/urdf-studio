@@ -57,6 +57,12 @@ interface LoadRobotMessage {
   renderSettings: { renderMode: RenderMode; upAxis: '+X' | '+Y' | '+Z' };
   savedState?: PreviewState;
   bookmarks?: PoseBookmark[];
+  // Web host only: maps `urdf-studio-vfs:///abs/path` URLs (declared in
+  // packageMap / sourceBaseUri) back to blob: URLs the loaders can fetch.
+  // VS Code host leaves these undefined and serves assets through the
+  // webview's localResourceRoots whitelist instead.
+  vfsUrlMap?: Record<string, string>;
+  vfsUrlScheme?: string;
 }
 
 interface VsCodeApi {
@@ -442,8 +448,8 @@ async function loadRobot(data: LoadRobotMessage, forceCollisionGeometry = false)
 
   // Host-supplied URL rewriter (used by the web build to resolve
   // urdf-studio-vfs:// URLs to blob: URLs). VS Code build leaves it unset.
-  const vfsUrlMap = (data as LoadRobotMessage & { vfsUrlMap?: Record<string, string>; vfsUrlScheme?: string }).vfsUrlMap;
-  const vfsScheme = (data as LoadRobotMessage & { vfsUrlScheme?: string }).vfsUrlScheme;
+  const vfsUrlMap = data.vfsUrlMap;
+  const vfsScheme = data.vfsUrlScheme;
   if (vfsUrlMap && vfsScheme) {
     manager.setURLModifier(url => {
       if (typeof url !== 'string' || !url.startsWith(vfsScheme)) {
@@ -1112,16 +1118,6 @@ function qsa<T extends Element = HTMLElement>(selector: string): T[] {
   return Array.from(document.querySelectorAll<T>(selector));
 }
 
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, char => ({
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#39;'
-  }[char]!));
-}
-
 function cssEscape(value: string): string {
   return typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(value) : value.replace(/["\\]/g, '\\$&');
 }
@@ -1133,8 +1129,10 @@ function cssEscape(value: string): string {
 function renderBookmarkSelect(): void {
   const select = qs<HTMLSelectElement>('#bookmark-select');
   const previous = select.value;
-  select.innerHTML = '<option value="">Bookmarks</option>'
-    + bookmarks.map(item => `<option value="${escapeHtml(item.name)}">${escapeHtml(item.name)}</option>`).join('');
+  setInnerHtml(select, html`
+    <option value="">Bookmarks</option>
+    ${bookmarks.map(item => html`<option value="${item.name}">${item.name}</option>`)}
+  `);
   if (bookmarks.some(item => item.name === previous)) {
     select.value = previous;
   } else {
@@ -1592,13 +1590,10 @@ function computeRobotBoundsRadius(): void {
 
 function renderToolsPanel(): void {
   const panel = qs('#panel-tools');
-  const tipOptions = currentData
-    ? Object.values(currentData.metadata.links)
-      .filter(link => link.childJoints.length === 0)
-      .map(link => `<option value="${escapeHtml(link.name)}">${escapeHtml(link.name)}</option>`)
-      .join('')
-    : '';
-  panel.innerHTML = `
+  const tipLinks = currentData
+    ? Object.values(currentData.metadata.links).filter(link => link.childJoints.length === 0)
+    : [];
+  setInnerHtml(panel, html`
     <h3>Measure</h3>
     <div class="tool-block">
       <div class="row-buttons">
@@ -1610,7 +1605,7 @@ function renderToolsPanel(): void {
     </div>
     <h3>Reachability</h3>
     <div class="tool-block">
-      <label>Tip link <select id="reach-tip">${tipOptions}</select></label>
+      <label>Tip link <select id="reach-tip">${tipLinks.map(link => html`<option value="${link.name}">${link.name}</option>`)}</select></label>
       <label>Samples <input id="reach-samples" type="number" min="50" max="20000" step="50" value="1000"></label>
       <button id="reach-run" class="primary">Sample</button>
       <button id="reach-clear">Clear</button>
@@ -1632,7 +1627,7 @@ function renderToolsPanel(): void {
       </div>
       <div class="muted" id="export-status">One row per link; PDF bundles screenshot + checks + summary.</div>
     </div>
-  `;
+  `);
   qs('#measure-toggle').addEventListener('click', () => toggleMeasureMode());
   qs('#measure-clear').addEventListener('click', () => clearMeasurement());
   qs('#reach-run').addEventListener('click', () => void sampleReachability());
@@ -1803,14 +1798,14 @@ function refreshMeasureUi(): void {
       const dy = b.y - a.y;
       const dz = b.z - a.z;
       const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-      readout.innerHTML = `
+      setInnerHtml(readout, html`
         <div><b>Distance</b> ${dist.toFixed(4)} m</div>
         <div><b>Δx</b> ${dx.toFixed(4)} <b>Δy</b> ${dy.toFixed(4)} <b>Δz</b> ${dz.toFixed(4)}</div>
         <div class="muted">A (${a.x.toFixed(3)}, ${a.y.toFixed(3)}, ${a.z.toFixed(3)})</div>
         <div class="muted">B (${b.x.toFixed(3)}, ${b.y.toFixed(3)}, ${b.z.toFixed(3)})</div>
-      `;
+      `);
     } else {
-      readout.innerHTML = '';
+      readout.replaceChildren();
     }
   }
   setMeasureStatus(measureMode
@@ -2229,10 +2224,16 @@ async function analyzeCollisionPairs(): Promise<void> {
   lastCollisionAnalysis = neverColliding;
 
   const list = qs('#srdf-results');
-  list.innerHTML = neverColliding.length === 0
-    ? '<li class="muted">All non-adjacent pairs collide at least once. Increase samples?</li>'
-    : neverColliding.slice(0, 200).map(entry => `<li><code>${escapeHtml(entry.link1)} ↔ ${escapeHtml(entry.link2)}</code></li>`).join('')
-      + (neverColliding.length > 200 ? `<li class="muted">… and ${neverColliding.length - 200} more</li>` : '');
+  if (neverColliding.length === 0) {
+    setInnerHtml(list, html`<li class="muted">All non-adjacent pairs collide at least once. Increase samples?</li>`);
+  } else {
+    const shown = neverColliding.slice(0, 200);
+    const overflow = neverColliding.length - shown.length;
+    setInnerHtml(list, html`
+      ${shown.map(entry => html`<li><code>${entry.link1} ↔ ${entry.link2}</code></li>`)}
+      ${overflow > 0 ? html`<li class="muted">… and ${overflow} more</li>` : ''}
+    `);
+  }
   qs('#srdf-status').textContent = `${neverColliding.length} never-colliding pairs found from ${samples} samples.`;
   qs<HTMLButtonElement>('#srdf-write').disabled = neverColliding.length === 0;
 
