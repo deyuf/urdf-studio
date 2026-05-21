@@ -130,7 +130,6 @@ export function buildReportPdf(
   pdf.setFontSize(9);
   if (doc.diagnostics.length === 0) {
     pdf.text('No diagnostics.', margin, cursorY);
-    cursorY += 12;
   } else {
     for (const diag of doc.diagnostics.slice(0, 60)) {
       if (cursorY > pageHeight - margin) {
@@ -145,12 +144,10 @@ export function buildReportPdf(
     }
     if (doc.diagnostics.length > 60) {
       pdf.text(`… and ${doc.diagnostics.length - 60} more`, margin, cursorY);
-      cursorY += 12;
     }
   }
-  cursorY += 6;
 
-  // Links table.
+  // Links table — starts on a fresh page so cursorY resets.
   pdf.addPage();
   cursorY = margin;
   pdf.setFont('helvetica', 'bold');
