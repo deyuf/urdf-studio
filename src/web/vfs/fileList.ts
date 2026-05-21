@@ -1,7 +1,6 @@
 // Fallback VFS for browsers without File System Access API (Safari, mobile).
 // Built from a FileList obtained via <input type="file" webkitdirectory>.
 
-import { posixPath } from './posixPath';
 import type { BrowserVfs, DirEntry } from './types';
 
 const SKIP_DIR_REGEX = /(^|\/)(\.git|\.hg|\.svn|node_modules|dist|out|build|install|log|\.cache|\.pytest_cache)(\/|$)/;

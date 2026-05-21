@@ -1,6 +1,6 @@
 import { parseXml } from './xml';
 import { getCoreIo } from './io';
-import type { PackageEntry, PackageMap } from './types';
+import type { PackageMap } from './types';
 
 const SKIP_DIRS = new Set([
   '.git',

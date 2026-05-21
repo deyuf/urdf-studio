@@ -15,8 +15,11 @@ import { AppShell } from './ui/app';
 
 async function boot(): Promise<void> {
   const host = new WebHost();
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  // The AppShell constructor wires itself into the host listeners + DOM; the
+  // returned instance is intentionally unreferenced — keeping a _-prefixed
+  // local name documents the side-effect without triggering lint warnings.
   const _shell = new AppShell(host);
+  void _shell;
   // Boot the renderer last — it owns #app and immediately posts a 'ready'
   // message that the host now listens for.
   await import('../renderer/main.js');

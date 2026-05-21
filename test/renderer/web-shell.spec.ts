@@ -12,14 +12,10 @@ const BAD_FIXTURE_DIR = path.join(REPO_ROOT, 'test', 'fixtures', 'bad_urdf');
 // Files we will inject via the webkitdirectory fallback path. Browsers strip
 // File System Access API from headless contexts unless granted explicit user
 // gestures, so we use the FileList fallback that AppShell already supports.
-const FIXTURE_FILES = [
-  // The xacro file lives at the fixture root; we present it as if dropped from
-  // a "fixtures" folder.
-  { abs: path.join(FIXTURE_DIR, 'model.xacro'), rel: 'fixtures/model.xacro' },
-  { abs: path.join(FIXTURE_DIR, 'xacro_pkg', 'package.xml'), rel: 'fixtures/xacro_pkg/package.xml' },
-  { abs: path.join(FIXTURE_DIR, 'xacro_pkg', 'urdf', 'part.xacro'), rel: 'fixtures/xacro_pkg/urdf/part.xacro' },
-  { abs: path.join(FIXTURE_DIR, 'xacro_pkg', 'config', 'test.yaml'), rel: 'fixtures/xacro_pkg/config/test.yaml' }
-];
+// Playwright walks the FIXTURE_DIR recursively when setInputFiles() is given
+// a directory path; the file layout we expose to the browser is documented
+// in test/fixtures/ on disk (xacro_pkg/{package.xml,urdf/part.xacro,
+// config/test.yaml} + model.xacro at the root).
 
 test.describe('web shell', () => {
   let server: { url: string; close(): Promise<void> };

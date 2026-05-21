@@ -110,10 +110,18 @@ async function watchExtension() {
 // Web build options. The web entry never imports io.node, but the core module
 // graph carries optional jsdom-side helpers via the xacro-parser vendor. Mark
 // Node-only packages as external so esbuild does not try to resolve them.
+//
+// splitting=true + outdir (not outfile) enables ESM code-splitting so that
+// dynamic `import()` inside the renderer becomes a separately-loaded chunk
+// instead of being inlined into app.js. The biggest single payoff is jspdf
+// (~400 kB) which only loads when the user clicks "Export Report (PDF)".
 const webBuildOptions = {
   ...common,
   entryPoints: ['src/web/main.ts'],
-  outfile: 'dist-web/app.js',
+  outdir: 'dist-web',
+  entryNames: 'app',
+  chunkNames: 'chunks/[name]-[hash]',
+  splitting: true,
   platform: 'browser',
   format: 'esm',
   target: ['chrome114', 'firefox115', 'safari17'],

@@ -78,7 +78,7 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
 
     const config = vscode.workspace.getConfiguration('urdfStudio');
     const packageRoots = this.packageRoots(config);
-    let initialPackages: PackageMap = {};
+    let initialPackages: PackageMap;
     try {
       initialPackages = await discoverPackages(packageRoots);
     } catch {

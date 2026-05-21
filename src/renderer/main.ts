@@ -21,25 +21,31 @@ import type {
   StudioDiagnostic,
   XacroArgument
 } from '../core/types';
-import { ellipsoidSemiAxes } from '../core/inertia';
 import { buildMimicGraph, propagateMimicValue, type MimicGraph } from '../core/mimic';
-import { buildBomCsv } from '../core/bom';
 import { LabelsOverlay, type LabelsMode } from './labels';
 import { buildDisplayGroups as buildDisplayGroupsPure, jointRange as jointRangePure } from './logic/displayGroups';
 import {
-  buildDisabledPairSet,
   canonicalPair as canonicalPairPure,
   isAdjacent as isAdjacentPure
 } from './logic/selfCollision';
 import { mountSourcePane, type SourcePane } from './logic/sourcePane';
 import { html, setInnerHtml } from './html';
+import {
+  exportBom as exportBomFeature,
+  exportPdfReport as exportPdfReportFeature,
+  type ExportableDocument
+} from './features/export';
+import { Measurement } from './features/measurement';
+import { Reachability } from './features/reachability';
+import { InertiaVisualisation } from './features/inertia';
+import { FramesOverlay, type FramesMode } from './features/frames';
+import { SelfCollision } from './features/selfCollision';
 
 (THREE.Mesh.prototype as unknown as { raycast: typeof acceleratedRaycast }).raycast = acceleratedRaycast;
 (THREE.BufferGeometry.prototype as unknown as { computeBoundsTree: typeof computeBoundsTree }).computeBoundsTree = computeBoundsTree;
 (THREE.BufferGeometry.prototype as unknown as { disposeBoundsTree: typeof disposeBoundsTree }).disposeBoundsTree = disposeBoundsTree;
 
 type RenderMode = 'visual' | 'collision' | 'both';
-type FramesMode = 'off' | 'selected' | 'all';
 
 interface LoadRobotMessage {
   type: 'loadRobot';
@@ -57,6 +63,12 @@ interface LoadRobotMessage {
   renderSettings: { renderMode: RenderMode; upAxis: '+X' | '+Y' | '+Z' };
   savedState?: PreviewState;
   bookmarks?: PoseBookmark[];
+  // Web host only: maps `urdf-studio-vfs:///abs/path` URLs (declared in
+  // packageMap / sourceBaseUri) back to blob: URLs the loaders can fetch.
+  // VS Code host leaves these undefined and serves assets through the
+  // webview's localResourceRoots whitelist instead.
+  vfsUrlMap?: Record<string, string>;
+  vfsUrlScheme?: string;
 }
 
 interface VsCodeApi {
@@ -93,27 +105,15 @@ let mimicGraph: MimicGraph = { followers: new Map() };
 let bookmarks: PoseBookmark[] = [];
 let robotBoundsRadius = 0.5;
 
-let framesMode: FramesMode = 'off';
-const linkAxesHelpers = new Map<string, THREE.AxesHelper>();
+let framesOverlay: FramesOverlay | undefined;
 let labelsOverlay: LabelsOverlay | undefined;
 let sourcePane: SourcePane | undefined;
 let labelsMode: LabelsMode = 'off';
-let measureMode = false;
-const measurePoints: THREE.Vector3[] = [];
-let measureLine: THREE.Line | undefined;
-const measureMarkers: THREE.Mesh[] = [];
-let inertiaVisible = false;
-const inertiaHelpers = new Map<string, THREE.Group>();
-let totalCoMMarker: THREE.Mesh | undefined;
-let selfCollisionEnabled = false;
-let selfCollisionPending = false;
-const collisionMeshGeometry = new Map<string, { mesh: THREE.Mesh; ownerLink: string }>();
-const linkCollisionMaterials = new Map<string, THREE.MeshStandardMaterial[]>();
-const linkVisualMaterials = new Map<string, THREE.MeshStandardMaterial[]>();
-const originalVisualColors = new Map<THREE.MeshStandardMaterial, THREE.Color>();
-const highlightedCollisionLinks = new Set<string>();
+let measurement: Measurement | undefined;
+let inertia: InertiaVisualisation | undefined;
+let selfCollision: SelfCollision | undefined;
 
-let reachabilityPoints: THREE.Points | undefined;
+let reachability: Reachability | undefined;
 
 document.getElementById('app')!.innerHTML = `
 <div class="shell">
@@ -312,13 +312,10 @@ function bindChrome(): void {
     }
   });
   qs<HTMLSelectElement>('#frames-mode').addEventListener('change', event => {
-    framesMode = (event.target as HTMLSelectElement).value as FramesMode;
-    applyFramesMode();
+    applyFramesMode((event.target as HTMLSelectElement).value as FramesMode);
   });
   qs<HTMLInputElement>('#inertia-toggle').addEventListener('change', event => {
-    inertiaVisible = (event.target as HTMLInputElement).checked;
-    applyInertiaVisibility();
-    publishTestState();
+    applyInertiaVisibility((event.target as HTMLInputElement).checked);
   });
   qs<HTMLSelectElement>('#labels-mode').addEventListener('change', event => {
     labelsMode = (event.target as HTMLSelectElement).value as LabelsMode;
@@ -365,11 +362,7 @@ async function loadRobot(data: LoadRobotMessage, forceCollisionGeometry = false)
   linkNames = new Set(Object.keys(data.metadata.links));
   mimicGraph = buildMimicGraph(data.metadata.joints);
 
-  clearSelfCollisionHighlights();
-  collisionMeshGeometry.clear();
-  linkCollisionMaterials.clear();
-  linkVisualMaterials.clear();
-  originalVisualColors.clear();
+  ensureSelfCollision().dispose();
   disposeInertiaHelpers();
   disposeFrameHelpers();
   disposeReachability();
@@ -411,7 +404,6 @@ async function loadRobot(data: LoadRobotMessage, forceCollisionGeometry = false)
       buildInertiaHelpers();
       applyFramesMode();
       buildCollisionGeometryIndex();
-      buildVisualMaterialIndex();
       buildLabels();
     }
     robotReady = true;
@@ -442,8 +434,8 @@ async function loadRobot(data: LoadRobotMessage, forceCollisionGeometry = false)
 
   // Host-supplied URL rewriter (used by the web build to resolve
   // urdf-studio-vfs:// URLs to blob: URLs). VS Code build leaves it unset.
-  const vfsUrlMap = (data as LoadRobotMessage & { vfsUrlMap?: Record<string, string>; vfsUrlScheme?: string }).vfsUrlMap;
-  const vfsScheme = (data as LoadRobotMessage & { vfsUrlScheme?: string }).vfsUrlScheme;
+  const vfsUrlMap = data.vfsUrlMap;
+  const vfsScheme = data.vfsUrlScheme;
   if (vfsUrlMap && vfsScheme) {
     manager.setURLModifier(url => {
       if (typeof url !== 'string' || !url.startsWith(vfsScheme)) {
@@ -721,15 +713,15 @@ function setJointValue(jointName: string, value: number, notify: boolean): void 
   if (selectedBox) {
     selectedBox.update();
   }
-  if (inertiaVisible) {
+  if (inertia?.isVisible()) {
     updateTotalCoMMarker();
   }
   dirty = true;
   if (notify) {
     vscode.postMessage({ type: 'jointChanged', joint: jointName, value });
   }
-  if (selfCollisionEnabled) {
-    void scheduleSelfCollisionCheck();
+  if (selfCollision?.isEnabled()) {
+    scheduleSelfCollisionCheck();
   }
   publishTestState();
 }
@@ -847,8 +839,7 @@ function formatMimic(mimic: MimicInfo): string {
 }
 
 function onCanvasClick(event: MouseEvent): void {
-  if (measureMode) {
-    addMeasurePoint(event);
+  if (ensureMeasurement().handleClick(event)) {
     return;
   }
   selectFromPointer(event);
@@ -1112,16 +1103,6 @@ function qsa<T extends Element = HTMLElement>(selector: string): T[] {
   return Array.from(document.querySelectorAll<T>(selector));
 }
 
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, char => ({
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#39;'
-  }[char]!));
-}
-
 function cssEscape(value: string): string {
   return typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(value) : value.replace(/["\\]/g, '\\$&');
 }
@@ -1133,8 +1114,10 @@ function cssEscape(value: string): string {
 function renderBookmarkSelect(): void {
   const select = qs<HTMLSelectElement>('#bookmark-select');
   const previous = select.value;
-  select.innerHTML = '<option value="">Bookmarks</option>'
-    + bookmarks.map(item => `<option value="${escapeHtml(item.name)}">${escapeHtml(item.name)}</option>`).join('');
+  setInnerHtml(select, html`
+    <option value="">Bookmarks</option>
+    ${bookmarks.map(item => html`<option value="${item.name}">${item.name}</option>`)}
+  `);
   if (bookmarks.some(item => item.name === previous)) {
     select.value = previous;
   } else {
@@ -1147,46 +1130,23 @@ function renderBookmarkSelect(): void {
 // Frames overlay
 // =============================================================================
 
-function disposeFrameHelpers(): void {
-  for (const helper of linkAxesHelpers.values()) {
-    helper.parent?.remove(helper);
-    helper.dispose();
+function ensureFramesOverlay(): FramesOverlay {
+  if (!framesOverlay) {
+    framesOverlay = new FramesOverlay({
+      getBoundsRadius: () => robotBoundsRadius,
+      requestRedraw: () => { dirty = true; },
+      onStateChange: () => publishTestState()
+    });
   }
-  linkAxesHelpers.clear();
+  return framesOverlay;
 }
 
-function applyFramesMode(): void {
-  if (!robot?.links) {
-    publishTestState();
-    return;
-  }
-  const visibleLinks = new Set<string>();
-  if (framesMode === 'all') {
-    for (const linkName of Object.keys(robot.links)) {
-      visibleLinks.add(linkName);
-    }
-  } else if (framesMode === 'selected' && selectedLink) {
-    visibleLinks.add(selectedLink);
-  }
-  const size = Math.max(0.05, robotBoundsRadius * 0.06);
-  for (const linkName of Object.keys(robot.links)) {
-    const linkObject = robot.links[linkName] as Object3D;
-    let helper = linkAxesHelpers.get(linkName);
-    if (visibleLinks.has(linkName)) {
-      if (!helper) {
-        helper = new THREE.AxesHelper(size);
-        linkAxesHelpers.set(linkName, helper);
-        linkObject.add(helper);
-      } else {
-        helper.scale.setScalar(size / 0.5);
-      }
-      helper.visible = true;
-    } else if (helper) {
-      helper.visible = false;
-    }
-  }
-  publishTestState();
-  dirty = true;
+function disposeFrameHelpers(): void {
+  ensureFramesOverlay().dispose();
+}
+
+function applyFramesMode(mode?: FramesMode): void {
+  ensureFramesOverlay().apply(mode, robot, selectedLink);
 }
 
 interface TestState {
@@ -1207,10 +1167,8 @@ interface TestState {
 }
 
 function publishTestState(): void {
-  const visibleLinkAxes = Array.from(linkAxesHelpers.values()).filter(helper => helper.visible).length;
-  const reachabilityPointCount = reachabilityPoints
-    ? (reachabilityPoints.geometry.getAttribute('position')?.count ?? 0)
-    : 0;
+  const visibleLinkAxes = framesOverlay?.visibleCount() ?? 0;
+  const reachabilityPointCount = reachability?.pointCount() ?? 0;
   const jointAngles: Record<string, number> = {};
   for (const jointName of currentData?.metadata.movableJointNames ?? []) {
     jointAngles[jointName] = Number(robot?.joints?.[jointName]?.angle ?? 0);
@@ -1223,24 +1181,22 @@ function publishTestState(): void {
   const visibleJointLabels = labelsOverlay?.visibleCount('joint') ?? 0;
   const visibleLinkLabels = labelsOverlay?.visibleCount('link') ?? 0;
   const totalLabels = labelsOverlay?.totalCount() ?? 0;
-  const measureDistance = measurePoints.length === 2
-    ? measurePoints[0].distanceTo(measurePoints[1])
-    : null;
+  const measureSnap = measurement?.snapshot() ?? { mode: false, pointCount: 0, distance: null };
   (window as unknown as { __urdfStudio?: TestState }).__urdfStudio = {
-    framesMode,
+    framesMode: framesOverlay?.current() ?? 'off',
     visibleLinkAxes,
     bookmarkCount: bookmarks.length,
-    inertiaVisible,
-    selfCollisionEnabled,
+    inertiaVisible: inertia?.isVisible() ?? false,
+    selfCollisionEnabled: selfCollision?.isEnabled() ?? false,
     reachabilityPointCount,
     jointAngles,
     labelsMode,
     visibleJointLabels,
     visibleLinkLabels,
     totalLabels,
-    measureMode,
-    measurePointCount: measurePoints.length,
-    measureDistance
+    measureMode: measureSnap.mode,
+    measurePointCount: measureSnap.pointCount,
+    measureDistance: measureSnap.distance
   };
 }
 
@@ -1248,328 +1204,90 @@ function publishTestState(): void {
 // Inertia & CoM
 // =============================================================================
 
-function disposeInertiaHelpers(): void {
-  for (const group of inertiaHelpers.values()) {
-    group.parent?.remove(group);
-    group.traverse(object => {
-      const mesh = object as THREE.Mesh;
-      if (mesh.isMesh) {
-        mesh.geometry?.dispose();
-        forEachMaterial(mesh, material => material.dispose());
-      }
+function ensureInertia(): InertiaVisualisation {
+  if (!inertia) {
+    inertia = new InertiaVisualisation({
+      scene,
+      getBoundsRadius: () => robotBoundsRadius,
+      requestRedraw: () => { dirty = true; },
+      onStateChange: () => publishTestState()
     });
   }
-  inertiaHelpers.clear();
-  if (totalCoMMarker) {
-    scene.remove(totalCoMMarker);
-    totalCoMMarker.geometry.dispose();
-    (totalCoMMarker.material as THREE.Material).dispose();
-    totalCoMMarker = undefined;
-  }
+  return inertia;
+}
+
+function disposeInertiaHelpers(): void {
+  ensureInertia().dispose();
 }
 
 function buildInertiaHelpers(): void {
-  if (!currentData || !robot?.links) {
+  if (!currentData || !robot) {
     return;
   }
-  for (const link of Object.values(currentData.metadata.links)) {
-    const inertial = link.inertial;
-    if (!inertial || inertial.mass <= 0) {
-      continue;
-    }
-    const linkObject = robot.links[link.name] as Object3D | undefined;
-    if (!linkObject) {
-      continue;
-    }
-    const group = new THREE.Group();
-    group.position.set(inertial.origin[0], inertial.origin[1], inertial.origin[2]);
-    group.rotation.set(inertial.rotation[0], inertial.rotation[1], inertial.rotation[2]);
-
-    const semi = ellipsoidSemiAxes(inertial);
-    const ellipsoidGeometry = new THREE.SphereGeometry(1, 24, 16);
-    ellipsoidGeometry.scale(Math.max(semi[0], 1e-4), Math.max(semi[1], 1e-4), Math.max(semi[2], 1e-4));
-    const ellipsoidMaterial = new THREE.MeshStandardMaterial({
-      color: 0x9ad7ff,
-      transparent: true,
-      opacity: 0.35,
-      roughness: 0.5,
-      metalness: 0,
-      depthWrite: false
-    });
-    group.add(new THREE.Mesh(ellipsoidGeometry, ellipsoidMaterial));
-
-    const sphereSize = Math.max(0.005, robotBoundsRadius * 0.01);
-    const comMarker = new THREE.Mesh(
-      new THREE.SphereGeometry(sphereSize, 14, 10),
-      new THREE.MeshBasicMaterial({ color: 0xffaa44 })
-    );
-    group.add(comMarker);
-
-    group.visible = inertiaVisible;
-    linkObject.add(group);
-    inertiaHelpers.set(link.name, group);
-  }
-
-  if (currentData.metadata.totalMass > 0) {
-    const sphereSize = Math.max(0.01, robotBoundsRadius * 0.018);
-    totalCoMMarker = new THREE.Mesh(
-      new THREE.SphereGeometry(sphereSize, 18, 12),
-      new THREE.MeshBasicMaterial({ color: 0xff8855 })
-    );
-    totalCoMMarker.visible = inertiaVisible;
-    scene.add(totalCoMMarker);
-    updateTotalCoMMarker();
-  }
+  ensureInertia().build(robot, currentData.metadata);
 }
 
 function updateTotalCoMMarker(): void {
-  if (!totalCoMMarker || !currentData || !robot?.links) {
+  if (!currentData || !robot) {
     return;
   }
-  const com = new THREE.Vector3();
-  let totalMass = 0;
-  const linkLocal = new THREE.Vector3();
-  for (const link of Object.values(currentData.metadata.links)) {
-    const inertial = link.inertial;
-    const linkObject = robot.links[link.name] as Object3D | undefined;
-    if (!inertial || inertial.mass <= 0 || !linkObject) {
-      continue;
-    }
-    linkObject.updateWorldMatrix(true, false);
-    linkLocal.set(inertial.origin[0], inertial.origin[1], inertial.origin[2]);
-    const world = linkLocal.applyMatrix4(linkObject.matrixWorld);
-    com.addScaledVector(world, inertial.mass);
-    totalMass += inertial.mass;
-  }
-  if (totalMass > 0) {
-    com.multiplyScalar(1 / totalMass);
-    totalCoMMarker.position.copy(com);
-  }
+  ensureInertia().refreshTotal(robot, currentData.metadata);
 }
 
-function applyInertiaVisibility(): void {
-  for (const group of inertiaHelpers.values()) {
-    group.visible = inertiaVisible;
-  }
-  if (totalCoMMarker) {
-    totalCoMMarker.visible = inertiaVisible;
-  }
-  if (inertiaVisible) {
-    updateTotalCoMMarker();
-  }
-  dirty = true;
+function applyInertiaVisibility(visible: boolean): void {
+  ensureInertia().setVisible(visible, robot, currentData?.metadata);
 }
 
 // =============================================================================
 // Self-collision detection
 // =============================================================================
 
+function ensureSelfCollision(): SelfCollision {
+  if (!selfCollision) {
+    selfCollision = new SelfCollision({
+      requestRedraw: () => { dirty = true; },
+      onStateChange: () => publishTestState()
+    });
+  }
+  return selfCollision;
+}
+
+function currentCollisionContext() {
+  if (!robot || !currentData) {
+    return undefined;
+  }
+  return {
+    robot,
+    metadata: currentData.metadata,
+    semantic: currentData.semantic
+  };
+}
+
 function buildCollisionGeometryIndex(): void {
-  if (!robot?.colliders) {
+  if (!robot) {
     return;
   }
-  for (const [linkName, collider] of Object.entries(robot.colliders)) {
-    const obj = collider as Object3D;
-    obj.traverse(child => {
-      const mesh = child as THREE.Mesh;
-      if (mesh.isMesh && mesh.geometry instanceof THREE.BufferGeometry) {
-        const geometry = mesh.geometry as THREE.BufferGeometry & { boundsTree?: MeshBVH; computeBoundsTree?: () => void };
-        if (!geometry.boundsTree) {
-          try {
-            geometry.computeBoundsTree?.();
-          } catch {
-            return;
-          }
-        }
-        collisionMeshGeometry.set(`${linkName}::${mesh.uuid}`, { mesh, ownerLink: linkName });
-        if (!linkCollisionMaterials.has(linkName)) {
-          linkCollisionMaterials.set(linkName, []);
-        }
-        forEachMaterial(mesh, material => linkCollisionMaterials.get(linkName)!.push(material));
-      }
-    });
-  }
-}
-
-function buildVisualMaterialIndex(): void {
-  linkVisualMaterials.clear();
-  originalVisualColors.clear();
-  if (!robot?.visual) {
-    return;
-  }
-  for (const [linkName, visual] of Object.entries(robot.visual)) {
-    const obj = visual as Object3D;
-    const materials: THREE.MeshStandardMaterial[] = [];
-    obj.traverse(child => {
-      const mesh = child as THREE.Mesh;
-      if (mesh.isMesh) {
-        forEachMaterial(mesh, material => {
-          materials.push(material);
-          if (!originalVisualColors.has(material)) {
-            originalVisualColors.set(material, material.color.clone());
-          }
-        });
-      }
-    });
-    if (materials.length > 0) {
-      linkVisualMaterials.set(linkName, materials);
-    }
-  }
-}
-
-function getDisabledPairs(): Set<string> {
-  if (!currentData) {
-    return new Set<string>();
-  }
-  return buildDisabledPairSet(currentData.semantic.disableCollisions);
-}
-
-function isAdjacent(linkA: string, linkB: string): boolean {
-  if (!currentData) {
-    return false;
-  }
-  return isAdjacentPure(linkA, linkB, currentData.metadata.links, currentData.metadata.joints);
-}
-
-function canonicalPair(a: string, b: string): string {
-  return canonicalPairPure(a, b);
-}
-
-function collectCollidingLinks(): { pairs: Array<[string, string]>; links: Set<string> } {
-  const pairs: Array<[string, string]> = [];
-  const links = new Set<string>();
-  if (collisionMeshGeometry.size === 0 || !robot) {
-    return { pairs, links };
-  }
-  robot.updateMatrixWorld(true);
-
-  const disabled = getDisabledPairs();
-  const checked = new Set<string>();
-  const meshes = Array.from(collisionMeshGeometry.values());
-
-  const worldBoxes = new Map<string, THREE.Box3>();
-  for (const entry of meshes) {
-    const box = new THREE.Box3().setFromObject(entry.mesh);
-    worldBoxes.set(entry.mesh.uuid, box);
-  }
-
-  for (let i = 0; i < meshes.length; i += 1) {
-    for (let j = i + 1; j < meshes.length; j += 1) {
-      const a = meshes[i];
-      const b = meshes[j];
-      if (a.ownerLink === b.ownerLink) {
-        continue;
-      }
-      const key = canonicalPair(a.ownerLink, b.ownerLink);
-      if (checked.has(key) || disabled.has(key) || isAdjacent(a.ownerLink, b.ownerLink)) {
-        continue;
-      }
-      const boxA = worldBoxes.get(a.mesh.uuid)!;
-      const boxB = worldBoxes.get(b.mesh.uuid)!;
-      if (!boxA.intersectsBox(boxB)) {
-        continue;
-      }
-      const geomA = a.mesh.geometry as THREE.BufferGeometry & { boundsTree?: MeshBVH };
-      const geomB = b.mesh.geometry as THREE.BufferGeometry & { boundsTree?: MeshBVH };
-      if (!geomA.boundsTree || !geomB.boundsTree) {
-        continue;
-      }
-      a.mesh.updateMatrixWorld(true);
-      b.mesh.updateMatrixWorld(true);
-      const inverseB = new THREE.Matrix4().copy(b.mesh.matrixWorld).invert();
-      const aToB = new THREE.Matrix4().multiplyMatrices(inverseB, a.mesh.matrixWorld);
-      const intersects = geomA.boundsTree.intersectsGeometry(geomB, aToB);
-      if (intersects) {
-        checked.add(key);
-        pairs.push([a.ownerLink, b.ownerLink]);
-        links.add(a.ownerLink);
-        links.add(b.ownerLink);
-      }
-    }
-  }
-  return { pairs, links };
-}
-
-async function scheduleSelfCollisionCheck(): Promise<void> {
-  if (selfCollisionPending || !selfCollisionEnabled) {
-    return;
-  }
-  selfCollisionPending = true;
-  await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
-  selfCollisionPending = false;
-  if (!selfCollisionEnabled) {
-    return;
-  }
-  const result = collectCollidingLinks();
-  applySelfCollisionHighlights(result.links, result.pairs.length);
-}
-
-function applySelfCollisionHighlights(links: Set<string>, pairCount = 0): void {
-  // Restore previously-highlighted links that are no longer colliding.
-  for (const link of highlightedCollisionLinks) {
-    if (!links.has(link)) {
-      restoreLinkColors(link);
-    }
-  }
-  // Tint the colliding links red on BOTH visual and collision meshes so the
-  // user sees the highlight regardless of the active render mode.
-  for (const link of links) {
-    tintLinkRed(link);
-  }
-  highlightedCollisionLinks.clear();
-  for (const link of links) {
-    highlightedCollisionLinks.add(link);
-  }
-  updateCollideHud(pairCount);
-  dirty = true;
-}
-
-function tintLinkRed(linkName: string): void {
-  const collisionMaterials = linkCollisionMaterials.get(linkName) ?? [];
-  for (const material of collisionMaterials) {
-    material.color.set(0xff4040);
-    material.needsUpdate = true;
-  }
-  const visualMaterials = linkVisualMaterials.get(linkName) ?? [];
-  for (const material of visualMaterials) {
-    material.color.set(0xff4040);
-    material.needsUpdate = true;
-  }
-}
-
-function restoreLinkColors(linkName: string): void {
-  const collisionMaterials = linkCollisionMaterials.get(linkName) ?? [];
-  for (const material of collisionMaterials) {
-    // Collision meshes are recolored to cyan by applyRenderMode, just match.
-    material.color.set(0x71d0ff);
-    material.needsUpdate = true;
-  }
-  const visualMaterials = linkVisualMaterials.get(linkName) ?? [];
-  for (const material of visualMaterials) {
-    const original = originalVisualColors.get(material);
-    if (original) {
-      material.color.copy(original);
-    }
-    material.needsUpdate = true;
-  }
+  ensureSelfCollision().rebuildIndex(robot);
 }
 
 function clearSelfCollisionHighlights(): void {
-  applySelfCollisionHighlights(new Set(), 0);
+  ensureSelfCollision().clearHighlights();
 }
 
-function updateCollideHud(pairCount: number): void {
-  const hud = document.getElementById('collide-hud');
-  if (!hud) {
+function scheduleSelfCollisionCheck(): void {
+  const ctx = currentCollisionContext();
+  if (!ctx) {
     return;
   }
-  if (!selfCollisionEnabled) {
-    hud.textContent = '';
-    return;
+  ensureSelfCollision().schedule(ctx);
+}
+
+function collectCollidingLinks(): { pairs: Array<[string, string]>; links: Set<string> } {
+  const ctx = currentCollisionContext();
+  if (!ctx) {
+    return { pairs: [], links: new Set() };
   }
-  hud.textContent = pairCount === 0
-    ? 'No self-collisions.'
-    : `${pairCount} self-collision pair${pairCount === 1 ? '' : 's'}.`;
+  return ensureSelfCollision().computeCollisions(ctx);
 }
 
 function computeRobotBoundsRadius(): void {
@@ -1592,13 +1310,10 @@ function computeRobotBoundsRadius(): void {
 
 function renderToolsPanel(): void {
   const panel = qs('#panel-tools');
-  const tipOptions = currentData
-    ? Object.values(currentData.metadata.links)
-      .filter(link => link.childJoints.length === 0)
-      .map(link => `<option value="${escapeHtml(link.name)}">${escapeHtml(link.name)}</option>`)
-      .join('')
-    : '';
-  panel.innerHTML = `
+  const tipLinks = currentData
+    ? Object.values(currentData.metadata.links).filter(link => link.childJoints.length === 0)
+    : [];
+  setInnerHtml(panel, html`
     <h3>Measure</h3>
     <div class="tool-block">
       <div class="row-buttons">
@@ -1610,7 +1325,7 @@ function renderToolsPanel(): void {
     </div>
     <h3>Reachability</h3>
     <div class="tool-block">
-      <label>Tip link <select id="reach-tip">${tipOptions}</select></label>
+      <label>Tip link <select id="reach-tip">${tipLinks.map(link => html`<option value="${link.name}">${link.name}</option>`)}</select></label>
       <label>Samples <input id="reach-samples" type="number" min="50" max="20000" step="50" value="1000"></label>
       <button id="reach-run" class="primary">Sample</button>
       <button id="reach-clear">Clear</button>
@@ -1632,7 +1347,7 @@ function renderToolsPanel(): void {
       </div>
       <div class="muted" id="export-status">One row per link; PDF bundles screenshot + checks + summary.</div>
     </div>
-  `;
+  `);
   qs('#measure-toggle').addEventListener('click', () => toggleMeasureMode());
   qs('#measure-clear').addEventListener('click', () => clearMeasurement());
   qs('#reach-run').addEventListener('click', () => void sampleReachability());
@@ -1704,128 +1419,25 @@ function buildLabels(): void {
 }
 
 // =============================================================================
-// Measurement tool
+// Measurement tool (delegates to features/measurement.ts)
 // =============================================================================
 
-function toggleMeasureMode(): void {
-  measureMode = !measureMode;
-  if (!measureMode) {
-    // Keep the existing markers; just stop accepting clicks. Clear button
-    // wipes the line.
-  } else {
-    // Starting a fresh measurement: reset the previous one.
-    clearMeasurement();
-    measureMode = true;
+function ensureMeasurement(): Measurement {
+  if (!measurement) {
+    measurement = new Measurement({
+      scene,
+      raycastFromEvent: event => raycastRobot(event),
+      getBoundsRadius: () => robotBoundsRadius,
+      requestRedraw: () => { dirty = true; },
+      onStateChange: () => publishTestState()
+    });
   }
-  refreshMeasureUi();
+  return measurement;
 }
 
-function addMeasurePoint(event: MouseEvent): void {
-  const hit = raycastRobot(event);
-  if (!hit) {
-    setMeasureStatus('Click on the robot geometry.');
-    return;
-  }
-  if (measurePoints.length >= 2) {
-    // Already have two points: a new click starts a new measurement.
-    clearMeasurement();
-    measureMode = true;
-  }
-  const point = hit.point.clone();
-  measurePoints.push(point);
-  addMeasureMarker(point);
-  if (measurePoints.length === 2) {
-    buildMeasureLine();
-    measureMode = false;
-  }
-  refreshMeasureUi();
-  dirty = true;
-}
-
-function addMeasureMarker(point: THREE.Vector3): void {
-  const size = Math.max(0.006, robotBoundsRadius * 0.012);
-  const marker = new THREE.Mesh(
-    new THREE.SphereGeometry(size, 14, 10),
-    new THREE.MeshBasicMaterial({ color: 0xffd866, depthTest: false })
-  );
-  marker.renderOrder = 999;
-  marker.position.copy(point);
-  scene.add(marker);
-  measureMarkers.push(marker);
-}
-
-function buildMeasureLine(): void {
-  if (measurePoints.length !== 2) {
-    return;
-  }
-  const geometry = new THREE.BufferGeometry().setFromPoints(measurePoints);
-  const material = new THREE.LineBasicMaterial({ color: 0xffd866, depthTest: false });
-  measureLine = new THREE.Line(geometry, material);
-  measureLine.renderOrder = 998;
-  scene.add(measureLine);
-}
-
-function clearMeasurement(): void {
-  for (const marker of measureMarkers) {
-    scene.remove(marker);
-    marker.geometry.dispose();
-    (marker.material as THREE.Material).dispose();
-  }
-  measureMarkers.length = 0;
-  if (measureLine) {
-    scene.remove(measureLine);
-    measureLine.geometry.dispose();
-    (measureLine.material as THREE.Material).dispose();
-    measureLine = undefined;
-  }
-  measurePoints.length = 0;
-  measureMode = false;
-  refreshMeasureUi();
-  dirty = true;
-}
-
-function refreshMeasureUi(): void {
-  publishTestState();
-  const toggle = document.getElementById('measure-toggle');
-  if (toggle) {
-    toggle.textContent = measureMode
-      ? (measurePoints.length === 0 ? 'Pick point 1…' : 'Pick point 2…')
-      : 'Start measuring';
-    toggle.classList.toggle('primary', !measureMode);
-    toggle.classList.toggle('active', measureMode);
-  }
-  const readout = document.getElementById('measure-readout');
-  if (readout) {
-    if (measurePoints.length === 2) {
-      const a = measurePoints[0];
-      const b = measurePoints[1];
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      const dz = b.z - a.z;
-      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-      readout.innerHTML = `
-        <div><b>Distance</b> ${dist.toFixed(4)} m</div>
-        <div><b>Δx</b> ${dx.toFixed(4)} <b>Δy</b> ${dy.toFixed(4)} <b>Δz</b> ${dz.toFixed(4)}</div>
-        <div class="muted">A (${a.x.toFixed(3)}, ${a.y.toFixed(3)}, ${a.z.toFixed(3)})</div>
-        <div class="muted">B (${b.x.toFixed(3)}, ${b.y.toFixed(3)}, ${b.z.toFixed(3)})</div>
-      `;
-    } else {
-      readout.innerHTML = '';
-    }
-  }
-  setMeasureStatus(measureMode
-    ? 'Click on the robot to drop a point. Click off to cancel.'
-    : measurePoints.length === 2
-      ? 'Measurement set. Click "Start measuring" for a new one.'
-      : 'Click two points on the robot to measure distance.');
-}
-
-function setMeasureStatus(text: string): void {
-  const status = document.getElementById('measure-status');
-  if (status) {
-    status.textContent = text;
-  }
-}
+function toggleMeasureMode(): void { ensureMeasurement().toggle(); }
+function clearMeasurement(): void { ensureMeasurement().clear(); }
+function refreshMeasureUi(): void { ensureMeasurement().refresh(); }
 
 // =============================================================================
 // Export: BOM (CSV) and Report (PDF)
@@ -1835,167 +1447,37 @@ function exportBom(): void {
   if (!currentData) {
     return;
   }
-  const csv = buildBomCsv(currentData.metadata);
-  const baseName = currentData.fileName.replace(/\.[^./\\]+$/, '') || 'robot';
-  vscode.postMessage({ type: 'requestSaveBom', csv, filename: `${baseName}-bom.csv` });
-  flashExportStatus(`BOM ready (${currentData.metadata.counts.links} links).`);
+  exportBomFeature(toExportableDocument(currentData), exportHost);
 }
 
 async function exportPdfReport(): Promise<void> {
   if (!currentData) {
     return;
   }
-  flashExportStatus('Building PDF…');
   // Force a render so the screenshot reflects the current frame.
   dirty = true;
   renderNow();
-  const dataUrl = renderer.domElement.toDataURL('image/png');
-  try {
-    const { jsPDF } = await import('jspdf');
-    const pdf = new jsPDF({ unit: 'pt', format: 'a4' });
-    buildReportPdf(pdf, currentData, dataUrl);
-    const blob = pdf.output('blob');
-    const arrayBuffer = await blob.arrayBuffer();
-    const base64 = bytesToBase64(new Uint8Array(arrayBuffer));
-    const baseName = currentData.fileName.replace(/\.[^./\\]+$/, '') || 'robot';
-    vscode.postMessage({
-      type: 'requestSaveReport',
-      base64,
-      filename: `${baseName}-report.pdf`
-    });
-    flashExportStatus('PDF ready.');
-  } catch (error) {
-    flashExportStatus(`PDF failed: ${error instanceof Error ? error.message : String(error)}`);
-  }
+  const screenshotDataUrl = renderer.domElement.toDataURL('image/png');
+  await exportPdfReportFeature(
+    toExportableDocument(currentData),
+    { screenshotDataUrl },
+    exportHost
+  );
 }
 
-function buildReportPdf(
-  pdf: import('jspdf').jsPDF,
-  data: LoadRobotMessage,
-  screenshotDataUrl: string
-): void {
-  const pageWidth = pdf.internal.pageSize.getWidth();
-  const pageHeight = pdf.internal.pageSize.getHeight();
-  const margin = 36;
-  let cursorY = margin;
-
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(18);
-  pdf.text('URDF Studio Report', margin, cursorY);
-  cursorY += 22;
-
-  pdf.setFont('helvetica', 'normal');
-  pdf.setFontSize(10);
-  pdf.text(data.metadata.robotName || data.fileName, margin, cursorY);
-  cursorY += 14;
-  pdf.text(`Source: ${data.sourcePath}`, margin, cursorY);
-  cursorY += 12;
-  pdf.text(`Generated: ${new Date().toISOString()}`, margin, cursorY);
-  cursorY += 18;
-
-  // Counts row.
-  pdf.setFont('helvetica', 'bold');
-  pdf.text('Counts', margin, cursorY);
-  cursorY += 12;
-  pdf.setFont('helvetica', 'normal');
-  const counts = data.metadata.counts;
-  const summaryParts = [
-    `${counts.links} links`,
-    `${counts.joints} joints`,
-    `${counts.movableJoints} movable`,
-    `${counts.visualMeshes} visual meshes`,
-    `${counts.collisionMeshes} collision meshes`,
-    `total mass ${data.metadata.totalMass.toFixed(3)} kg`
-  ];
-  pdf.text(summaryParts.join(' · '), margin, cursorY);
-  cursorY += 18;
-
-  // Screenshot.
-  try {
-    const imgWidth = pageWidth - margin * 2;
-    const imgHeight = Math.min(360, pageHeight - cursorY - margin - 220);
-    pdf.addImage(screenshotDataUrl, 'PNG', margin, cursorY, imgWidth, imgHeight, undefined, 'FAST');
-    cursorY += imgHeight + 14;
-  } catch {
-    // Skip image silently if jsPDF can't decode it.
-  }
-
-  // Diagnostics.
-  pdf.setFont('helvetica', 'bold');
-  pdf.text(`Checks (${data.diagnostics.length})`, margin, cursorY);
-  cursorY += 12;
-  pdf.setFont('helvetica', 'normal');
-  pdf.setFontSize(9);
-  if (data.diagnostics.length === 0) {
-    pdf.text('No diagnostics.', margin, cursorY);
-    cursorY += 12;
-  } else {
-    for (const diag of data.diagnostics.slice(0, 60)) {
-      if (cursorY > pageHeight - margin) {
-        pdf.addPage();
-        cursorY = margin;
-      }
-      const tag = `[${diag.severity.toUpperCase()}${diag.code ? ' ' + diag.code : ''}${diag.line ? ' :' + diag.line : ''}]`;
-      const text = `${tag} ${diag.message}`;
-      const lines = pdf.splitTextToSize(text, pageWidth - margin * 2);
-      pdf.text(lines, margin, cursorY);
-      cursorY += lines.length * 11;
-    }
-    if (data.diagnostics.length > 60) {
-      pdf.text(`… and ${data.diagnostics.length - 60} more`, margin, cursorY);
-      cursorY += 12;
-    }
-  }
-  cursorY += 6;
-
-  // Links table.
-  pdf.addPage();
-  cursorY = margin;
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(12);
-  pdf.text('Links', margin, cursorY);
-  cursorY += 16;
-  pdf.setFont('helvetica', 'normal');
-  pdf.setFontSize(9);
-  const colWidths = [180, 70, 200];
-  const headers = ['Link', 'Mass (kg)', 'Parent joint'];
-  let x = margin;
-  pdf.setFont('helvetica', 'bold');
-  for (let i = 0; i < headers.length; i += 1) {
-    pdf.text(headers[i], x, cursorY);
-    x += colWidths[i];
-  }
-  cursorY += 12;
-  pdf.setFont('helvetica', 'normal');
-  const sortedLinks = Object.values(data.metadata.links).sort((a, b) => a.name.localeCompare(b.name));
-  for (const link of sortedLinks) {
-    if (cursorY > pageHeight - margin) {
-      pdf.addPage();
-      cursorY = margin;
-    }
-    const cells = [
-      link.name,
-      link.inertial ? link.inertial.mass.toFixed(4) : '—',
-      link.parentJoint ?? '—'
-    ];
-    x = margin;
-    for (let i = 0; i < cells.length; i += 1) {
-      pdf.text(pdf.splitTextToSize(cells[i], colWidths[i] - 4), x, cursorY);
-      x += colWidths[i];
-    }
-    cursorY += 11;
-  }
+function toExportableDocument(data: LoadRobotMessage): ExportableDocument {
+  return {
+    fileName: data.fileName,
+    sourcePath: data.sourcePath,
+    metadata: data.metadata,
+    diagnostics: data.diagnostics
+  };
 }
 
-function bytesToBase64(bytes: Uint8Array): string {
-  // Chunked btoa to avoid stack overflows on big buffers.
-  let binary = '';
-  const chunkSize = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunkSize)) as number[]);
-  }
-  return btoa(binary);
-}
+const exportHost = {
+  postMessage: (message: unknown) => vscode.postMessage(message),
+  reportStatus: (text: string) => flashExportStatus(text)
+};
 
 function flashExportStatus(text: string): void {
   const status = document.getElementById('export-status');
@@ -2004,124 +1486,50 @@ function flashExportStatus(text: string): void {
   }
 }
 
+function ensureReachability(): Reachability {
+  if (!reachability) {
+    reachability = new Reachability({
+      scene,
+      fitCameraToBox: box => fitCameraToBox(box),
+      requestRedraw: () => { dirty = true; },
+      onStateChange: () => publishTestState()
+    });
+  }
+  return reachability;
+}
+
 async function sampleReachability(): Promise<void> {
   if (!currentData || !robot) {
     return;
   }
   const tip = (document.getElementById('reach-tip') as HTMLSelectElement | null)?.value;
-  const sampleCount = Math.max(1, Math.min(20000, Number((document.getElementById('reach-samples') as HTMLInputElement | null)?.value ?? 1000) || 1000));
-  if (!tip || !robot.links?.[tip]) {
+  const sampleCount = Math.max(
+    1,
+    Math.min(
+      20000,
+      Number((document.getElementById('reach-samples') as HTMLInputElement | null)?.value ?? 1000) || 1000
+    )
+  );
+  if (!tip) {
     setStatus('Pick a valid tip link first.');
     return;
   }
-  const status = document.getElementById('reach-status');
-  if (status) {
-    status.textContent = `Sampling ${sampleCount}…`;
-  }
-
-  const movable = currentData.metadata.movableJointNames;
-  if (movable.length === 0) {
-    if (status) {
-      status.textContent = 'No movable joints to sample.';
-    }
-    return;
-  }
-  const ranges = movable.map(name => jointRange(currentData!.metadata.joints[name]));
-  const previousPose = getPose();
-
-  disposeReachability();
-
-  // URDFLoader clamps setJointValue to its OWN parsed limits, which may
-  // default to [0, 0] when the URDF omits <limit>.  Bypass clamping during
-  // sampling so the cloud reflects our metadata's joint ranges.
-  const previousIgnoreLimits: Record<string, boolean> = {};
-  for (const name of movable) {
-    const joint = robot.joints?.[name];
-    if (joint) {
-      previousIgnoreLimits[name] = !!joint.ignoreLimits;
-      joint.ignoreLimits = true;
-    }
-  }
-  // Mimic followers are also driven and need ignoreLimits.
-  for (const [name, info] of Object.entries(currentData.metadata.joints)) {
-    if (info.mimic && robot.joints?.[name]) {
-      previousIgnoreLimits[name] = !!robot.joints[name].ignoreLimits;
-      robot.joints[name].ignoreLimits = true;
-    }
-  }
-
-  const positions = new Float32Array(sampleCount * 3);
-  const colors = new Float32Array(sampleCount * 3);
-  const tmp = new THREE.Vector3();
-  let minX = Infinity, minY = Infinity, minZ = Infinity;
-  let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
-
-  for (let i = 0; i < sampleCount; i += 1) {
-    for (let j = 0; j < movable.length; j += 1) {
-      const [min, max] = ranges[j];
-      const value = min + Math.random() * (max - min);
-      robot.setJointValue(movable[j], value);
-    }
-    applyMimicValuesAfterSample();
-    robot.updateMatrixWorld(true);
-    (robot.links[tip] as Object3D).getWorldPosition(tmp);
-    positions[i * 3] = tmp.x;
-    positions[i * 3 + 1] = tmp.y;
-    positions[i * 3 + 2] = tmp.z;
-    if (tmp.x < minX) minX = tmp.x;
-    if (tmp.y < minY) minY = tmp.y;
-    if (tmp.z < minZ) minZ = tmp.z;
-    if (tmp.x > maxX) maxX = tmp.x;
-    if (tmp.y > maxY) maxY = tmp.y;
-    if (tmp.z > maxZ) maxZ = tmp.z;
-    if (i % 200 === 0 && i > 0) {
-      await new Promise<void>(resolve => setTimeout(resolve, 0));
-    }
-  }
-
-  // Restore ignoreLimits flags.
-  for (const [name, value] of Object.entries(previousIgnoreLimits)) {
-    if (robot.joints?.[name]) {
-      robot.joints[name].ignoreLimits = value;
-    }
-  }
-
-  // Color points by relative height for legibility (so dense regions are
-  // distinguishable from a flat sphere).
-  const span = Math.max(1e-6, maxZ - minZ);
-  for (let i = 0; i < sampleCount; i += 1) {
-    const t = (positions[i * 3 + 2] - minZ) / span;
-    colors[i * 3] = 0.2 + 0.8 * t;
-    colors[i * 3 + 1] = 0.9 - 0.4 * t;
-    colors[i * 3 + 2] = 0.4 + 0.5 * (1 - t);
-  }
-
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  const reachExtent = Math.max(maxX - minX, maxY - minY, maxZ - minZ, 1e-3);
-  const pointSize = Math.max(0.01, reachExtent * 0.015);
-  const material = new THREE.PointsMaterial({ size: pointSize, sizeAttenuation: true, vertexColors: true });
-  reachabilityPoints = new THREE.Points(geometry, material);
-  scene.add(reachabilityPoints);
-
-  applyPose(previousPose);
-  if (status) {
-    status.textContent = `${sampleCount} samples · X[${minX.toFixed(2)}, ${maxX.toFixed(2)}] Y[${minY.toFixed(2)}, ${maxY.toFixed(2)}] Z[${minZ.toFixed(2)}, ${maxZ.toFixed(2)}].`;
-  }
-  // Refit camera so the cloud is in view alongside the robot.
-  fitCameraToCloud();
-  dirty = true;
-  publishTestState();
+  await ensureReachability().sample({
+    robot,
+    metadata: currentData.metadata,
+    tipLinkName: tip,
+    sampleCount,
+    poseBeforeSampling: getPose(),
+    applyPose: pose => applyPose(pose),
+    propagateMimics: (r, m) => applyMimicValuesAfterSample(r, m)
+  });
 }
 
-function fitCameraToCloud(): void {
-  if (!robot || !reachabilityPoints) {
-    return;
-  }
-  const robotBox = new THREE.Box3().setFromObject(robot);
-  const cloudBox = new THREE.Box3().setFromObject(reachabilityPoints);
-  const combined = robotBox.union(cloudBox);
+function disposeReachability(): void {
+  ensureReachability().dispose();
+}
+
+function fitCameraToBox(combined: THREE.Box3): void {
   if (combined.isEmpty()) {
     return;
   }
@@ -2141,32 +1549,13 @@ function fitCameraToCloud(): void {
   controls.update();
 }
 
-function applyMimicValuesAfterSample(): void {
-  if (!currentData || !robot) {
-    return;
-  }
-  const activeRobot = robot;
-  for (const [name, info] of Object.entries(currentData.metadata.joints)) {
+function applyMimicValuesAfterSample(activeRobot: URDFRobot, metadata: RobotMetadata): void {
+  for (const [name, info] of Object.entries(metadata.joints)) {
     if (info.mimic) {
       const masterValue = Number(activeRobot.joints?.[info.mimic.joint]?.angle ?? 0);
       activeRobot.setJointValue(name, masterValue * info.mimic.multiplier + info.mimic.offset);
     }
   }
-}
-
-function disposeReachability(): void {
-  if (reachabilityPoints) {
-    scene.remove(reachabilityPoints);
-    reachabilityPoints.geometry.dispose();
-    (reachabilityPoints.material as THREE.Material).dispose();
-    reachabilityPoints = undefined;
-    dirty = true;
-  }
-  const status = document.getElementById('reach-status');
-  if (status) {
-    status.textContent = '';
-  }
-  publishTestState();
 }
 
 let lastCollisionAnalysis: DisableCollisionEntry[] = [];
@@ -2180,7 +1569,7 @@ async function analyzeCollisionPairs(): Promise<void> {
     qs('#srdf-status').textContent = 'Load collision geometry first.';
     return;
   }
-  if (collisionMeshGeometry.size === 0) {
+  if (!ensureSelfCollision().hasGeometryIndex()) {
     qs('#srdf-status').textContent = 'No collision meshes available.';
     return;
   }
@@ -2195,8 +1584,8 @@ async function analyzeCollisionPairs(): Promise<void> {
   const linkNamesArr = Object.keys(currentData.metadata.links);
   for (let i = 0; i < linkNamesArr.length; i += 1) {
     for (let j = i + 1; j < linkNamesArr.length; j += 1) {
-      if (!isAdjacent(linkNamesArr[i], linkNamesArr[j])) {
-        allPairs.add(canonicalPair(linkNamesArr[i], linkNamesArr[j]));
+      if (!isAdjacentPure(linkNamesArr[i], linkNamesArr[j], currentData.metadata.links, currentData.metadata.joints)) {
+        allPairs.add(canonicalPairPure(linkNamesArr[i], linkNamesArr[j]));
       }
     }
   }
@@ -2207,11 +1596,11 @@ async function analyzeCollisionPairs(): Promise<void> {
       const value = min + Math.random() * (max - min);
       robot.setJointValue(movable[j], value);
     }
-    applyMimicValuesAfterSample();
+    applyMimicValuesAfterSample(robot, currentData.metadata);
     robot.updateMatrixWorld(true);
     const result = collectCollidingLinks();
     for (const [a, b] of result.pairs) {
-      colliding.add(canonicalPair(a, b));
+      colliding.add(canonicalPairPure(a, b));
     }
     if (s % 50 === 0 && s > 0) {
       qs('#srdf-status').textContent = `Sampling ${s}/${samples}…`;
@@ -2229,10 +1618,16 @@ async function analyzeCollisionPairs(): Promise<void> {
   lastCollisionAnalysis = neverColliding;
 
   const list = qs('#srdf-results');
-  list.innerHTML = neverColliding.length === 0
-    ? '<li class="muted">All non-adjacent pairs collide at least once. Increase samples?</li>'
-    : neverColliding.slice(0, 200).map(entry => `<li><code>${escapeHtml(entry.link1)} ↔ ${escapeHtml(entry.link2)}</code></li>`).join('')
-      + (neverColliding.length > 200 ? `<li class="muted">… and ${neverColliding.length - 200} more</li>` : '');
+  if (neverColliding.length === 0) {
+    setInnerHtml(list, html`<li class="muted">All non-adjacent pairs collide at least once. Increase samples?</li>`);
+  } else {
+    const shown = neverColliding.slice(0, 200);
+    const overflow = neverColliding.length - shown.length;
+    setInnerHtml(list, html`
+      ${shown.map(entry => html`<li><code>${entry.link1} ↔ ${entry.link2}</code></li>`)}
+      ${overflow > 0 ? html`<li class="muted">… and ${overflow} more</li>` : ''}
+    `);
+  }
   qs('#srdf-status').textContent = `${neverColliding.length} never-colliding pairs found from ${samples} samples.`;
   qs<HTMLButtonElement>('#srdf-write').disabled = neverColliding.length === 0;
 

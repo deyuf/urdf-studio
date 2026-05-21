@@ -50,7 +50,6 @@ test('buildDisabledPairSet returns empty set for null / undefined', () => {
 });
 
 test('buildDisabledPairSet skips entries missing link1 or link2', () => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const malformed: any[] = [
     { link1: 'a', link2: 'b' },
     { link1: '', link2: 'b' },

@@ -6,8 +6,17 @@ import type { JointInfo, PackageMap, RobotMetadata } from './core/types';
 
 const URDF_LIKE_PATTERNS = ['**/*.urdf', '**/*.urdf.xacro', '**/*.xacro'];
 
+// Minimum elapsed ms between successive analyzeUrdf() calls on the same
+// document. Hover / completion / definition providers can fire many times in
+// quick succession while the user is typing — returning a slightly stale
+// snapshot for ~80 ms is invisible to the human but cuts CPU dramatically on
+// big URDFs.
+export const ANALYSIS_DEBOUNCE_MS = 80;
+
 interface CachedAnalysis {
   version: number;
+  /** wall-clock time the analysis was computed at, in ms */
+  computedAt: number;
   metadata: RobotMetadata;
 }
 
@@ -24,8 +33,17 @@ async function ensureAnalysis(document: vscode.TextDocument): Promise<RobotMetad
   }
   const key = document.uri.toString();
   const cached = analysisCache.get(key);
-  if (cached && cached.version === document.version) {
-    return cached.metadata;
+  const now = Date.now();
+  if (cached) {
+    // Exact-version hit — always serve from cache.
+    if (cached.version === document.version) {
+      return cached.metadata;
+    }
+    // Stale but recently computed — accept a small staleness window so we
+    // don't re-run analyzeUrdf() on every keystroke during rapid editing.
+    if (now - cached.computedAt < ANALYSIS_DEBOUNCE_MS) {
+      return cached.metadata;
+    }
   }
   const text = document.getText();
   // For language features we work on the raw URDF/xacro text.  We do NOT
@@ -34,7 +52,7 @@ async function ensureAnalysis(document: vscode.TextDocument): Promise<RobotMetad
   // simply ignores tags it does not understand.
   const packages: PackageMap = {};
   const metadata = analyzeUrdf(text, document.uri.fsPath, packages);
-  analysisCache.set(key, { version: document.version, metadata });
+  analysisCache.set(key, { version: document.version, computedAt: now, metadata });
   return metadata;
 }
 
@@ -397,8 +415,13 @@ export function registerLanguageFeatures(context: vscode.ExtensionContext): void
     vscode.languages.registerCodeActionsProvider(selector, new UrdfCodeActionProvider(), {
       providedCodeActionKinds: UrdfCodeActionProvider.providedCodeActionKinds
     }),
-    vscode.workspace.onDidCloseTextDocument(document => analysisCache.delete(document.uri.toString())),
-    vscode.workspace.onDidChangeTextDocument(event => analysisCache.delete(event.document.uri.toString()))
+    vscode.workspace.onDidCloseTextDocument(document => analysisCache.delete(document.uri.toString()))
+    // Note: we intentionally do NOT invalidate the cache on
+    // onDidChangeTextDocument. ensureAnalysis() already keys by
+    // document.version and applies a small staleness window
+    // (ANALYSIS_DEBOUNCE_MS) so providers never re-run analyzeUrdf() more
+    // than once per ~80 ms during rapid edits. Letting the cache outlive
+    // a single keystroke is the entire point.
   );
 }
 

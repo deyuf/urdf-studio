@@ -12,7 +12,6 @@ import type {
   CameraSnapshot,
   DisableCollisionEntry,
   PackageMap,
-  PoseBookmark,
   PreviewState,
   RobotMetadata,
   StudioDiagnostic
@@ -123,11 +122,14 @@ export class WebHost {
     try {
       this.setStatus({ type: 'progress', message: `Loading ${fileName}...` });
 
-      // Pre-warm yaml cache so xacro's sync load_yaml works in the browser.
-      await this.preWarmYamlCache(docPath, vfs);
-
       const packageRoots = await this.computePackageRoots(vfs, settings.packageRoots);
       const packages = await discoverPackages(packageRoots);
+
+      // Pre-warm yaml cache so xacro's sync load_yaml works in the browser.
+      // Scoped to the document's directory + the standard ROS subtrees of
+      // every discovered package — far cheaper than slurping the whole VFS
+      // on workspaces with many unrelated YAMLs.
+      await this.preWarmYamlCache(docPath, vfs, packages);
 
       const rendered = await renderRobotDocument(docPath, packages, this.active.xacroArgs);
       const metadata = analyzeUrdf(rendered.urdf, docPath, packages);
@@ -516,16 +518,24 @@ export class WebHost {
     return Array.from(roots);
   }
 
-  /** Pre-load every YAML in the VFS so xacro's synchronous load_yaml()
-   *  expression can read from cache. YAML files are tiny relative to meshes;
-   *  caching them up front is much simpler and more reliable than trying to
-   *  trace indirect xacro property references. */
-  private async preWarmYamlCache(_sourcePath: string, vfs: BrowserVfs): Promise<void> {
-    const yamlPaths = vfs.allFiles().filter(path => /\.(ya?ml)$/i.test(path));
-    if (yamlPaths.length === 0) {
+  /** Pre-load YAML files xacro's synchronous load_yaml() might want.
+   *  Rather than blindly slurping every YAML in the VFS (which on a ROS
+   *  workspace with hundreds of unrelated launch/config YAMLs is wasteful),
+   *  we scope to:
+   *    1. The directory the URDF/xacro lives in.
+   *    2. The "config" and "urdf" siblings of that directory (standard ROS
+   *       layout — package_name/{config,urdf}/...).
+   *    3. Equivalent subdirectories of every discovered package's root.
+   *  If xacro later issues a load_yaml() for a YAML outside this scope,
+   *  the readTextSync() call will throw a clear "miss" error and the
+   *  diagnostic surfaces in the Checks panel — far better feedback than a
+   *  silent full-tree scan. */
+  private async preWarmYamlCache(sourcePath: string, vfs: BrowserVfs, packages: PackageMap = {}): Promise<void> {
+    const candidates = computeYamlPreWarmSet(sourcePath, vfs.allFiles(), packages);
+    if (candidates.length === 0) {
       return;
     }
-    await vfs.warmTextCache(yamlPaths);
+    await vfs.warmTextCache(candidates);
   }
 
   /** Build a synchronous urdf-studio-vfs:// → blob: URL map for every mesh file
@@ -700,6 +710,56 @@ export function computeDocumentKey(label: string, root: string, absPath: string)
     }
   }
   return `${label}::${relative}`;
+}
+
+/**
+ * Compute the YAML file paths to pre-warm before xacro expansion.
+ *
+ * Strategy: only scope to paths a typical ROS package would put on its
+ * load_yaml() resolution path, NOT every YAML in the workspace. We include:
+ *   - the document's own directory
+ *   - the document's `../config/` and `../urdf/` siblings
+ *   - each discovered package's root + its `config/` and `urdf/` subtrees
+ * and any path matching one of those prefixes.
+ *
+ * Exported as a pure function so the scoping logic is unit-testable
+ * without a live VFS.
+ */
+export function computeYamlPreWarmSet(
+  docPath: string,
+  allPaths: ReadonlyArray<string>,
+  packages: PackageMap
+): string[] {
+  const yamlPaths = allPaths.filter(p => /\.(ya?ml)$/i.test(p));
+  if (yamlPaths.length === 0) {
+    return [];
+  }
+
+  const docDir = posixPath.dirname(docPath);
+  const docParent = posixPath.dirname(docDir);
+
+  // Build the prefix whitelist. Each entry is treated as "this directory and
+  // anything underneath".
+  const prefixes = new Set<string>();
+  prefixes.add(`${docDir}/`);
+  prefixes.add(`${docParent}/config/`);
+  prefixes.add(`${docParent}/urdf/`);
+  for (const pkg of Object.values(packages)) {
+    const root = pkg.path.replace(/\/+$/, '');
+    prefixes.add(`${root}/`);
+    prefixes.add(`${root}/config/`);
+    prefixes.add(`${root}/urdf/`);
+  }
+
+  // Deduplicate + keep stable iteration order.
+  return yamlPaths.filter(p => {
+    for (const prefix of prefixes) {
+      if (p === prefix.slice(0, -1) || p.startsWith(prefix)) {
+        return true;
+      }
+    }
+    return false;
+  });
 }
 
 function triggerDownload(blob: Blob, filename: string): void {

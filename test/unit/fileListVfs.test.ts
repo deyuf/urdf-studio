@@ -30,7 +30,7 @@ test('FileListVfs.readText caches text content on second access', async () => {
   let textReads = 0;
   const file = makeFile('pkg/urdf/r.urdf', '<robot name="r"/>');
   const original = file.text.bind(file);
-  (file as any).text = async () => { // eslint-disable-line @typescript-eslint/no-explicit-any
+  (file as any).text = async () => {
     textReads += 1;
     return original();
   };
