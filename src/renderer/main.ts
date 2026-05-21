@@ -25,6 +25,14 @@ import { ellipsoidSemiAxes } from '../core/inertia';
 import { buildMimicGraph, propagateMimicValue, type MimicGraph } from '../core/mimic';
 import { buildBomCsv } from '../core/bom';
 import { LabelsOverlay, type LabelsMode } from './labels';
+import { buildDisplayGroups as buildDisplayGroupsPure, jointRange as jointRangePure } from './logic/displayGroups';
+import {
+  buildDisabledPairSet,
+  canonicalPair as canonicalPairPure,
+  isAdjacent as isAdjacentPure
+} from './logic/selfCollision';
+import { mountSourcePane, type SourcePane } from './logic/sourcePane';
+import { html, setInnerHtml } from './html';
 
 (THREE.Mesh.prototype as unknown as { raycast: typeof acceleratedRaycast }).raycast = acceleratedRaycast;
 (THREE.BufferGeometry.prototype as unknown as { computeBoundsTree: typeof computeBoundsTree }).computeBoundsTree = computeBoundsTree;
@@ -88,6 +96,7 @@ let robotBoundsRadius = 0.5;
 let framesMode: FramesMode = 'off';
 const linkAxesHelpers = new Map<string, THREE.AxesHelper>();
 let labelsOverlay: LabelsOverlay | undefined;
+let sourcePane: SourcePane | undefined;
 let labelsMode: LabelsMode = 'off';
 let measureMode = false;
 const measurePoints: THREE.Vector3[] = [];
@@ -570,7 +579,7 @@ function cloneObject(object: Object3D): Object3D {
 
 function renderSummary(data: LoadRobotMessage): void {
   const panel = qs('#panel-joints');
-  panel.innerHTML = `
+  setInnerHtml(panel, html`
     <div class="summary">
       <div class="metric"><b>${data.metadata.counts.links}</b><span>Links</span></div>
       <div class="metric"><b>${data.metadata.counts.joints}</b><span>Joints</span></div>
@@ -582,7 +591,7 @@ function renderSummary(data: LoadRobotMessage): void {
       <label><input id="joint-modified-only" type="checkbox"> Only modified</label>
     </div>
     <div id="joint-groups"></div>
-  `;
+  `);
   qs<HTMLInputElement>('#joint-search').addEventListener('input', () => applyJointFilter());
   qs<HTMLInputElement>('#joint-modified-only').addEventListener('change', () => applyJointFilter());
 }
@@ -590,20 +599,20 @@ function renderSummary(data: LoadRobotMessage): void {
 function renderXacroArgs(data: LoadRobotMessage): void {
   const host = qs('#xacro-args-host');
   if (data.format !== 'xacro' || data.xacroArgs.length === 0) {
-    host.innerHTML = '';
+    host.replaceChildren();
     return;
   }
-  host.innerHTML = `
+  setInnerHtml(host, html`
     <div class="xacro-args">
-      ${data.xacroArgs.map(arg => `
+      ${data.xacroArgs.map(arg => html`
         <label>
-          <span>${escapeHtml(arg.name)}</span>
-          <input type="text" data-xacro-arg="${escapeHtml(arg.name)}" value="${escapeHtml(String(data.xacroArgValues[arg.name] ?? arg.defaultValue ?? ''))}">
+          <span>${arg.name}</span>
+          <input type="text" data-xacro-arg="${arg.name}" value="${String(data.xacroArgValues[arg.name] ?? arg.defaultValue ?? '')}">
         </label>
-      `).join('')}
+      `)}
       <button id="apply-xacro" class="primary">Reload xacro</button>
     </div>
-  `;
+  `);
   qs('#apply-xacro').addEventListener('click', () => {
     const args: Record<string, string> = {};
     qsa<HTMLInputElement>('[data-xacro-arg]').forEach(input => {
@@ -616,20 +625,20 @@ function renderXacroArgs(data: LoadRobotMessage): void {
 function renderJointPanel(data: LoadRobotMessage): void {
   const host = qs('#joint-groups');
   const groups = buildDisplayGroups(data);
-  host.innerHTML = groups.map(group => `
-    <details open data-group="${escapeHtml(group.name)}">
-      <summary>${escapeHtml(group.name)} (${group.joints.length})</summary>
-      <div class="detail-body">
-        <div class="state-buttons">
-          ${data.semantic.states
-            .filter(state => state.group === group.name || (group.name === 'all' && Object.keys(state.joints).length > 0))
-            .map(state => `<button data-state="${escapeHtml(state.group)}:${escapeHtml(state.name)}">${escapeHtml(state.name)}</button>`)
-            .join('')}
+  setInnerHtml(host, html`${groups.map(group => {
+    const statesForGroup = data.semantic.states
+      .filter(state => state.group === group.name || (group.name === 'all' && Object.keys(state.joints).length > 0));
+    return html`
+      <details open data-group="${group.name}">
+        <summary>${group.name} (${group.joints.length})</summary>
+        <div class="detail-body">
+          <div class="state-buttons">
+            ${statesForGroup.map(state => html`<button data-state="${state.group}:${state.name}">${state.name}</button>`)}
+          </div>
+          ${group.joints.map(jointName => renderJointRow(jointName, data.metadata.joints[jointName]))}
         </div>
-        ${group.joints.map(jointName => renderJointRow(jointName, data.metadata.joints[jointName])).join('')}
-      </div>
-    </details>
-  `).join('');
+      </details>`;
+  })}`);
 
   qsa<HTMLInputElement>('[data-joint-slider]').forEach(slider => {
     slider.addEventListener('input', () => setJointValue(slider.dataset.jointSlider!, Number(slider.value), true));
@@ -650,33 +659,17 @@ function renderJointPanel(data: LoadRobotMessage): void {
 }
 
 function buildDisplayGroups(data: LoadRobotMessage): Array<{ name: string; joints: string[] }> {
-  const movable = new Set(data.metadata.movableJointNames);
-  const semanticGroups = data.semantic.groups
-    .map(group => ({ name: group.name, joints: group.joints.filter(joint => movable.has(joint)) }))
-    .filter(group => group.joints.length > 0);
-  if (semanticGroups.length > 0) {
-    return semanticGroups;
-  }
-
-  const grouped = new Map<string, string[]>();
-  for (const joint of data.metadata.movableJointNames) {
-    const prefix = joint.includes('_') ? joint.split('_')[0] : 'all';
-    if (!grouped.has(prefix)) {
-      grouped.set(prefix, []);
-    }
-    grouped.get(prefix)!.push(joint);
-  }
-  return Array.from(grouped.entries()).map(([name, joints]) => ({ name, joints }));
+  return buildDisplayGroupsPure(data.metadata, data.semantic);
 }
 
-function renderJointRow(jointName: string, joint: JointInfo | undefined): string {
+function renderJointRow(jointName: string, joint: JointInfo | undefined): ReturnType<typeof html> {
   const value = Number(robot?.joints?.[jointName]?.angle ?? 0);
   const [min, max] = jointRange(joint);
-  return `
-    <div class="joint-row" data-joint-row="${escapeHtml(jointName)}">
-      <span class="joint-name" title="${escapeHtml(jointName)}">${escapeHtml(jointName)}</span>
-      <input data-joint-slider="${escapeHtml(jointName)}" type="range" min="${min}" max="${max}" step="0.001" value="${value}">
-      <input data-joint-number="${escapeHtml(jointName)}" type="number" min="${min}" max="${max}" step="0.001" value="${value.toFixed(3)}">
+  return html`
+    <div class="joint-row" data-joint-row="${jointName}">
+      <span class="joint-name" title="${jointName}">${jointName}</span>
+      <input data-joint-slider="${jointName}" type="range" min="${min}" max="${max}" step="0.001" value="${value}">
+      <input data-joint-number="${jointName}" type="number" min="${min}" max="${max}" step="0.001" value="${value.toFixed(3)}">
     </div>
   `;
 }
@@ -707,13 +700,7 @@ function applyJointFilter(): void {
 }
 
 function jointRange(joint: JointInfo | undefined): [number, number] {
-  if (!joint || joint.type === 'continuous') {
-    return [-Math.PI, Math.PI];
-  }
-  if (joint.limit.lower !== undefined && joint.limit.upper !== undefined) {
-    return [joint.limit.lower, joint.limit.upper];
-  }
-  return joint.type === 'prismatic' ? [-1, 1] : [-Math.PI, Math.PI];
+  return jointRangePure(joint);
 }
 
 function setJointValue(jointName: string, value: number, notify: boolean): void {
@@ -774,33 +761,44 @@ function getPose(): Record<string, number> {
 function renderChecks(data: LoadRobotMessage): void {
   const panel = qs('#panel-checks');
   const diagnostics = data.diagnostics;
-  panel.innerHTML = diagnostics.length === 0
-    ? '<div class="muted">No diagnostics.</div>'
-    : diagnostics.map(diagnostic => `
+  if (diagnostics.length === 0) {
+    setInnerHtml(panel, html`<div class="muted">No diagnostics.</div>`);
+    return;
+  }
+  setInnerHtml(panel, html`${diagnostics.map(diagnostic => {
+    const details = [
+      diagnostic.code,
+      diagnostic.target,
+      diagnostic.line ? `line ${diagnostic.line}` : ''
+    ].filter(Boolean).join(' | ');
+    return html`
       <div class="diagnostic">
         <div class="severity ${diagnostic.severity}">${diagnostic.severity}</div>
         <div>
-          <div>${escapeHtml(diagnostic.message)}</div>
-          <div class="muted">${escapeHtml([diagnostic.code, diagnostic.target, diagnostic.line ? `line ${diagnostic.line}` : ''].filter(Boolean).join(' | '))}</div>
+          <div>${diagnostic.message}</div>
+          <div class="muted">${details}</div>
         </div>
-      </div>
-    `).join('');
+      </div>`;
+  })}`);
 }
 
 function renderLinks(tree: LinkTreeNode[]): void {
-  qs('#panel-links').innerHTML = tree.length === 0
-    ? '<div class="muted">No link tree.</div>'
-    : `<ul>${tree.map(renderTreeNode).join('')}</ul>`;
+  const panel = qs('#panel-links');
+  if (tree.length === 0) {
+    setInnerHtml(panel, html`<div class="muted">No link tree.</div>`);
+  } else {
+    setInnerHtml(panel, html`<ul>${tree.map(renderTreeNode)}</ul>`);
+  }
   qsa<HTMLButtonElement>('[data-link]').forEach(button => {
     button.addEventListener('click', () => selectLink(button.dataset.link));
   });
 }
 
-function renderTreeNode(node: LinkTreeNode): string {
-  return `
+function renderTreeNode(node: LinkTreeNode): ReturnType<typeof html> {
+  return html`
     <li>
-      <button data-link="${escapeHtml(node.link)}">${escapeHtml(node.link)}${node.joint ? ` <span class="muted">via ${escapeHtml(node.joint)}</span>` : ''}</button>
-      ${node.children.length > 0 ? `<ul>${node.children.map(renderTreeNode).join('')}</ul>` : ''}
+      <button data-link="${node.link}">${node.link}${node.joint ? html` <span class="muted">via ${node.joint}</span>` : ''}</button>
+      ${node.children.length > 0 ? html`<ul>${node.children.map(renderTreeNode)}</ul>` : ''}
     </li>
   `;
 }
@@ -808,39 +806,44 @@ function renderTreeNode(node: LinkTreeNode): string {
 function renderInspector(): void {
   const panel = qs('#panel-inspector');
   if (!currentData || !selectedLink) {
-    panel.innerHTML = '<div class="muted">Select a link in the viewport or link tree.</div>';
+    setInnerHtml(panel, html`<div class="muted">Select a link in the viewport or link tree.</div>`);
     return;
   }
   const link = currentData.metadata.links[selectedLink];
   const parentJoint = link?.parentJoint ? currentData.metadata.joints[link.parentJoint] : undefined;
   const meshes = currentData.metadata.meshes.filter(mesh => mesh.link === selectedLink);
   const inertial = link?.inertial;
-  panel.innerHTML = `
+  const limitText = parentJoint
+    ? `${parentJoint.limit.lower ?? ''} .. ${parentJoint.limit.upper ?? ''}`
+    : '';
+  setInnerHtml(panel, html`
     <div class="inspector-grid">
-      <b>Link</b><div class="value">${escapeHtml(selectedLink)}</div>
-      <b>Parent</b><div class="value">${escapeHtml(parentJoint?.name ?? 'none')}</div>
-      <b>Type</b><div class="value">${escapeHtml(parentJoint?.type ?? 'root')}</div>
-      <b>Axis</b><div class="value">${escapeHtml(parentJoint ? parentJoint.axis.join(' ') : '')}</div>
-      <b>Limit</b><div class="value">${escapeHtml(parentJoint ? `${parentJoint.limit.lower ?? ''} .. ${parentJoint.limit.upper ?? ''}` : '')}</div>
+      <b>Link</b><div class="value">${selectedLink}</div>
+      <b>Parent</b><div class="value">${parentJoint?.name ?? 'none'}</div>
+      <b>Type</b><div class="value">${parentJoint?.type ?? 'root'}</div>
+      <b>Axis</b><div class="value">${parentJoint ? parentJoint.axis.join(' ') : ''}</div>
+      <b>Limit</b><div class="value">${limitText}</div>
       <b>Mimic</b><div class="value">${parentJoint?.mimic ? formatMimic(parentJoint.mimic) : 'none'}</div>
-      <b>Children</b><div class="value">${escapeHtml(link?.childJoints.join(', ') || 'none')}</div>
+      <b>Children</b><div class="value">${link?.childJoints.join(', ') || 'none'}</div>
       <b>Mass</b><div class="value">${inertial ? `${inertial.mass.toFixed(4)} kg` : 'n/a'}</div>
-      ${inertial ? `<b>CoM</b><div class="value">${inertial.origin.map(value => value.toFixed(3)).join(' ')}</div>` : ''}
+      ${inertial ? html`<b>CoM</b><div class="value">${inertial.origin.map(value => value.toFixed(3)).join(' ')}</div>` : ''}
     </div>
     <h3>Meshes</h3>
     <div class="mesh-list">
-      ${meshes.map(mesh => `
-        <div class="mesh-item">
-          <b>${mesh.kind}</b>
-          <div class="value">${escapeHtml(mesh.filename)} ${mesh.exists ? '' : '<span class="severity error">missing</span>'}</div>
-        </div>
-      `).join('') || '<div class="muted">No meshes.</div>'}
+      ${meshes.length === 0
+        ? html`<div class="muted">No meshes.</div>`
+        : meshes.map(mesh => html`
+          <div class="mesh-item">
+            <b>${mesh.kind}</b>
+            <div class="value">${mesh.filename} ${mesh.exists ? '' : html`<span class="severity error">missing</span>`}</div>
+          </div>
+        `)}
     </div>
-  `;
+  `);
 }
 
 function formatMimic(mimic: MimicInfo): string {
-  return escapeHtml(`${mimic.joint} × ${mimic.multiplier} + ${mimic.offset}`);
+  return `${mimic.joint} × ${mimic.multiplier} + ${mimic.offset}`;
 }
 
 function onCanvasClick(event: MouseEvent): void {
@@ -1415,36 +1418,21 @@ function buildVisualMaterialIndex(): void {
 }
 
 function getDisabledPairs(): Set<string> {
-  const set = new Set<string>();
   if (!currentData) {
-    return set;
+    return new Set<string>();
   }
-  for (const entry of currentData.semantic.disableCollisions ?? []) {
-    set.add(canonicalPair(entry.link1, entry.link2));
-  }
-  return set;
+  return buildDisabledPairSet(currentData.semantic.disableCollisions);
 }
 
 function isAdjacent(linkA: string, linkB: string): boolean {
   if (!currentData) {
     return false;
   }
-  const a = currentData.metadata.links[linkA];
-  const b = currentData.metadata.links[linkB];
-  if (!a || !b) {
-    return false;
-  }
-  if (a.parentJoint && currentData.metadata.joints[a.parentJoint]?.parent === linkB) {
-    return true;
-  }
-  if (b.parentJoint && currentData.metadata.joints[b.parentJoint]?.parent === linkA) {
-    return true;
-  }
-  return false;
+  return isAdjacentPure(linkA, linkB, currentData.metadata.links, currentData.metadata.joints);
 }
 
 function canonicalPair(a: string, b: string): string {
-  return a < b ? `${a}|${b}` : `${b}|${a}`;
+  return canonicalPairPure(a, b);
 }
 
 function collectCollidingLinks(): { pairs: Array<[string, string]>; links: Set<string> } {
@@ -1662,36 +1650,24 @@ function renderToolsPanel(): void {
 
 function renderSource(data: LoadRobotMessage): void {
   const panel = qs('#panel-source');
-  const lines = data.urdf.split('\n');
-  const numWidth = String(lines.length).length;
-  panel.innerHTML = `
-    <div class="source-meta muted">${escapeHtml(data.fileName)} · ${lines.length} lines${data.format === 'xacro' ? ' (expanded xacro)' : ''}</div>
-    <pre class="source-view"><code>${lines.map((line, index) => {
-      const lineNo = index + 1;
-      const padded = String(lineNo).padStart(numWidth, ' ');
-      return `<div class="source-line" data-source-line="${lineNo}"><span class="source-gutter">${padded}</span><span class="source-text">${escapeHtml(line) || ' '}</span></div>`;
-    }).join('')}</code></pre>
-  `;
+  sourcePane?.dispose();
+  sourcePane = mountSourcePane(panel, {
+    fileName: data.fileName,
+    format: data.format,
+    urdf: data.urdf
+  });
 }
 
 function highlightSourceForLink(linkName: string | undefined): void {
-  const panel = document.getElementById('panel-source');
-  if (!panel) {
+  if (!sourcePane) {
     return;
   }
-  panel.querySelectorAll('.source-line.active').forEach(el => el.classList.remove('active'));
   if (!linkName || !currentData) {
+    sourcePane.setActiveLine(undefined);
     return;
   }
   const line = currentData.metadata.links[linkName]?.line;
-  if (!line) {
-    return;
-  }
-  const target = panel.querySelector<HTMLDivElement>(`[data-source-line="${line}"]`);
-  if (target) {
-    target.classList.add('active');
-    target.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  }
+  sourcePane.setActiveLine(line);
 }
 
 function requestRevealForLink(linkName: string | undefined): void {
