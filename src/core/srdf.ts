@@ -1,6 +1,7 @@
 import YAML from 'yaml';
 import { directChildren, parseXml } from './xml';
 import { getCoreIo } from './io';
+import { escapeXmlAttr } from './escapeXml';
 import type { DisableCollisionEntry, PackageMap, SemanticGroup, SemanticMetadata, SemanticState, StudioDiagnostic } from './types';
 
 interface RawGroup {
@@ -173,16 +174,6 @@ export function buildDisableCollisionsXml(entries: DisableCollisionEntry[]): str
   return entries
     .map(entry => `  <disable_collisions link1="${escapeXmlAttr(entry.link1)}" link2="${escapeXmlAttr(entry.link2)}"${entry.reason ? ` reason="${escapeXmlAttr(entry.reason)}"` : ''}/>`)
     .join('\n');
-}
-
-function escapeXmlAttr(value: string): string {
-  return value.replace(/[&<>"']/g, char => ({
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&apos;'
-  }[char] as string));
 }
 
 export function mergeDisableCollisionsIntoSrdf(content: string, entries: DisableCollisionEntry[]): { srdf: string; added: number } {

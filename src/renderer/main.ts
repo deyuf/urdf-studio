@@ -6,6 +6,7 @@ import { ColladaLoader } from 'three/examples/jsm/loaders/ColladaLoader.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import URDFLoader from 'urdf-loader';
+import type { URDFRobot } from 'urdf-loader/src/URDFClasses';
 import { acceleratedRaycast, computeBoundsTree, disposeBoundsTree, MeshBVH } from 'three-mesh-bvh';
 import type {
   CameraSnapshot,
@@ -68,7 +69,7 @@ let renderer: THREE.WebGLRenderer;
 let controls: OrbitControls;
 let grid: THREE.GridHelper;
 let axes: THREE.AxesHelper;
-let robot: any;
+let robot: URDFRobot | undefined;
 let currentData: LoadRobotMessage | undefined;
 let renderMode: RenderMode = 'visual';
 let collisionGeometryLoaded = false;
@@ -461,11 +462,12 @@ async function loadRobot(data: LoadRobotMessage, forceCollisionGeometry = false)
   loader.loadMeshCb = loadMeshWithCache;
 
   try {
-    robot = loader.parse(data.urdf);
-    robot.visible = !hasExternalMeshesToLoad;
+    const parsedRobot = loader.parse(data.urdf) as URDFRobot;
+    robot = parsedRobot;
+    parsedRobot.visible = !hasExternalMeshesToLoad;
     collisionGeometryLoaded = shouldLoadCollision;
-    scene.add(robot);
-    robot.traverse((object: Object3D) => {
+    scene.add(parsedRobot);
+    parsedRobot.traverse((object: Object3D) => {
       object.matrixAutoUpdate = true;
       const mesh = object as THREE.Mesh;
       if (mesh.isMesh) {
@@ -480,8 +482,8 @@ async function loadRobot(data: LoadRobotMessage, forceCollisionGeometry = false)
     // limits (which may default to [0, 0] when <limit> is missing) would
     // otherwise clamp the propagated value to a useless number.
     for (const [name, info] of Object.entries(data.metadata.joints)) {
-      if (info.mimic && robot.joints?.[name]) {
-        robot.joints[name].ignoreLimits = true;
+      if (info.mimic && parsedRobot.joints?.[name]) {
+        parsedRobot.joints[name].ignoreLimits = true;
       }
     }
     renderJointPanel(data);
@@ -2164,13 +2166,14 @@ function fitCameraToCloud(): void {
 }
 
 function applyMimicValuesAfterSample(): void {
-  if (!currentData) {
+  if (!currentData || !robot) {
     return;
   }
+  const activeRobot = robot;
   for (const [name, info] of Object.entries(currentData.metadata.joints)) {
     if (info.mimic) {
-      const masterValue = Number(robot.joints?.[info.mimic.joint]?.angle ?? 0);
-      robot.setJointValue(name, masterValue * info.mimic.multiplier + info.mimic.offset);
+      const masterValue = Number(activeRobot.joints?.[info.mimic.joint]?.angle ?? 0);
+      activeRobot.setJointValue(name, masterValue * info.mimic.multiplier + info.mimic.offset);
     }
   }
 }

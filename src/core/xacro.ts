@@ -4,11 +4,36 @@ import { getCoreIo } from './io';
 import type { PackageMap, RenderedRobotDocument, StudioDiagnostic, XacroArgument } from './types';
 
 type LogFn = (message: string) => void;
-const MAX_XACRO_RECOVERY_ATTEMPTS = 16;
+
+// Tunables — exported so callers/tests can introspect or adjust.
+export const MAX_XACRO_RECOVERY_ATTEMPTS = 16;
+
 let logFn: LogFn = () => {};
 
 export function setLogger(fn: LogFn): void {
   logFn = fn;
+}
+
+// =============================================================================
+// Concurrency: serialise xacro renders so concurrent callers cannot interleave
+// inside the vendored parser. The vendored parser no longer touches globalThis
+// (we inject domParser via XacroParser.domParser), so this lock is purely
+// defensive — it also guarantees that a hypothetical future global mutation
+// stays scoped to one render.
+// =============================================================================
+
+let xacroLock: Promise<void> = Promise.resolve();
+
+async function withXacroLock<T>(task: () => Promise<T>): Promise<T> {
+  const previous = xacroLock;
+  let release!: () => void;
+  xacroLock = new Promise<void>(resolve => { release = resolve; });
+  try {
+    await previous;
+    return await task();
+  } finally {
+    release();
+  }
 }
 
 export async function renderRobotDocument(
@@ -39,46 +64,41 @@ export async function renderXacroFile(
   packages: PackageMap,
   xacroArguments: Record<string, unknown>
 ): Promise<RenderedRobotDocument> {
-  const io = getCoreIo();
-  const diagnostics: StudioDiagnostic[] = [];
-  const includedFiles = new Set<string>();
-  const previousDomParser = (globalThis as { DOMParser?: typeof DOMParser }).DOMParser;
-  const previousXmlSerializer = (globalThis as { XMLSerializer?: typeof XMLSerializer }).XMLSerializer;
-  (globalThis as { DOMParser?: typeof DOMParser }).DOMParser = io.DOMParser as unknown as typeof DOMParser;
-  (globalThis as { XMLSerializer?: typeof XMLSerializer }).XMLSerializer = io.XMLSerializer as unknown as typeof XMLSerializer;
+  return withXacroLock(async () => {
+    const io = getCoreIo();
+    const diagnostics: StudioDiagnostic[] = [];
+    const includedFiles = new Set<string>();
 
-  try {
-    const xml = await parseXacroWithRecovery(sourcePath, content, packages, xacroArguments, diagnostics, includedFiles);
-    const serializer = new io.XMLSerializer();
-    return {
-      sourcePath,
-      format: 'xacro',
-      urdf: serializer.serializeToString(xml),
-      xacroArgs: extractXacroArgs(content),
-      includedFiles: Array.from(includedFiles),
-      diagnostics
-    };
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error);
-    logFn(`xacro expansion failed: ${msg}`);
-    diagnostics.push({
-      severity: 'error',
-      message: `xacro expansion failed: ${msg}`,
-      code: 'xacro.expand',
-      file: sourcePath
-    });
-    return {
-      sourcePath,
-      format: 'xacro',
-      urdf: content,
-      xacroArgs: extractXacroArgs(content),
-      includedFiles: Array.from(includedFiles),
-      diagnostics
-    };
-  } finally {
-    (globalThis as { DOMParser?: typeof DOMParser }).DOMParser = previousDomParser;
-    (globalThis as { XMLSerializer?: typeof XMLSerializer }).XMLSerializer = previousXmlSerializer;
-  }
+    try {
+      const xml = await parseXacroWithRecovery(sourcePath, content, packages, xacroArguments, diagnostics, includedFiles);
+      const serializer = new io.XMLSerializer();
+      return {
+        sourcePath,
+        format: 'xacro',
+        urdf: serializer.serializeToString(xml),
+        xacroArgs: extractXacroArgs(content),
+        includedFiles: Array.from(includedFiles),
+        diagnostics
+      };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      logFn(`xacro expansion failed: ${msg}`);
+      diagnostics.push({
+        severity: 'error',
+        message: `xacro expansion failed: ${msg}`,
+        code: 'xacro.expand',
+        file: sourcePath
+      });
+      return {
+        sourcePath,
+        format: 'xacro',
+        urdf: content,
+        xacroArgs: extractXacroArgs(content),
+        includedFiles: Array.from(includedFiles),
+        diagnostics
+      };
+    }
+  });
 }
 
 async function parseXacroWithRecovery(
@@ -137,6 +157,8 @@ function createXacroParser(
   parser.localProperties = true;
   parser.workingPath = `${io.dirname(sourcePath)}${io.sep}`;
   parser.arguments = stringifyArgs(xacroArguments);
+  // Inject the host's DOMParser so the vendored parser never touches globalThis.
+  parser.domParser = io.DOMParser;
   parser.getFileContents = async includePath => {
     try {
       includedFiles.add(io.resolve(includePath));
@@ -233,12 +255,52 @@ function createXacroParser(
   return parser;
 }
 
-function sanitizeXacroContent(content: string, skippedExpressions: ReadonlySet<string>): string {
-  let sanitized = content;
-  for (const expression of skippedExpressions) {
-    sanitized = sanitized.split(expression).join('');
+// Erase "broken" expressions so the next xacro pass can succeed. Two kinds of
+// failing tokens reach this function:
+//
+//   1. Python expressions inside `${...}` — e.g. `${some_undefined()}`.
+//      We strip them only inside `${...}` blocks. The previous implementation
+//      used a full-document `split().join('')` which could mangle XML
+//      attribute values that happened to coincide with the expression's
+//      literal text.
+//
+//   2. Rospack-style substitutions `$(command args)` — e.g. `$(arg name)`
+//      with no arg default. These appear at the attribute level (NOT inside
+//      `${...}`) and are unambiguous tokens, so removing them verbatim is
+//      safe and preserves the legacy recovery behaviour that real ROS
+//      packages depend on (xacros declaring `$(arg X)` without a default).
+export function sanitizeXacroContent(content: string, skippedExpressions: ReadonlySet<string>): string {
+  if (skippedExpressions.size === 0) {
+    return content;
   }
-  return sanitized;
+  let result = content;
+
+  // Step 1: rospack-style substitutions — remove every occurrence in the
+  // document. They cannot validly nest inside other constructs, and their
+  // `$(...)` form is distinctive enough that an unintentional match in
+  // user text is vanishingly unlikely.
+  for (const target of skippedExpressions) {
+    if (target.startsWith('$(') && target.endsWith(')') && target.length > 0) {
+      result = result.split(target).join('');
+    }
+  }
+
+  // Step 2: Python `${...}` expressions — scope the removal to the inside of
+  // `${...}` blocks. Empty strings and rospack tokens are skipped because
+  // they were either handled above or aren't applicable.
+  const expressionSkips = Array.from(skippedExpressions).filter(target =>
+    target.length > 0 && !(target.startsWith('$(') && target.endsWith(')'))
+  );
+  if (expressionSkips.length === 0) {
+    return result;
+  }
+  return result.replace(/\$\{([^{}]*)\}/g, (match, expression: string) => {
+    let body = expression;
+    for (const target of expressionSkips) {
+      body = body.split(target).join('');
+    }
+    return body === expression ? match : `\${${body}}`;
+  });
 }
 
 // xacro-parser does not implement three constructs that ROS xacro accepts:

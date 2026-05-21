@@ -7,6 +7,7 @@ import { discoverPackages } from '../core/packageMap';
 import { renderRobotDocument, setLogger } from '../core/xacro';
 import { analyzeUrdf } from '../core/urdfAnalysis';
 import { loadSemanticMetadata, mergeDisableCollisionsIntoSrdf, parseSrdf } from '../core/srdf';
+import { escapeXmlText } from '../core/escapeXml';
 import type {
   CameraSnapshot,
   DisableCollisionEntry,
@@ -316,8 +317,10 @@ export class WebHost {
         // the previous-generation blob URLs now.
         try {
           requireActiveVfs().commitGeneration();
-        } catch {
-          // VFS may have been swapped before this ack arrived; nothing to do.
+        } catch (error) {
+          // VFS may have been swapped before this ack arrived; surface but
+          // don't break the load flow.
+          console.debug('[urdf] commitGeneration on geometryLoaded:', error);
         }
         this.setStatus({
           type: 'info',
@@ -496,7 +499,11 @@ export class WebHost {
 
   private documentKey(absPath: string): string {
     const vfs = requireActiveVfs();
-    return `${vfs.label}${absPath}`;
+    // Compose with a separator and use the path relative to the VFS root so a
+    // folder named `franka_description` always produces the same key, no
+    // matter which parent directory the user opened it from. See
+    // computeDocumentKey() for the pure helper used by tests.
+    return computeDocumentKey(vfs.label, vfs.root, absPath);
   }
 
   private async computePackageRoots(vfs: BrowserVfs, extraRoots: string[]): Promise<string[]> {
@@ -587,10 +594,14 @@ export class WebHost {
           }
           pending.push(vfs.getBlobUrl(abs).then(blob => {
             this.urlMap.set(vfsUrl, blob);
-          }).catch(() => undefined));
+          }).catch(error => {
+            console.warn('[urdf] could not pre-allocate collada texture URL for', abs, error);
+          }));
         }
-      } catch {
-        // best-effort
+      } catch (error) {
+        // Collada files can ship corrupted on real robots; surface to console
+        // so the user has something to grep but don't block the URDF load.
+        console.warn('[urdf] preallocateColladaTextures: could not inspect', daePath, error);
       }
     }
     await Promise.all(pending);
@@ -631,10 +642,13 @@ export class WebHost {
           }
           pending.push(vfs.getBlobUrl(abs).then(blob => {
             this.urlMap.set(vfsUrl, blob);
-          }).catch(() => undefined));
+          }).catch(error => {
+            console.warn('[urdf] could not pre-allocate gltf asset URL for', abs, error);
+          }));
         }
-      } catch {
-        // best-effort
+      } catch (error) {
+        // Malformed gltf json — surface and continue.
+        console.warn('[urdf] preallocateGltfAssets: could not inspect', gltfPath, error);
       }
     }
     await Promise.all(pending);
@@ -669,13 +683,23 @@ function ensureLeadingSlash(p: string): string {
   return p.startsWith('/') ? p : `/${p}`;
 }
 
-function escapeXmlText(value: string): string {
-  return value.replace(/[&<>"]/g, char => ({
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;'
-  }[char] as string));
+// Pure helper exported for unit testing. Builds a stable identifier for a
+// document inside a VFS that combines:
+//   - the VFS label (the root folder's basename)
+//   - the path of the document relative to the VFS root
+// We use a `::` separator so two different paths cannot collide with each
+// other through string concatenation (e.g. label `franka_description` with
+// path `/foo/bar` no longer accidentally matches label `franka` with path
+// `_description/foo/bar`).
+export function computeDocumentKey(label: string, root: string, absPath: string): string {
+  let relative = absPath;
+  if (root && absPath.startsWith(root)) {
+    relative = absPath.slice(root.length) || '/';
+    if (!relative.startsWith('/')) {
+      relative = `/${relative}`;
+    }
+  }
+  return `${label}::${relative}`;
 }
 
 function triggerDownload(blob: Blob, filename: string): void {
