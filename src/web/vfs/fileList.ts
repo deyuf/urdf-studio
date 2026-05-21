@@ -28,7 +28,10 @@ export class FileListVfs implements BrowserVfs {
   private previousBlobs = new Map<string, string>();
 
   constructor(files: FileList | File[]) {
-    const list = files instanceof FileList ? Array.from(files) : files;
+    // `FileList` is not a global in non-browser hosts (Node tests, SSR), so
+    // guard the `instanceof` check before falling through to the array path.
+    const FileListCtor = (globalThis as { FileList?: typeof FileList }).FileList;
+    const list = (FileListCtor && files instanceof FileListCtor) ? Array.from(files) : (files as File[]);
     if (list.length === 0) {
       throw new Error('FileListVfs: empty file list');
     }

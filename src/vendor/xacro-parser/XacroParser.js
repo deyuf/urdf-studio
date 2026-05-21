@@ -28,6 +28,20 @@ export class XacroParser {
         this.arguments = {};
         this.expressionParser = new ExpressionParser();
         this.workingPath = '';
+        // Optional DOMParser injection — when set, used in place of the
+        // global `DOMParser`. Lets hosts (Node + jsdom, browser native) pass
+        // their own parser without mutating globalThis.
+        this.domParser = null;
+    }
+
+    _createDomParser() {
+        if (this.domParser) {
+            return new this.domParser();
+        }
+        if (typeof DOMParser !== 'undefined') {
+            return new DOMParser();
+        }
+        throw new Error('XacroParser: no DOMParser available. Set parser.domParser before calling parse().');
     }
 
     async getFileContents(path) {
@@ -555,7 +569,7 @@ export class XacroParser {
 
             try {
                 const text = await scope.getFileContents(path);
-                return new DOMParser().parseFromString(text, 'text/xml');
+                return scope._createDomParser().parseFromString(text, 'text/xml');
             } catch (e) {
                 throw new Error(`XacroParser: Could not load included file: ${ path }`);
             }
@@ -641,7 +655,7 @@ export class XacroParser {
         const expressionParser = this.expressionParser;
         let localProperties = this.localProperties;
         let currWorkingPath = workingPath;
-        let content = new DOMParser().parseFromString(data, 'text/xml');
+        let content = this._createDomParser().parseFromString(data, 'text/xml');
 
         if (localProperties && !inOrder) {
             console.warn('XacroParser: Implicitly setting "localProperties" option to false because "inOrder" is false.');

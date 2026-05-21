@@ -16,19 +16,32 @@ const SKIP_DIRS = new Set([
   '.pytest_cache'
 ]);
 
+// Cap recursion depth so users opening a `~/` style root cannot accidentally
+// grind the scanner through a deep filesystem. ROS workspaces normally have
+// packages at depth 1-3 below the workspace root, so 16 is a generous upper
+// bound while still preventing pathological scans.
+export const MAX_PACKAGE_SCAN_DEPTH = 16;
+
+// Maximum number of parent directories the package-resolver fallback will
+// walk when locating a mesh referenced via `package://<unknown>/...`.
+export const WALK_UP_LIMIT = 8;
+
 export async function discoverPackages(roots: string[]): Promise<PackageMap> {
   const io = getCoreIo();
   const packages: PackageMap = {};
   const normalizedRoots = Array.from(new Set(roots.map(root => io.resolve(root))));
 
   for (const root of normalizedRoots) {
-    await scanForPackages(root, packages);
+    await scanForPackages(root, packages, 0);
   }
 
   return packages;
 }
 
-async function scanForPackages(root: string, packages: PackageMap): Promise<void> {
+async function scanForPackages(root: string, packages: PackageMap, depth: number): Promise<void> {
+  if (depth > MAX_PACKAGE_SCAN_DEPTH) {
+    return;
+  }
   const io = getCoreIo();
   let entries: Awaited<ReturnType<typeof io.readdir>>;
   try {
@@ -48,11 +61,15 @@ async function scanForPackages(root: string, packages: PackageMap): Promise<void
         packageXml: packageXmlPath
       };
     }
+    // Stop descending — ROS packages cannot legally nest other packages.
+    // Skipping their contents drops scan time dramatically on workspaces
+    // with many packages, each containing thousands of mesh files.
+    return;
   }
 
   await Promise.all(entries
     .filter(entry => entry.isDirectory && !SKIP_DIRS.has(entry.name))
-    .map(entry => scanForPackages(io.join(root, entry.name), packages)));
+    .map(entry => scanForPackages(io.join(root, entry.name), packages, depth + 1)));
 }
 
 async function readPackageName(packageXmlPath: string): Promise<string | undefined> {
@@ -119,7 +136,7 @@ export function resolveModelUriToFile(filename: string, packages: PackageMap, do
 
 function findByWalkingUp(relativePath: string, startDir: string, io: ReturnType<typeof getCoreIo>): string | undefined {
   let dir = startDir;
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < WALK_UP_LIMIT; i++) {
     const candidate = io.resolve(dir, relativePath);
     if (io.existsSync(candidate)) {
       return candidate;

@@ -296,40 +296,93 @@ function buildTree(link: string, children: Map<string, Array<{ joint: string; ch
   };
 }
 
+// Three-colour iterative DFS. We track the path as a parallel stack so cycle
+// diagnostics still get the full ancestry without allocating per-recursion
+// `[...path, link]` slices (the previous implementation was O(V*E) in
+// allocations on deep trees).
 function detectCycles(
   links: Record<string, LinkInfo>,
   children: Map<string, Array<{ joint: string; child: string }>>,
   file: string
 ): StudioDiagnostic[] {
   const diagnostics: StudioDiagnostic[] = [];
-  const visiting = new Set<string>();
-  const visited = new Set<string>();
+  const WHITE = 0; // not visited
+  const GREY = 1;  // currently on the DFS stack
+  const BLACK = 2; // fully explored
+  const color = new Map<string, number>();
+  for (const link of Object.keys(links)) {
+    color.set(link, WHITE);
+  }
+  // Per-cycle dedup so a single cycle reported once even if multiple roots reach it.
+  const reportedCycles = new Set<string>();
 
-  const visit = (link: string, path: string[]) => {
-    if (visiting.has(link)) {
-      diagnostics.push({
-        severity: 'error',
-        message: `Cycle detected in link tree: ${[...path, link].join(' -> ')}.`,
-        code: 'tree.cycle',
-        target: link,
-        file
-      });
+  interface Frame { link: string; index: number; }
+
+  const reportCycle = (stack: Frame[], target: string): void => {
+    const fromIndex = stack.findIndex(frame => frame.link === target);
+    if (fromIndex < 0) {
       return;
     }
-    if (visited.has(link)) {
+    const cycle = stack.slice(fromIndex).map(frame => frame.link);
+    cycle.push(target);
+    const key = canonicalCycleKey(cycle);
+    if (reportedCycles.has(key)) {
       return;
     }
-    visiting.add(link);
-    for (const child of children.get(link) ?? []) {
-      visit(child.child, [...path, link]);
-    }
-    visiting.delete(link);
-    visited.add(link);
+    reportedCycles.add(key);
+    diagnostics.push({
+      severity: 'error',
+      message: `Cycle detected in link tree: ${cycle.join(' -> ')}.`,
+      code: 'tree.cycle',
+      target,
+      file
+    });
   };
 
-  for (const link of Object.keys(links)) {
-    visit(link, []);
+  for (const startLink of Object.keys(links)) {
+    if (color.get(startLink) !== WHITE) {
+      continue;
+    }
+    const stack: Frame[] = [{ link: startLink, index: 0 }];
+    color.set(startLink, GREY);
+    while (stack.length > 0) {
+      const top = stack[stack.length - 1];
+      const edges = children.get(top.link) ?? [];
+      if (top.index >= edges.length) {
+        color.set(top.link, BLACK);
+        stack.pop();
+        continue;
+      }
+      const next = edges[top.index++].child;
+      const c = color.get(next) ?? WHITE;
+      if (c === GREY) {
+        reportCycle(stack, next);
+        // Don't descend back into the cycle.
+        continue;
+      }
+      if (c === BLACK) {
+        continue;
+      }
+      color.set(next, GREY);
+      stack.push({ link: next, index: 0 });
+    }
   }
 
   return diagnostics;
+}
+
+function canonicalCycleKey(cycle: string[]): string {
+  // Drop the duplicated closing element so the key reflects the cycle nodes
+  // only; then rotate so the lexicographically smallest node leads.
+  const nodes = cycle.slice(0, -1);
+  if (nodes.length === 0) {
+    return '';
+  }
+  let smallestIndex = 0;
+  for (let i = 1; i < nodes.length; i++) {
+    if (nodes[i] < nodes[smallestIndex]) {
+      smallestIndex = i;
+    }
+  }
+  return [...nodes.slice(smallestIndex), ...nodes.slice(0, smallestIndex)].join('|');
 }

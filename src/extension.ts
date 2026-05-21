@@ -1,11 +1,13 @@
 import * as vscode from 'vscode';
 import path from 'node:path';
 import { promises as fs } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import './core/io.node';
 import { discoverPackages } from './core/packageMap';
 import { renderRobotDocument, setLogger } from './core/xacro';
 import { analyzeUrdf } from './core/urdfAnalysis';
 import { loadSemanticMetadata, mergeDisableCollisionsIntoSrdf, parseSrdf } from './core/srdf';
+import { escapeXmlText } from './core/escapeXml';
 import type { DisableCollisionEntry, PackageMap, PoseBookmark, PreviewState, RobotMetadata, StudioDiagnostic } from './core/types';
 import { registerLanguageFeatures } from './languageFeatures';
 
@@ -608,10 +610,6 @@ function escapeBraces(filePath: string): string {
   return filePath.replace(/[{}]/g, '\\$&');
 }
 
-function escapeXmlText(value: string): string {
-  return value.replace(/[&<>"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[char] as string));
-}
-
 export function activate(context: vscode.ExtensionContext): void {
   outputChannel = vscode.window.createOutputChannel('URDF Studio');
   context.subscriptions.push(outputChannel);
@@ -642,10 +640,8 @@ export function activate(context: vscode.ExtensionContext): void {
 export function deactivate(): void {}
 
 function createNonce(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let nonce = '';
-  for (let i = 0; i < 32; i += 1) {
-    nonce += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return nonce;
+  // Cryptographically strong nonce for CSP. 16 bytes → 32 hex chars, matching
+  // the previous length while sourcing entropy from the OS instead of
+  // Math.random.
+  return randomBytes(16).toString('hex');
 }
