@@ -354,3 +354,73 @@ test('renderRobotDocument exposes empty includedFiles for plain URDF', async () 
     await fs.rm(tmpDir, { recursive: true, force: true });
   }
 });
+
+// ============================================================================
+// Mesh resolution: package fallback when package.xml is missing
+// ============================================================================
+
+test('analyzeUrdf falls back to URDF-relative paths when the named package has no package.xml', async () => {
+  // Mimics a user uploading just the package contents (urdf/ + meshes/),
+  // forgetting the package.xml at the root. The URDF still references
+  // package://<name>/... but the resolver should walk up from the URDF's
+  // own directory and find meshes/visual/Base.STL.
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'urdf-fallback-'));
+  try {
+    await fs.mkdir(path.join(tmpDir, 'meshes', 'visual'), { recursive: true });
+    await fs.mkdir(path.join(tmpDir, 'urdf'), { recursive: true });
+    // Tiny binary STL: 80-byte header + 4-byte zero triangle count.
+    const stl = Buffer.concat([Buffer.alloc(80, 0x20), Buffer.from([0, 0, 0, 0])]);
+    await fs.writeFile(path.join(tmpDir, 'meshes', 'visual', 'Base.STL'), stl);
+    const urdf = `<?xml version="1.0"?>
+<robot name="p2">
+  <link name="base">
+    <visual><geometry><mesh filename="package://p2_4_description/meshes/visual/Base.STL"/></geometry></visual>
+  </link>
+</robot>`;
+    const urdfPath = path.join(tmpDir, 'urdf', 'p2.urdf');
+    await fs.writeFile(urdfPath, urdf, 'utf8');
+
+    const meta = analyzeUrdf(urdf, urdfPath, /* packages */ {});
+
+    // Mesh should resolve to the actual file on disk.
+    const mesh = meta.meshes.find(m => m.filename.endsWith('Base.STL'));
+    assert.ok(mesh, 'expected one mesh entry');
+    assert.equal(mesh.exists, true, 'mesh existsSync should be true via fallback');
+    assert.equal(mesh.resolvedPath, path.join(tmpDir, 'meshes', 'visual', 'Base.STL'));
+
+    // Diagnostics should be exactly one warning (mesh.packageFallback) —
+    // not a per-mesh hard error.
+    const fallbackWarns = meta.diagnostics.filter(d => d.code === 'mesh.packageFallback');
+    const packageMissing = meta.diagnostics.filter(d => d.code === 'mesh.packageMissing');
+    assert.equal(fallbackWarns.length, 1, 'one summary warning');
+    assert.equal(packageMissing.length, 0, 'no per-mesh missing-package errors');
+    assert.equal(fallbackWarns[0].severity, 'warning');
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('analyzeUrdf reports mesh.packageMissing when the package is missing AND fallback fails', async () => {
+  // Same setup as above, but the referenced mesh file genuinely does not
+  // exist anywhere — fallback walks up and finds nothing, the original
+  // hard error stands.
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'urdf-truly-missing-'));
+  try {
+    await fs.mkdir(path.join(tmpDir, 'urdf'), { recursive: true });
+    const urdf = `<?xml version="1.0"?>
+<robot name="ghost">
+  <link name="base">
+    <visual><geometry><mesh filename="package://ghost_pkg/never/exists.stl"/></geometry></visual>
+  </link>
+</robot>`;
+    const urdfPath = path.join(tmpDir, 'urdf', 'ghost.urdf');
+    await fs.writeFile(urdfPath, urdf, 'utf8');
+
+    const meta = analyzeUrdf(urdf, urdfPath, /* packages */ {});
+    const errors = meta.diagnostics.filter(d => d.code === 'mesh.packageMissing');
+    assert.equal(errors.length, 1);
+    assert.equal(errors[0].severity, 'error');
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  }
+});

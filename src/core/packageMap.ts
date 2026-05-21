@@ -66,7 +66,17 @@ async function readPackageName(packageXmlPath: string): Promise<string | undefin
   }
 }
 
-export function resolveModelUriToFile(filename: string, packages: PackageMap, documentDir: string): { resolvedPath?: string; packageName?: string } {
+export interface ResolveResult {
+  /** Absolute path to the resolved file, if anything matched. */
+  resolvedPath?: string;
+  /** The `<pkg>` portion of a `package://<pkg>/<rest>` URI, if applicable. */
+  packageName?: string;
+  /** True when the resolver had to fall back to ancestor-directory
+   *  walking (the named package was not registered). */
+  viaFallback?: boolean;
+}
+
+export function resolveModelUriToFile(filename: string, packages: PackageMap, documentDir: string): ResolveResult {
   const io = getCoreIo();
   if (filename.startsWith('package://')) {
     const rest = filename.slice('package://'.length);
@@ -74,10 +84,24 @@ export function resolveModelUriToFile(filename: string, packages: PackageMap, do
     const packageName = slash >= 0 ? rest.slice(0, slash) : rest;
     const relativePath = slash >= 0 ? rest.slice(slash + 1) : '';
     const packageEntry = packages[packageName];
-    return {
-      packageName,
-      resolvedPath: packageEntry ? io.join(packageEntry.path, relativePath) : undefined
-    };
+    if (packageEntry) {
+      return {
+        packageName,
+        resolvedPath: io.join(packageEntry.path, relativePath)
+      };
+    }
+    // Fallback: the named package is not registered (no package.xml found
+    // in the workspace). Walk up from the URDF's directory looking for the
+    // relative path. Catches the very common "I uploaded the package's
+    // contents but not the package.xml" case — typical for users dropping
+    // a ROS description folder into the web app.
+    if (relativePath) {
+      const fallback = findByWalkingUp(relativePath, documentDir, io);
+      if (fallback) {
+        return { packageName, resolvedPath: fallback, viaFallback: true };
+      }
+    }
+    return { packageName };
   }
 
   if (/^file:\/\//.test(filename)) {
@@ -91,6 +115,22 @@ export function resolveModelUriToFile(filename: string, packages: PackageMap, do
   return {
     resolvedPath: io.isAbsolute(filename) ? filename : io.resolve(documentDir, filename)
   };
+}
+
+function findByWalkingUp(relativePath: string, startDir: string, io: ReturnType<typeof getCoreIo>): string | undefined {
+  let dir = startDir;
+  for (let i = 0; i < 8; i++) {
+    const candidate = io.resolve(dir, relativePath);
+    if (io.existsSync(candidate)) {
+      return candidate;
+    }
+    const parent = io.dirname(dir);
+    if (parent === dir) {
+      return undefined;
+    }
+    dir = parent;
+  }
+  return undefined;
 }
 
 export function packageRootToUri(packagePath: string): string {
