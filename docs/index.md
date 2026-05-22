@@ -1,12 +1,14 @@
 ---
 title: Overview
+summary: URDF Studio is a free online URDF viewer. Open URDF and xacro robot models in the browser, drive joint sliders, resolve package:// paths, no upload.
 ---
 
-# URDF Studio
+# URDF Studio — an online URDF viewer for the browser
 
-A single TypeScript codebase that lets you inspect, visualize and drive
-ROS robot models — as a **VS Code extension** for in-editor previews, and
-as a **browser app** that runs entirely client-side.
+**URDF Studio** is a free, open-source **URDF viewer** and xacro inspector.
+A single TypeScript codebase lets you load, visualize and drive ROS robot
+models — as a **VS Code extension** for in-editor previews, and as a
+**browser app** that runs entirely client-side. No upload. No install.
 
 ## What you can do with it
 
