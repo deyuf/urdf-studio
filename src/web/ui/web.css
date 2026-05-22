@@ -1,0 +1,1291 @@
+/* ====================================================================
+ * URDF Studio — Web build stylesheet.
+ *
+ * Loaded AFTER media/styles.css so it can override the VS Code-style
+ * chrome the renderer ships with. The renderer reads its colors from
+ * --vscode-* custom properties; we redefine those here so the whole
+ * side panel inherits the new palette for free.
+ * ==================================================================== */
+
+:root {
+  /* `color-scheme` lights up the CSS `light-dark()` function — without
+     this, `light-dark()` falls back to its `light` argument. The
+     theme-toggle button below switches this between `light` and `dark`
+     to override prefers-color-scheme on demand. */
+  color-scheme: light dark;
+
+  /* Palette — one declaration per token using light-dark() instead of a
+     duplicated @media (prefers-color-scheme: dark) block. */
+  --us-bg:             light-dark(#ffffff, #131314);
+  --us-bg-elevated:    light-dark(#f8f9fa, #1e1f20);
+  --us-bg-subtle:      light-dark(#f1f3f4, #28292a);
+  --us-surface:        light-dark(#ffffff, #1e1f20);
+  --us-fg:             light-dark(#1f1f1f, #e3e3e3);
+  --us-fg-muted:       light-dark(#5f6368, #9aa0a6);
+  --us-fg-faint:       light-dark(#80868b, #80868b);
+  --us-border:         light-dark(#e8eaed, #3c4043);
+  --us-border-strong:  light-dark(#dadce0, #5f6368);
+  --us-accent:         light-dark(#1a73e8, #8ab4f8);
+  --us-accent-hover:   light-dark(#1967d2, #aecbfa);
+  --us-accent-soft:    light-dark(rgba(26, 115, 232, 0.08), rgba(138, 180, 248, 0.12));
+  --us-accent-soft-hover: light-dark(rgba(26, 115, 232, 0.14), rgba(138, 180, 248, 0.2));
+  --us-on-accent:      light-dark(#ffffff, #062e6f);
+  --us-success:        light-dark(#1e8e3e, #81c995);
+  --us-warning:        light-dark(#f29900, #fdd663);
+  --us-danger:         light-dark(#d93025, #f28b82);
+  --us-shadow-sm: light-dark(
+    0 1px 2px rgba(60, 64, 67, 0.08), 0 1px 3px 1px rgba(60, 64, 67, 0.05),
+    0 1px 2px rgba(0, 0, 0, 0.3),     0 1px 3px 1px rgba(0, 0, 0, 0.15)
+  );
+  --us-shadow-md: light-dark(
+    0 1px 3px rgba(60, 64, 67, 0.1),  0 4px 8px 3px rgba(60, 64, 67, 0.05),
+    0 1px 3px rgba(0, 0, 0, 0.4),     0 4px 8px 3px rgba(0, 0, 0, 0.15)
+  );
+  --us-shadow-lg: light-dark(
+    0 2px 6px rgba(60, 64, 67, 0.1),  0 8px 24px 4px rgba(60, 64, 67, 0.1),
+    0 2px 6px rgba(0, 0, 0, 0.4),     0 8px 24px 4px rgba(0, 0, 0, 0.3)
+  );
+
+  /* Spacing scale (8px grid). */
+  --us-space-1: 4px;
+  --us-space-2: 8px;
+  --us-space-3: 12px;
+  --us-space-4: 16px;
+  --us-space-5: 24px;
+  --us-space-6: 32px;
+  --us-space-8: 48px;
+
+  /* Radii. */
+  --us-radius-sm: 6px;
+  --us-radius-md: 10px;
+  --us-radius-lg: 16px;
+  --us-radius-pill: 999px;
+
+  /* Typography. */
+  --us-font-sans: 'Google Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --us-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* ---- Renderer compatibility shims. The renderer's HTML uses
+         var(--vscode-*) names; we alias them to our tokens. ---- */
+  --vscode-font-family: var(--us-font-sans);
+  --vscode-foreground: var(--us-fg);
+  --vscode-editor-background: var(--us-bg);
+  --vscode-editor-foreground: var(--us-fg);
+  --vscode-sideBar-background: var(--us-bg-elevated);
+  --vscode-panel-border: var(--us-border);
+  --vscode-input-background: var(--us-surface);
+  --vscode-input-foreground: var(--us-fg);
+  --vscode-input-border: var(--us-border-strong);
+  --vscode-button-background: var(--us-accent);
+  --vscode-button-foreground: var(--us-on-accent);
+  --vscode-button-hoverBackground: var(--us-accent-hover);
+  --vscode-toolbar-hoverBackground: var(--us-bg-subtle);
+  --vscode-list-activeSelectionBackground: var(--us-accent-soft);
+  --vscode-list-hoverBackground: var(--us-bg-subtle);
+  --vscode-textLink-foreground: var(--us-accent);
+  --vscode-editorWidget-background: var(--us-surface);
+  --vscode-errorForeground: var(--us-danger);
+  --vscode-editorWarning-foreground: var(--us-warning);
+  --vscode-editorInfo-foreground: var(--us-accent);
+}
+
+/* Theme override. The default `color-scheme: light dark` lets
+   `light-dark()` follow the OS; pinning it forces either side. */
+:root[data-theme='light'] { color-scheme: light; }
+:root[data-theme='dark']  { color-scheme: dark; }
+/* data-theme='system' is the default — no override needed. */
+
+/* View Transitions API: a smooth crossfade when the theme flips. The
+   transition swaps the whole page, so we pick generous timings. */
+@supports (view-transition-name: root) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 380ms;
+    animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+}
+
+/* Respect reduced motion across the entire app. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  overflow: hidden;
+  font-family: var(--us-font-sans);
+  color: var(--us-fg);
+  background: var(--us-bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+/* Subtle radial gradient backdrop — visible behind the topbar's translucent
+   surface. Strong enough to give the page a sense of depth without competing
+   with the 3D viewport. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+  --backdrop-1: light-dark(rgba(26, 115, 232, 0.08), rgba(138, 180, 248, 0.07));
+  --backdrop-2: light-dark(rgba(168, 67, 233, 0.05), rgba(197, 138, 248, 0.05));
+  background:
+    radial-gradient(1200px 600px at 8% -20%, var(--backdrop-1), transparent 60%),
+    radial-gradient(900px 500px at 100% 0%, var(--backdrop-2), transparent 60%);
+}
+
+/* ===== Topbar ===== */
+
+#topbar {
+  position: relative;
+  background: color-mix(in srgb, var(--us-bg) 85%, transparent);
+  backdrop-filter: saturate(180%) blur(10px);
+  border-bottom: 1px solid var(--us-border);
+  z-index: 5;
+}
+
+.topbar-row {
+  display: flex;
+  align-items: center;
+  gap: var(--us-space-3);
+  /* Same fluid gutters as the renderer toolbar below so the left/right
+     edges of all three rows (topbar / toolbar / subtoolbar) stay flush.
+     The previous max-width: 1800px caused a ~12px offset on wide screens. */
+  padding: var(--us-space-3) clamp(var(--us-space-4), 2.5vw, var(--us-space-8));
+  min-height: 60px;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--us-space-2);
+  font-family: var(--us-font-sans);
+  font-weight: 600;
+  font-size: 18px;
+  letter-spacing: -0.01em;
+  color: var(--us-fg);
+}
+
+.brand-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--us-radius-sm);
+  display: block;
+  flex-shrink: 0;
+  /* Tiny rim so the icon doesn't blend into the topbar bg. */
+  box-shadow: 0 0 0 1px light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.08));
+}
+
+.brand-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  margin-left: var(--us-space-1);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--us-accent);
+  background: var(--us-accent-soft);
+  border-radius: var(--us-radius-pill);
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--us-space-2);
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+
+/* ===== Buttons (override styles.css) ===== */
+
+button,
+input,
+select,
+textarea {
+  font-family: var(--us-font-sans);
+  font-size: 13px;
+}
+
+#topbar button,
+#topbar a.ghost-link,
+#topbar select {
+  height: 36px;
+  padding: 0 14px;
+  /* Rounded rectangle (matches dialog actions, renderer toolbar buttons,
+     and the segmented theme switcher). Previous pill style felt heavy
+     against the page's geometry. */
+  border-radius: var(--us-radius-md);
+  border: 1px solid var(--us-border-strong);
+  background: var(--us-surface);
+  color: var(--us-fg);
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, transform 80ms ease, box-shadow 120ms ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  text-decoration: none;
+}
+
+#topbar button:hover,
+#topbar a.ghost-link:hover {
+  background: var(--us-bg-subtle);
+  border-color: var(--us-border-strong);
+}
+
+#topbar button:active {
+  transform: scale(0.98);
+}
+
+#topbar button.primary {
+  background: var(--us-accent);
+  color: var(--us-on-accent);
+  border-color: transparent;
+  box-shadow: 0 1px 2px rgba(26, 115, 232, 0.18), 0 1px 3px 1px rgba(26, 115, 232, 0.1);
+}
+
+#topbar button.primary:hover {
+  background: var(--us-accent-hover);
+  box-shadow: 0 2px 4px rgba(26, 115, 232, 0.25), 0 2px 6px 2px rgba(26, 115, 232, 0.12);
+}
+
+#topbar button.primary:disabled {
+  background: var(--us-bg-subtle);
+  color: var(--us-fg-faint);
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+#topbar button.ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--us-fg-muted);
+}
+
+#topbar button.ghost:hover {
+  background: var(--us-bg-subtle);
+  color: var(--us-fg);
+}
+
+/* Icon-only buttons (Settings, Help). Match the height (36px) of the
+   adjacent labelled buttons but use a larger glyph so the ⚙ and ?
+   carry the same visual weight as text-bearing siblings. */
+#help-btn,
+#settings-btn {
+  width: 40px;
+  padding: 0;
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 1;
+  justify-content: center;
+}
+
+#file-select {
+  min-width: 240px;
+  max-width: 380px;
+  padding-right: 32px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--us-fg-muted) 50%),
+    linear-gradient(135deg, var(--us-fg-muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 14px) 50%,
+    calc(100% - 9px) 50%;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+#file-select:disabled {
+  color: var(--us-fg-faint);
+  cursor: not-allowed;
+}
+
+.topbar-status {
+  padding: 8px var(--us-space-5) 10px;
+  font-size: 12.5px;
+  color: var(--us-fg-muted);
+  border-top: 1px solid var(--us-border);
+  background: var(--us-bg-elevated);
+}
+
+.topbar-status[data-kind='error'] {
+  color: var(--us-danger);
+}
+
+.topbar-status[data-kind='progress'] {
+  color: var(--us-accent);
+}
+
+/* ===== Renderer chrome overrides =====
+   The renderer ships its own toolbar/subtoolbar/side panel from styles.css.
+   We refine spacing, rounded corners, and hover states. */
+
+#app {
+  position: relative;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+#app .shell {
+  height: 100%;
+  background: var(--us-bg);
+}
+
+#app .toolbar,
+#app .subtoolbar {
+  border-bottom: 1px solid var(--us-border);
+  background: color-mix(in srgb, var(--us-bg-elevated) 60%, transparent);
+  /* Scale gutters with viewport so the toolbar doesn't look orphaned on
+     ultra-wide screens, but stays compact on a laptop. */
+  padding: 10px clamp(var(--us-space-4), 2.5vw, var(--us-space-8));
+  gap: 12px;
+}
+
+#app .toolbar button,
+#app .subtoolbar button,
+#app .toolbar select,
+#app .subtoolbar select {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: var(--us-radius-sm);
+  border: 1px solid var(--us-border);
+  background: var(--us-surface);
+  color: var(--us-fg);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 100ms ease, border-color 100ms ease;
+}
+
+#app .toolbar button:hover,
+#app .subtoolbar button:hover,
+#app .toolbar select:hover,
+#app .subtoolbar select:hover {
+  background: var(--us-bg-subtle);
+}
+
+#app .toolbar button.primary {
+  background: var(--us-accent);
+  color: var(--us-on-accent);
+  border-color: transparent;
+}
+
+#app .toolbar button.primary:hover {
+  background: var(--us-accent-hover);
+}
+
+#app .toolbar label,
+#app .subtoolbar label {
+  font-size: 12.5px;
+  color: var(--us-fg-muted);
+}
+
+/* Scale the side panel with the viewport. On a laptop (1280–1600px) it
+   stays near the renderer's default 360–390px. On a 1080p or 1440p
+   monitor it grows to ~420–460px. On a 4K display it caps at 520px so
+   the viewport stays the centre of attention. */
+#app .workspace {
+  /* Floor bumped 340 → 390 so the five tab labels (Joints / Inspector /
+     Checks / Links / Tools) fit at 14px font without overflowing the
+     row on a 1440px viewport. */
+  grid-template-columns: minmax(0, 1fr) clamp(390px, 24vw, 520px);
+}
+
+
+#app .side {
+  border-left: 1px solid var(--us-border);
+  background: var(--us-bg-elevated);
+  /* Match the new row height of .tabs (40px) below. */
+  /* Slightly taller than the renderer's default so the new tab font /
+     padding (see #app .tab below) gets enough headroom and the active
+     underline floats a few pixels below the text. */
+  grid-template-rows: 48px minmax(0, 1fr);
+}
+
+#app .tabs {
+  border-bottom: 1px solid var(--us-border);
+  background: var(--us-bg-elevated);
+  /* Six tabs (Joints / Inspector / Checks / Links / Source / Tools).
+     minmax(0, 1fr) — not 1fr — so columns can shrink below content
+     width when the panel is narrow; otherwise the row visually wraps. */
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+#app .tab {
+  position: relative;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  color: var(--us-fg-muted);
+  font-weight: 500;
+  /* Bumped from 13px so labels read clearly against the 48px row. */
+  font-size: 14px;
+  /* The renderer's media/styles.css forces `button { height: 28px }`,
+     which clamps this tab to 28px regardless of padding. Override with
+     `height: auto` so the padding below actually controls the tab's
+     vertical extent — without this, the active underline below ends up
+     drawn through the label. */
+  height: auto;
+  /* Asymmetric vertical padding leaves a clear 6px gap between the
+     label baseline and the underline. Horizontal kept tight so the
+     five tabs fit a 390px panel. */
+  padding: 14px 8px 12px;
+  /* Allow the tab to shrink under tight panels — paired with
+     `minmax(0, 1fr)` on .tabs above. */
+  min-width: 0;
+  cursor: pointer;
+  transition: color 120ms ease;
+}
+
+#app .tab:hover {
+  color: var(--us-fg);
+  background: transparent;
+}
+
+#app .tab.active {
+  color: var(--us-accent);
+}
+
+#app .tab.active::after {
+  content: '';
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  /* Float the underline a few pixels above the row border instead of
+     hugging the text. Visually balances the typography. */
+  bottom: 4px;
+  height: 2px;
+  background: var(--us-accent);
+  border-radius: 2px;
+}
+
+/* More breathing room inside the side panels at higher resolutions. */
+#app .panel {
+  padding: clamp(12px, 1vw, 18px) clamp(14px, 1.2vw, 22px);
+}
+
+/* Metric tiles (Links / Joints / Movable counts). Bigger numbers on
+   wide screens, with a subtle elevation. */
+#app .summary {
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+#app .metric {
+  padding: 12px 14px;
+  border-radius: var(--us-radius-md);
+  background: var(--us-surface);
+  box-shadow: var(--us-shadow-sm);
+  text-align: center;
+}
+
+#app .metric b {
+  font-size: clamp(20px, 1.4vw, 26px);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--us-fg);
+}
+
+#app .metric span {
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--us-fg-muted);
+}
+
+/* Xacro-args + details cards. */
+#app .xacro-args,
+#app details {
+  border-radius: var(--us-radius-md);
+  border-color: var(--us-border);
+  background: var(--us-surface);
+  box-shadow: var(--us-shadow-sm);
+}
+
+#app details {
+  margin-bottom: 10px;
+}
+
+#app summary {
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--us-fg);
+  user-select: none;
+}
+
+#app summary:hover {
+  background: var(--us-bg-subtle);
+  border-radius: var(--us-radius-md) var(--us-radius-md) 0 0;
+}
+
+#app .detail-body {
+  padding: 4px 12px 12px;
+  gap: 10px;
+}
+
+/* Joint row: give the joint name a bit more room and the slider some
+   real estate when we have it. Font scales lightly.
+   First column uses `minmax(0, ...)` so the joint name can shrink and
+   ellipsize rather than push the row past the panel edge — common with
+   long fr3_joint_finger_X names. */
+#app .joint-row {
+  grid-template-columns: minmax(0, 1fr) minmax(100px, 1.8fr) 78px;
+  font-size: clamp(12px, 0.9vw, 13.5px);
+  gap: 10px;
+}
+
+#app .joint-row .joint-name {
+  font-weight: 500;
+  color: var(--us-fg);
+  /* Truncate rather than overflow. */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#app .joint-row input[type='range'] {
+  height: 24px;
+  background: transparent;
+  min-width: 0;
+  width: 100%;
+}
+
+#app .joint-row input[type='number'] {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The joint-filter (search box) at the top of the joints panel. */
+#app .joint-filter {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  border-radius: var(--us-radius-md);
+  background: var(--us-bg-subtle);
+}
+
+#app .joint-filter input[type='search'] {
+  width: 100%;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: var(--us-radius-sm);
+  border: 1px solid var(--us-border);
+  background: var(--us-surface);
+}
+
+#app .joint-filter input[type='search']:focus {
+  outline: none;
+  border-color: var(--us-accent);
+  box-shadow: 0 0 0 3px var(--us-accent-soft);
+}
+
+#app .joint-filter label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--us-fg-muted);
+  white-space: nowrap;
+}
+
+/* Inspector grid — looks better with a bit more vertical air. */
+#app .inspector-grid {
+  grid-template-columns: clamp(96px, 7vw, 132px) minmax(0, 1fr);
+  gap: 8px 14px;
+  font-size: 13px;
+}
+
+#app .inspector-grid .value {
+  color: var(--us-fg);
+}
+
+/* HUD over the 3D viewport — refined glass card. */
+#app .hud {
+  left: 14px;
+  bottom: 14px;
+  padding: 8px 14px;
+  border-radius: var(--us-radius-pill);
+  background: color-mix(in srgb, var(--us-surface) 78%, transparent);
+  border-color: color-mix(in srgb, var(--us-border-strong) 40%, transparent);
+  backdrop-filter: blur(10px) saturate(180%);
+  font-size: 12.5px;
+  color: var(--us-fg-muted);
+  box-shadow: var(--us-shadow-sm);
+}
+
+/* Link tree — the Links tab. Long link names (e.g.
+   fr3_link0_accelerometer_top) will horizontally scroll within the panel
+   rather than burst out the side. */
+#app .panel.tree {
+  font-size: clamp(12px, 0.9vw, 13.5px);
+  overflow-x: auto;
+}
+
+#app .panel.tree ul,
+#app .panel.tree li {
+  min-width: 0;
+}
+
+/* Checks panel — keep the diagnostic list legible. */
+#app #panel-checks ul,
+#app #panel-checks ol {
+  padding-left: 20px;
+}
+
+#app #panel-checks li {
+  margin: 6px 0;
+  font-size: 13px;
+}
+
+#app #panel-checks code {
+  font-family: var(--us-font-mono);
+  font-size: 0.88em;
+  background: var(--us-bg-subtle);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+#app input[type='range'] {
+  accent-color: var(--us-accent);
+}
+
+#app input[type='number'],
+#app input[type='text'],
+#app input[type='search'] {
+  /* `min-width: 0` lets these shrink inside grid / flex parents whose
+     other tracks would otherwise force horizontal overflow. Without it
+     the joint numeric input and the Tools panel's tip-link select both
+     pushed past the right edge of the side panel on big viewports. */
+  min-width: 0;
+  width: 100%;
+  border-radius: var(--us-radius-sm);
+  border: 1px solid var(--us-border);
+  background: var(--us-surface);
+  padding: 6px 10px;
+  font-family: var(--us-font-mono);
+  font-size: 12.5px;
+}
+
+/* Same fix for <select> elements in the panels (most visible in the
+   Tools tab where a tip-link dropdown can list every link with a long
+   name). Truncate overflow with native ellipsis. */
+#app .panel select {
+  max-width: 100%;
+  min-width: 0;
+  text-overflow: ellipsis;
+}
+
+#app input[type='number']:focus,
+#app input[type='text']:focus,
+#app input[type='search']:focus {
+  outline: none;
+  border-color: var(--us-accent);
+  box-shadow: 0 0 0 3px var(--us-accent-soft);
+}
+
+#app .hud {
+  background: color-mix(in srgb, var(--us-surface) 80%, transparent);
+  backdrop-filter: blur(6px);
+  border: 1px solid var(--us-border);
+  border-radius: var(--us-radius-md);
+  padding: 8px 14px;
+  font-size: 12.5px;
+  color: var(--us-fg-muted);
+  box-shadow: var(--us-shadow-sm);
+}
+
+/* ===== Settings dialog ===== */
+
+dialog#settings-dialog {
+  border: none;
+  border-radius: var(--us-radius-lg);
+  padding: 0;
+  width: min(560px, 92vw);
+  background: var(--us-surface);
+  color: var(--us-fg);
+  box-shadow: var(--us-shadow-lg);
+}
+
+dialog#settings-dialog::backdrop {
+  background: rgba(15, 17, 21, 0.45);
+  backdrop-filter: blur(2px);
+}
+
+dialog#settings-dialog form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--us-space-3);
+  padding: var(--us-space-5) var(--us-space-6);
+}
+
+dialog#settings-dialog h3 {
+  margin: 0 0 var(--us-space-2);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+dialog#settings-dialog label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--us-fg-muted);
+}
+
+dialog#settings-dialog textarea,
+dialog#settings-dialog input,
+dialog#settings-dialog select {
+  font-family: var(--us-font-mono);
+  font-size: 12.5px;
+  padding: 8px 10px;
+  background: var(--us-bg-elevated);
+  color: var(--us-fg);
+  border: 1px solid var(--us-border);
+  border-radius: var(--us-radius-sm);
+  resize: vertical;
+}
+
+dialog#settings-dialog textarea:focus,
+dialog#settings-dialog input:focus,
+dialog#settings-dialog select:focus {
+  outline: none;
+  border-color: var(--us-accent);
+  box-shadow: 0 0 0 3px var(--us-accent-soft);
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--us-space-2);
+  margin-top: var(--us-space-3);
+}
+
+.dialog-actions button {
+  height: 36px;
+  padding: 0 18px;
+  border-radius: var(--us-radius-pill);
+  border: 1px solid var(--us-border-strong);
+  background: var(--us-surface);
+  color: var(--us-fg);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.dialog-actions button.primary {
+  background: var(--us-accent);
+  border-color: transparent;
+  color: var(--us-on-accent);
+}
+
+.dialog-actions button:hover {
+  background: var(--us-bg-subtle);
+}
+
+.dialog-actions button.primary:hover {
+  background: var(--us-accent-hover);
+}
+
+/* ===== Onboarding tour ===== */
+
+dialog.onboarding {
+  border: none;
+  border-radius: var(--us-radius-lg);
+  padding: 0;
+  width: min(560px, 92vw);
+  background: var(--us-surface);
+  color: var(--us-fg);
+  box-shadow: var(--us-shadow-lg);
+  overflow: hidden;
+}
+
+dialog.onboarding::backdrop {
+  background: rgba(15, 17, 21, 0.5);
+  backdrop-filter: blur(4px);
+}
+
+.onboarding-card {
+  padding: var(--us-space-6) var(--us-space-6) var(--us-space-5);
+  position: relative;
+}
+
+.onboarding-step {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--us-accent);
+  margin-bottom: 10px;
+  font-weight: 600;
+}
+
+.onboarding-card h2 {
+  margin: 0 0 var(--us-space-3);
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.onboarding-card p {
+  margin: 0 0 var(--us-space-3);
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--us-fg);
+}
+
+.onboarding-card p code {
+  font-family: var(--us-font-mono);
+  font-size: 12.5px;
+  background: var(--us-bg-subtle);
+  border-radius: var(--us-radius-sm);
+  padding: 2px 6px;
+}
+
+.onboarding-card a {
+  color: var(--us-accent);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.onboarding-card a:hover {
+  text-decoration: underline;
+}
+
+.onboarding-hint {
+  font-size: 13px;
+  color: var(--us-fg-muted);
+  background: var(--us-bg-elevated);
+  border-radius: var(--us-radius-md);
+  padding: 12px 14px;
+  margin-top: var(--us-space-3);
+  border-left: 3px solid var(--us-accent);
+}
+
+.onboarding-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--us-space-3);
+  margin-top: var(--us-space-5);
+  padding-top: var(--us-space-4);
+  border-top: 1px solid var(--us-border);
+}
+
+.onboarding-dots {
+  display: flex;
+  gap: 8px;
+}
+
+.onboarding-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--us-border-strong);
+  cursor: pointer;
+  transition: background 120ms ease, transform 120ms ease;
+  border: none;
+  padding: 0;
+}
+
+.onboarding-dot:hover {
+  background: var(--us-fg-muted);
+}
+
+.onboarding-dot.active {
+  background: var(--us-accent);
+  transform: scale(1.15);
+}
+
+.onboarding-actions {
+  display: flex;
+  gap: var(--us-space-2);
+}
+
+.onboarding-actions button {
+  height: 36px;
+  padding: 0 18px;
+  border-radius: var(--us-radius-pill);
+  border: 1px solid var(--us-border-strong);
+  background: var(--us-surface);
+  color: var(--us-fg);
+  font-weight: 500;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.onboarding-actions button:hover {
+  background: var(--us-bg-subtle);
+}
+
+.onboarding-actions button.primary {
+  background: var(--us-accent);
+  color: var(--us-on-accent);
+  border-color: transparent;
+  box-shadow: 0 1px 2px rgba(26, 115, 232, 0.18), 0 1px 3px 1px rgba(26, 115, 232, 0.1);
+}
+
+.onboarding-actions button.primary:hover {
+  background: var(--us-accent-hover);
+}
+
+.onboarding-actions button.ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--us-fg-muted);
+}
+
+.onboarding-actions button.ghost:hover {
+  background: var(--us-bg-subtle);
+  color: var(--us-fg);
+}
+
+.onboarding-actions button[disabled] {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* ===== Toast (bottom error / warning bubbles) ===== */
+
+#toast-container {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 1000;
+  pointer-events: none;
+  max-width: min(420px, calc(100vw - 48px));
+}
+
+.toast {
+  display: grid;
+  grid-template-columns: 22px 1fr auto;
+  gap: 10px;
+  align-items: start;
+  padding: 12px 14px 12px 14px;
+  border-radius: var(--us-radius-md);
+  border: 1px solid var(--us-border);
+  background: var(--us-surface);
+  color: var(--us-fg);
+  box-shadow: var(--us-shadow-lg);
+  font-size: 13.5px;
+  line-height: 1.5;
+  pointer-events: auto;
+  transform: translateY(12px);
+  opacity: 0;
+  transition: transform 220ms cubic-bezier(0.2, 0, 0.2, 1), opacity 200ms ease;
+}
+
+.toast.toast-entered {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+.toast.toast-leaving {
+  transform: translateY(8px);
+  opacity: 0;
+}
+
+.toast-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-top: 1px;
+}
+
+.toast-error .toast-icon {
+  color: var(--us-danger);
+}
+
+.toast-warning .toast-icon {
+  color: var(--us-warning);
+}
+
+.toast-info .toast-icon {
+  color: var(--us-accent);
+}
+
+.toast-error {
+  border-left: 3px solid var(--us-danger);
+}
+
+.toast-warning {
+  border-left: 3px solid var(--us-warning);
+}
+
+.toast-info {
+  border-left: 3px solid var(--us-accent);
+}
+
+.toast-body {
+  min-width: 0;
+}
+
+.toast-message {
+  font-weight: 500;
+  color: var(--us-fg);
+  word-wrap: break-word;
+}
+
+.toast-detail {
+  margin-top: 4px;
+  font-size: 12.5px;
+  color: var(--us-fg-muted);
+  word-wrap: break-word;
+  font-family: var(--us-font-mono);
+  max-height: 6em;
+  overflow-y: auto;
+}
+
+.toast-close {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--us-fg-faint);
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.toast-close:hover {
+  background: var(--us-bg-subtle);
+  color: var(--us-fg);
+}
+
+/* ===== Theme switcher (segmented control) ===== */
+
+.theme-mount {
+  display: inline-flex;
+  align-items: center;
+}
+
+.theme-switcher {
+  display: inline-flex;
+  align-items: center;
+  height: 36px;
+  padding: 3px;
+  border: 1px solid var(--us-border-strong);
+  border-radius: var(--us-radius-md);
+  background: var(--us-bg-elevated);
+  gap: 2px;
+  position: relative;
+}
+
+.theme-switcher-btn {
+  /* Override the topbar pill rule above — segmented buttons sit inside
+     a rounded container, share its inner radius. */
+  appearance: none;
+  height: 28px !important;
+  min-width: 36px;
+  padding: 0 8px !important;
+  border: 1px solid transparent !important;
+  border-radius: calc(var(--us-radius-md) - 4px) !important;
+  background: transparent !important;
+  color: var(--us-fg-muted) !important;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease, transform 100ms ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.theme-switcher-btn:hover {
+  background: var(--us-bg-subtle) !important;
+  color: var(--us-fg) !important;
+}
+
+.theme-switcher-btn[data-active='true'] {
+  background: var(--us-surface) !important;
+  color: var(--us-fg) !important;
+  box-shadow: var(--us-shadow-sm);
+  /* View Transitions: name the active pill so it tweens between
+     segments when the user picks a new mode. */
+  view-transition-name: theme-pill;
+}
+
+@supports (view-transition-name: theme-pill) {
+  ::view-transition-old(theme-pill),
+  ::view-transition-new(theme-pill) {
+    animation-duration: 220ms;
+  }
+}
+
+/* ===== @starting-style: pure-CSS entrance animations =====
+   Each rule pairs a `transition` on the steady state with a
+   `@starting-style` block that defines the from-state. The element
+   animates from the @starting-style value to the steady-state value
+   when first connected to the DOM (toast) or when the dialog goes
+   from closed → open. Replaces JS-driven `.toast-entered` class. */
+
+.toast {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 220ms cubic-bezier(0.2, 0, 0.2, 1),
+              transform 220ms cubic-bezier(0.2, 0, 0.2, 1);
+}
+
+@starting-style {
+  .toast {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+.toast-leaving {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+/* Dialogs animate in and out symmetrically.
+   - The closed state (no [open]) carries the hidden values (opacity 0,
+     translated down). That state is what the dialog tweens TO when
+     close() is called.
+   - The [open] state carries the visible values.
+   - @starting-style copies the hidden state for the opening transition.
+   - allow-discrete on `display` + `overlay` keeps the dialog rendered
+     during the close animation; without these two, the dialog would
+     vanish instantly and the transition would never play, which is the
+     "laggy" behaviour the previous rule produced. */
+dialog.onboarding,
+dialog#settings-dialog {
+  opacity: 0;
+  transform: translateY(10px) scale(0.985);
+  transition: opacity 180ms cubic-bezier(0.2, 0, 0.2, 1),
+              transform 180ms cubic-bezier(0.2, 0, 0.2, 1),
+              overlay   180ms allow-discrete,
+              display   180ms allow-discrete;
+}
+
+dialog.onboarding[open],
+dialog#settings-dialog[open] {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+@starting-style {
+  dialog.onboarding[open],
+  dialog#settings-dialog[open] {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+}
+
+dialog.onboarding::backdrop,
+dialog#settings-dialog::backdrop {
+  background: rgba(15, 17, 21, 0);
+  backdrop-filter: blur(0);
+  transition: background 180ms ease,
+              backdrop-filter 180ms ease,
+              display 180ms allow-discrete;
+}
+
+dialog.onboarding[open]::backdrop,
+dialog#settings-dialog[open]::backdrop {
+  background: rgba(15, 17, 21, 0.5);
+  backdrop-filter: blur(4px);
+  opacity: 1;
+}
+
+@starting-style {
+  dialog.onboarding[open]::backdrop,
+  dialog#settings-dialog[open]::backdrop {
+    background: rgba(15, 17, 21, 0);
+    backdrop-filter: blur(0);
+  }
+}
+
+/* ===== Container queries — side panel re-stacks at narrow widths ===== */
+
+#app .side {
+  container-type: inline-size;
+  container-name: side;
+}
+
+/* At common side-panel widths (≤480 px → most laptops) the 14px Inspector
+   label + 8px horizontal padding doesn't fit a six-tab row. Step the
+   tab typography down so labels render in full instead of ellipsising. */
+@container side (max-width: 480px) {
+  #app .tab {
+    font-size: 12px;
+    padding: 14px 4px 12px;
+  }
+  #app .tab.active::after {
+    left: 6px;
+    right: 6px;
+  }
+}
+
+@container side (max-width: 360px) {
+  #app .joint-row {
+    /* When the side panel is genuinely narrow (typically because the
+       user pulled the workspace toward a portrait layout), stack the
+       slider beneath the label so the numeric input doesn't get
+       crushed. */
+    grid-template-columns: minmax(0, 1fr) 72px;
+    grid-template-areas:
+      'name input'
+      'slider slider';
+    row-gap: 4px;
+  }
+  #app .joint-row .joint-name { grid-area: name; }
+  #app .joint-row input[type='number'] { grid-area: input; }
+  #app .joint-row input[type='range'] { grid-area: slider; }
+}
+
+/* ===== Responsive niceties ===== */
+
+@media (max-width: 720px) {
+  .topbar-row {
+    flex-wrap: wrap;
+    padding: var(--us-space-3);
+    gap: var(--us-space-2);
+  }
+  .topbar-actions {
+    flex-basis: 100%;
+    margin-left: 0;
+  }
+  #file-select {
+    min-width: 0;
+    flex: 1;
+  }
+}

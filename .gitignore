@@ -1,0 +1,12 @@
+node_modules/
+test-results/
+dist/
+dist-web/
+out/
+*.vsix
+.DS_Store
+.vscode-test/
+*.log
+tmp-fr3/
+media/ui-audit/
+.codegraph

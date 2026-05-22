@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>leak_test</name>
+  <version>0.0.1</version>
+  <description>Web shell mesh leak fixture</description>
+  <maintainer email="noreply@example.com">URDF Studio</maintainer>
+  <license>MIT</license>
+</package>

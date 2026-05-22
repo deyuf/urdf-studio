@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light dark">
+  <title>URDF Studio — Free online URDF viewer for the browser</title>
+  <meta name="description" content="URDF Studio is a free online URDF viewer. Open URDF and xacro robot models in your browser, drive joint sliders, resolve ROS package:// paths, and validate inertias — fully client-side, no upload, no install.">
+  <meta name="keywords" content="URDF viewer, online URDF viewer, browser URDF viewer, xacro viewer, ROS URDF viewer, urdf editor, urdf inspector, robot model viewer, three.js, robotics, kinematics, SRDF">
+  <meta name="author" content="deyuf">
+  <meta name="theme-color" content="#1a73e8">
+  <link rel="canonical" href="https://urdf.deyuf.org/">
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="URDF Studio">
+  <meta property="og:title" content="URDF Studio — Free online URDF viewer for the browser">
+  <meta property="og:description" content="Free online URDF viewer. Open URDF and xacro robot models in the browser, drive joint sliders, resolve package:// paths, validate inertias. No upload, no install.">
+  <meta property="og:url" content="https://urdf.deyuf.org/">
+  <meta property="og:image" content="https://urdf.deyuf.org/og-image.png">
+  <meta property="og:image:width" content="1440">
+  <meta property="og:image:height" content="900">
+  <meta property="og:image:alt" content="URDF Studio — online URDF viewer showing a Franka Research 3 robot loaded in the browser.">
+  <meta property="og:locale" content="en_US">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="URDF Studio — Free online URDF viewer for the browser">
+  <meta name="twitter:description" content="Open URDF and xacro robot models in the browser. Joint sliders, package:// resolution, inertia checks. No upload, no install.">
+  <meta name="twitter:image" content="https://urdf.deyuf.org/og-image.png">
+
+  <link rel="icon" type="image/png" href="./icon.png">
+  <link rel="apple-touch-icon" href="./icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" media="all" onerror="this.media='nope'">
+  <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./web.css">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebApplication",
+        "@id": "https://urdf.deyuf.org/#app",
+        "name": "URDF Studio",
+        "alternateName": ["URDF Viewer", "Online URDF Viewer", "Browser URDF Viewer", "xacro Viewer"],
+        "url": "https://urdf.deyuf.org/",
+        "description": "Free online URDF viewer. Open URDF and xacro robot models in the browser, drive joint sliders, resolve ROS package:// paths, validate inertias and collisions — entirely client-side.",
+        "applicationCategory": "DeveloperApplication",
+        "applicationSubCategory": "Robotics",
+        "keywords": "URDF viewer, online URDF viewer, xacro viewer, ROS robot viewer, urdf inspector, robotics",
+        "operatingSystem": "Any (browser)",
+        "browserRequirements": "Requires a modern browser with WebGL2 (Chrome 114+, Firefox 115+, Safari 17+).",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        },
+        "softwareVersion": "0.2.2",
+        "license": "https://opensource.org/licenses/MIT",
+        "image": "https://urdf.deyuf.org/og-image.png",
+        "author": {
+          "@type": "Person",
+          "name": "deyuf",
+          "url": "https://github.com/deyuf"
+        },
+        "sameAs": [
+          "https://github.com/deyuf/urdf-studio",
+          "https://marketplace.visualstudio.com/items?itemName=deyuf.urdf-studio"
+        ]
+      },
+      {
+        "@type": "WebSite",
+        "@id": "https://urdf.deyuf.org/#website",
+        "name": "URDF Studio",
+        "url": "https://urdf.deyuf.org/",
+        "publisher": { "@id": "https://urdf.deyuf.org/#app" }
+      }
+    ]
+  }
+  </script>
+</head>
+<body>
+  <div id="topbar"></div>
+  <div id="app">
+    <noscript>
+      <main class="seo-fallback" style="max-width:720px;margin:48px auto;padding:0 24px;font-family:system-ui,sans-serif;line-height:1.55">
+        <h1>URDF Studio — Free online URDF viewer in the browser</h1>
+        <p><strong>URDF Studio</strong> is a free, open-source <strong>URDF viewer</strong> and
+        xacro inspector that runs entirely in your browser. Open a ROS robot
+        description folder, expand <code>xacro</code> macros, resolve
+        <code>package://</code> URIs, drive joint sliders, and validate
+        inertias — without uploading any files to a server.</p>
+        <p>This page is the interactive web app. It requires JavaScript.
+        Re-enable JavaScript or visit the
+        <a href="./docs/">documentation</a> to learn more.</p>
+        <h2>What URDF Studio does</h2>
+        <ul>
+          <li>Online URDF viewer: load <code>.urdf</code> and
+          <code>.urdf.xacro</code> files from a local folder.</li>
+          <li>Full xacro expansion with <code>xacro:include</code>,
+          <code>xacro:macro</code>, <code>xacro:arg</code>,
+          <code>load_yaml</code>.</li>
+          <li>Resolves ROS <code>package://</code> mesh paths against
+          <code>package.xml</code> files in the chosen folder.</li>
+          <li>Joint sliders, visual / collision render modes, link tree,
+          inspector with mass, center of mass and inertia tensor.</li>
+          <li>Validates URDF parse errors, missing meshes, non-positive-
+          definite inertias, and joint cycles.</li>
+          <li>Also available as a <a href="https://marketplace.visualstudio.com/items?itemName=deyuf.urdf-studio">VS Code extension</a>.</li>
+        </ul>
+        <p><a href="./docs/">Read the docs →</a> ·
+        <a href="https://github.com/deyuf/urdf-studio">Source on GitHub →</a></p>
+      </main>
+    </noscript>
+  </div>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

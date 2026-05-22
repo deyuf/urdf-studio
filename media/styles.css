@@ -1,0 +1,612 @@
+:root {
+  color-scheme: light dark;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  /* VS Code's webview injects `body { padding: 0 20px; }` by default
+     (see vscode/src/.../webview/browser/pre/index.html). That shifts our
+     full-width grid right by 20px and pushes the rightmost toolbar items
+     past the iframe edge. Force-reset it. */
+  padding: 0;
+  overflow: hidden;
+  font-family: var(--vscode-font-family);
+  color: var(--vscode-foreground);
+  background: var(--vscode-editor-background);
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button,
+select,
+input[type='number'],
+input[type='text'] {
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, var(--vscode-panel-border));
+  border-radius: 4px;
+}
+
+button {
+  height: 28px;
+  padding: 0 9px;
+  cursor: pointer;
+}
+
+button:hover {
+  background: var(--vscode-toolbar-hoverBackground);
+}
+
+button.primary {
+  color: var(--vscode-button-foreground);
+  background: var(--vscode-button-background);
+  border-color: var(--vscode-button-background);
+}
+
+button.primary:hover {
+  background: var(--vscode-button-hoverBackground);
+}
+
+.shell {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  height: 100%;
+  min-width: 0;
+}
+
+.subtoolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  background: var(--vscode-sideBar-background);
+  font-size: 12px;
+  min-height: 26px;
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+.subtoolbar label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.subtoolbar #collide-hud {
+  margin-left: auto;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  row-gap: 4px;
+  gap: 8px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  background: var(--vscode-sideBar-background);
+  min-height: 36px;
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+/* Pin the rightmost toolbar group so it always takes the right edge of the
+   LAST line, even after wrapping.  Allow it to shrink so its rightmost
+   button never gets clipped past the viewport. */
+.toolbar-group-end {
+  margin-left: auto;
+  flex: 0 1 auto;
+  min-width: 0;
+  justify-content: flex-end;
+}
+
+.toolbar label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.title {
+  min-width: 0;
+  flex: 0 1 auto;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding-left: 8px;
+  border-left: 1px solid var(--vscode-panel-border);
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.toolbar-spacer {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 390px);
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.viewport-wrap {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  background: var(--vscode-editor-background);
+}
+
+#viewport {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+.hud {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  max-width: calc(100% - 20px);
+  padding: 5px 8px;
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--vscode-editor-background) 88%, transparent);
+  font-size: 12px;
+  /* Don't intercept pointer/wheel events: they should fall through to the
+     3D canvas so OrbitControls always receives them. */
+  pointer-events: none;
+  user-select: none;
+}
+
+.side {
+  display: grid;
+  grid-template-rows: 34px minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  border-left: 1px solid var(--vscode-panel-border);
+  background: var(--vscode-sideBar-background);
+  overflow: hidden;
+  /* Container so the six-tab row can shrink its typography when the side
+     panel itself is narrow (workspace grid clamps the side to 300-390 px).
+     Without this the "Inspector" label ellipsises to "Inspec…". */
+  container-type: inline-size;
+  container-name: side;
+}
+
+@container side (max-width: 480px) {
+  .tab {
+    font-size: 12px;
+    padding: 0 2px;
+  }
+}
+
+@container side (max-width: 360px) {
+  .tab {
+    font-size: 11px;
+  }
+}
+
+.tabs {
+  display: grid;
+  /* minmax(0, 1fr) — not 1fr — so columns stay equal even when tab labels
+     are wider than the column's natural share. With plain 1fr the auto
+     minimum blows columns out and the row visually wraps. */
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.tab {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--vscode-foreground);
+  min-width: 0;
+  padding: 0 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tab.active {
+  background: var(--vscode-tab-activeBackground);
+  border-bottom: 2px solid var(--vscode-focusBorder);
+}
+
+.panel {
+  display: none;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  /* Reserve space for the scrollbar so switching between tabs (some long,
+     some short) does not cause the side column width to fluctuate, which
+     would otherwise change the canvas aspect and visibly rescale the model. */
+  scrollbar-gutter: stable;
+  padding: 10px;
+}
+
+.panel.active {
+  display: block;
+}
+
+@media (max-width: 900px) {
+  .workspace {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(220px, 1fr) minmax(240px, 45%);
+  }
+
+  .side {
+    border-left: 0;
+    border-top: 1px solid var(--vscode-panel-border);
+  }
+}
+
+
+.summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.metric {
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 6px;
+  padding: 7px;
+  background: var(--vscode-editor-background);
+}
+
+.metric b {
+  display: block;
+  font-size: 18px;
+}
+
+.metric span {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.xacro-args {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding: 8px;
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 6px;
+}
+
+.xacro-args label,
+.joint-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 116px;
+  align-items: center;
+  gap: 8px;
+}
+
+.xacro-args input,
+.joint-row input[type='number'] {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+details {
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 6px;
+  margin-bottom: 8px;
+  background: var(--vscode-editor-background);
+}
+
+summary {
+  cursor: pointer;
+  padding: 7px 8px;
+  font-weight: 600;
+}
+
+.detail-body {
+  display: grid;
+  gap: 8px;
+  padding: 0 8px 8px;
+}
+
+.joint-row {
+  grid-template-columns: 110px minmax(80px, 1fr) 76px;
+  font-size: 12px;
+}
+
+.joint-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.joint-row input[type='range'] {
+  width: 100%;
+}
+
+.state-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 8px;
+}
+
+.inspector-grid {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 6px 8px;
+  font-size: 12px;
+}
+
+.value {
+  overflow-wrap: anywhere;
+  color: var(--vscode-descriptionForeground);
+}
+
+.tree ul {
+  margin: 0 0 0 16px;
+  padding: 0;
+  list-style: none;
+}
+
+.tree li {
+  margin: 3px 0;
+}
+
+.tree button {
+  width: 100%;
+  height: auto;
+  min-height: 22px;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: var(--vscode-foreground);
+}
+
+.tree button:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.diagnostic {
+  display: grid;
+  grid-template-columns: 68px minmax(0, 1fr);
+  gap: 8px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  font-size: 12px;
+}
+
+.severity {
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.severity.error {
+  color: var(--vscode-errorForeground);
+}
+
+.severity.warning {
+  color: var(--vscode-editorWarning-foreground);
+}
+
+.mesh-list {
+  display: grid;
+  gap: 5px;
+}
+
+.mesh-item {
+  display: grid;
+  grid-template-columns: 62px minmax(0, 1fr);
+  gap: 6px;
+  font-size: 12px;
+}
+
+.muted {
+  color: var(--vscode-descriptionForeground);
+}
+
+.joint-filter {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.joint-filter input[type='search'] {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 4px 6px;
+}
+
+.tool-block {
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+  margin-bottom: 12px;
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 6px;
+}
+
+.tool-block label {
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.tool-block button {
+  justify-self: start;
+}
+
+.srdf-results {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 220px;
+  overflow: auto;
+  font-size: 12px;
+}
+
+.srdf-results li {
+  padding: 2px 0;
+}
+
+#bookmark-select {
+  max-width: 140px;
+}
+
+/* ---- Labels overlay (CSS2DRenderer) ---- */
+
+.labels-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.label-3d {
+  font-size: 11px;
+  line-height: 1;
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid var(--vscode-panel-border);
+  background: color-mix(in srgb, var(--vscode-editor-background) 85%, transparent);
+  color: var(--vscode-foreground);
+  white-space: nowrap;
+  transform: translate(8px, -10px);
+  pointer-events: none;
+  user-select: none;
+}
+
+.label-3d-joint {
+  color: var(--vscode-charts-blue, #4fc1ff);
+}
+
+.label-3d-link {
+  color: var(--vscode-descriptionForeground);
+  font-size: 10px;
+}
+
+/* ---- Source pane ---- */
+
+#panel-source {
+  padding: 0;
+}
+
+#panel-source .source-meta {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  font-size: 11px;
+}
+
+.source-view {
+  margin: 0;
+  padding: 6px 0;
+  font-family: var(--vscode-editor-font-family, ui-monospace, Menlo, Consolas, monospace);
+  font-size: 11.5px;
+  line-height: 1.45;
+  /* pre-wrap (not pre) so attribute-heavy URDF lines wrap inside the panel
+     instead of forcing horizontal scroll; overflow-wrap: anywhere is the
+     escape hatch for un-breakable runs (long paths, URIs). */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow: auto;
+  min-height: 0;
+}
+
+.source-view code {
+  display: block;
+}
+
+.source-line {
+  display: flex;
+  /* Pin the gutter to the top so the line number stays aligned with the
+     first wrapped row when a long line spans several lines. */
+  align-items: flex-start;
+  padding: 0 10px 0 0;
+  gap: 8px;
+}
+
+.source-line:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.source-gutter {
+  display: inline-block;
+  padding: 0 6px 0 10px;
+  color: var(--vscode-editorLineNumber-foreground, var(--vscode-descriptionForeground));
+  user-select: none;
+  text-align: right;
+  /* Don't let the inherited overflow-wrap: anywhere split multi-digit
+     line numbers; the gutter must never shrink under flex either. */
+  white-space: nowrap;
+  overflow-wrap: normal;
+  flex-shrink: 0;
+}
+
+.source-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.source-line.active {
+  background: color-mix(in srgb, var(--vscode-editor-findMatchHighlightBackground, var(--vscode-focusBorder)) 65%, transparent);
+}
+
+/* ---- Measure / export blocks ---- */
+
+.row-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.measure-readout {
+  font-size: 12px;
+  display: grid;
+  gap: 2px;
+}
+
+#measure-toggle.active {
+  background: var(--vscode-button-secondaryBackground, var(--vscode-toolbar-hoverBackground));
+  border-color: var(--vscode-focusBorder);
+}
+
+@media (max-width: 980px) {
+  .workspace {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(260px, 1fr) 45%;
+  }
+
+  .side {
+    border-left: 0;
+    border-top: 1px solid var(--vscode-panel-border);
+  }
+}
+
