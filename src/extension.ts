@@ -298,7 +298,8 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
       `img-src ${webview.cspSource} data:`,
       `font-src ${webview.cspSource}`,
       `style-src ${webview.cspSource} 'unsafe-inline'`,
-      `script-src 'nonce-${nonce}'`,
+      // 'strict-dynamic' lets the nonced entry load split chunks via import().
+      `script-src 'nonce-${nonce}' 'strict-dynamic'`,
       `connect-src ${webview.cspSource} https: data: blob:`
     ].join('; ');
 

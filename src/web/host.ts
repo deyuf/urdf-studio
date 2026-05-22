@@ -4,7 +4,7 @@
 // messages (save pose, bookmark, export, screenshot, etc.).
 
 import { discoverPackages } from '../core/packageMap';
-import { renderRobotDocument, setLogger } from '../core/xacro';
+import { renderRobotDocument } from '../core/xacro';
 import { analyzeUrdf } from '../core/urdfAnalysis';
 import { loadSemanticMetadata, mergeDisableCollisionsIntoSrdf, parseSrdf } from '../core/srdf';
 import { escapeXmlText } from '../core/escapeXml';
@@ -75,7 +75,6 @@ export class WebHost {
   private readonly urlMap = new Map<string, string>();
 
   constructor() {
-    setLogger(message => console.debug('[urdf]', message));
     this.installRendererShim();
     window.addEventListener('message', event => {
       this.handleRendererMessage(event.data as RendererInbound);
@@ -319,10 +318,8 @@ export class WebHost {
         // the previous-generation blob URLs now.
         try {
           requireActiveVfs().commitGeneration();
-        } catch (error) {
-          // VFS may have been swapped before this ack arrived; surface but
-          // don't break the load flow.
-          console.debug('[urdf] commitGeneration on geometryLoaded:', error);
+        } catch {
+          // VFS may have been swapped before this ack arrived; ignore.
         }
         this.setStatus({
           type: 'info',

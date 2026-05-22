@@ -61,7 +61,12 @@ const extensionBuilds = (includeTests, testEntries = []) => {
     {
       ...common,
       entryPoints: ['src/renderer/main.ts'],
-      outfile: 'dist/renderer.js',
+      // Splitting keeps the dynamic import('jspdf') in export.ts out of the
+      // main bundle so it (and its peer chunks) only load on demand.
+      outdir: 'dist',
+      entryNames: 'renderer',
+      chunkNames: 'chunks/[name]-[hash]',
+      splitting: true,
       platform: 'browser',
       format: 'esm',
       target: ['chrome114']
