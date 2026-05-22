@@ -23,6 +23,12 @@ const REPO = path.resolve(__dirname, '..');
 const SRC = path.join(REPO, 'docs');
 const OUT = path.join(REPO, 'dist-web', 'docs');
 
+// Production origin used for canonical URLs, Open Graph URLs and the
+// sitemap. Both deploys (Cloudflare Pages, GitHub Pages) resolve to this
+// host, so canonicalising to it consolidates SEO signal.
+const SITE_ORIGIN = 'https://urdf.deyuf.org';
+const DEFAULT_OG_IMAGE = `${SITE_ORIGIN}/og-image.png`;
+
 // Section ordering and labels — controls the sidebar group order. Sections
 // not listed here are appended alphabetically.
 const SECTION_ORDER = [
@@ -205,6 +211,71 @@ function pageTitleFromBody(page) {
   return match ? match[1].trim() : undefined;
 }
 
+// Build a one-line meta description for the page. Order of preference:
+//   1. `summary:` frontmatter (authors can write the snippet they want
+//      Google to show).
+//   2. First plain paragraph in the body — skipping headings, tables,
+//      blockquotes, lists, and code fences. Markdown formatting is
+//      stripped to keep the snippet readable.
+//   3. A generic site fallback.
+const SITE_FALLBACK_DESCRIPTION =
+  'URDF Studio — browser-based viewer and VS Code extension for URDF and xacro robot models. Inspect links and joints, drive sliders, expand xacro, and validate inertias.';
+
+function stripInlineMarkdown(text) {
+  return text
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')         // images
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')      // links
+    .replace(/<[^>]+>/g, '')                      // raw html / autolinks
+    .replace(/`([^`]+)`/g, '$1')                  // inline code
+    .replace(/[*_~]+/g, '')                       // emphasis markers
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function truncate(text, max) {
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max);
+  const lastSpace = cut.lastIndexOf(' ');
+  return `${cut.slice(0, lastSpace > 80 ? lastSpace : max).trimEnd()}…`;
+}
+
+function pageDescription(page) {
+  if (typeof page.data.summary === 'string' && page.data.summary.trim()) {
+    return truncate(page.data.summary.trim(), 200);
+  }
+  const lines = page.body.split('\n');
+  let inFence = false;
+  let buffer = '';
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('```')) { inFence = !inFence; buffer = ''; continue; }
+    if (inFence) continue;
+    if (!trimmed) { if (buffer) break; else continue; }
+    if (/^#{1,6}\s/.test(trimmed)) { buffer = ''; continue; }
+    if (trimmed.startsWith('|') || trimmed.startsWith('>') ||
+        /^[-*+]\s/.test(trimmed) || /^\d+\.\s/.test(trimmed)) {
+      if (buffer) break; else continue;
+    }
+    buffer = buffer ? `${buffer} ${trimmed}` : trimmed;
+  }
+  const cleaned = stripInlineMarkdown(buffer);
+  if (cleaned.length >= 40) return truncate(cleaned, 200);
+  return SITE_FALLBACK_DESCRIPTION;
+}
+
+function canonicalUrlFor(page) {
+  // outPath examples:
+  //   'index.html'           → /docs/
+  //   'features/index.html'  → /docs/features/
+  //   'features/joints.html' → /docs/features/joints.html
+  let pathPart = page.outPath;
+  if (pathPart === 'index.html') pathPart = '';
+  else if (pathPart.endsWith('/index.html')) {
+    pathPart = pathPart.slice(0, -'index.html'.length);
+  }
+  return `${SITE_ORIGIN}/docs/${pathPart}`;
+}
+
 function relativeUrl(fromPage, toPage) {
   const fromDir = path.posix.dirname(`/${fromPage.outPath}`);
   const target = `/${toPage.outPath}`;
@@ -247,13 +318,14 @@ function renderPrevNext(flatPages, currentPage) {
   return `<nav class="docs-pager">${link(prev, '← Previous')}${link(next, 'Next →')}</nav>`;
 }
 
-function layout({ title, sidebar, toc, body, pager, depth }) {
+function layout({ title, description, canonical, sidebar, toc, body, pager, depth }) {
   const upPrefix = '../'.repeat(depth);
   const cssHref = `${upPrefix}docs.css`;
   const iconHref = `${upPrefix}icon.png`;
   const indexHref = `${upPrefix}index.html`;
   const appHref = `${'../'.repeat(depth + 1)}`;
   const ghHref = 'https://github.com/deyuf/urdf-studio';
+  const fullTitle = `${title} · URDF Studio`;
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -261,7 +333,19 @@ function layout({ title, sidebar, toc, body, pager, depth }) {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#1a73e8">
-  <title>${escapeHtml(title)} · URDF Studio</title>
+  <title>${escapeHtml(fullTitle)}</title>
+  <meta name="description" content="${escapeHtml(description)}">
+  <link rel="canonical" href="${escapeHtml(canonical)}">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="URDF Studio">
+  <meta property="og:title" content="${escapeHtml(fullTitle)}">
+  <meta property="og:description" content="${escapeHtml(description)}">
+  <meta property="og:url" content="${escapeHtml(canonical)}">
+  <meta property="og:image" content="${escapeHtml(DEFAULT_OG_IMAGE)}">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="${escapeHtml(fullTitle)}">
+  <meta name="twitter:description" content="${escapeHtml(description)}">
+  <meta name="twitter:image" content="${escapeHtml(DEFAULT_OG_IMAGE)}">
   <link rel="icon" type="image/png" href="${iconHref}">
   <link rel="apple-touch-icon" href="${iconHref}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -300,6 +384,29 @@ function layout({ title, sidebar, toc, body, pager, depth }) {
 }
 
 // ---------------------------------------------------------------------------
+// Sitemap.
+// ---------------------------------------------------------------------------
+
+// Emit sitemap.xml at the dist-web root (i.e. one level above OUT) so it
+// lives at https://urdf.deyuf.org/sitemap.xml, matching what robots.txt
+// advertises. The root and the docs subtree are both deployed from
+// dist-web/, so a single sitemap covers both.
+async function writeSitemap(docUrls) {
+  const today = new Date().toISOString().slice(0, 10);
+  const urls = [
+    { loc: `${SITE_ORIGIN}/`, priority: '1.0', changefreq: 'weekly' },
+    ...docUrls.map(loc => ({ loc, priority: '0.6', changefreq: 'monthly' }))
+  ];
+  const body = urls
+    .map(({ loc, priority, changefreq }) =>
+      `  <url>\n    <loc>${escapeHtml(loc)}</loc>\n    <lastmod>${today}</lastmod>\n    <changefreq>${changefreq}</changefreq>\n    <priority>${priority}</priority>\n  </url>`)
+    .join('\n');
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${body}\n</urlset>\n`;
+  const sitemapPath = path.join(OUT, '..', 'sitemap.xml');
+  await writeFile(sitemapPath, xml, 'utf8');
+}
+
+// ---------------------------------------------------------------------------
 // Build.
 // ---------------------------------------------------------------------------
 
@@ -310,12 +417,15 @@ async function build() {
 
   await mkdir(OUT, { recursive: true });
   let built = 0;
+  const sitemapEntries = [];
   for (const page of flatPages) {
     const toc = [];
     const renderer = createRenderer(toc);
     marked.setOptions({ renderer, gfm: true, breaks: false });
     const html = marked.parse(page.body);
     const title = page.data.title || pageTitleFromBody(page) || page.slug;
+    const description = pageDescription(page);
+    const canonical = canonicalUrlFor(page);
     const depth = page.section ? page.section.split('/').length : 0;
     const sidebar = renderSidebar(sections, page);
     const tocHtml = renderToc(toc);
@@ -325,11 +435,14 @@ async function build() {
     await mkdir(path.dirname(outPath), { recursive: true });
     await writeFile(
       outPath,
-      layout({ title, sidebar, toc: tocHtml, body: html, pager, depth }),
+      layout({ title, description, canonical, sidebar, toc: tocHtml, body: html, pager, depth }),
       'utf8'
     );
+    sitemapEntries.push(canonical);
     built++;
   }
+
+  await writeSitemap(sitemapEntries);
 
   // Static assets.
   await copyFile(path.join(SRC, 'docs.css'), path.join(OUT, 'docs.css'));

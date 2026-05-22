@@ -1,0 +1,5 @@
+# https://urdf.deyuf.org/
+User-agent: *
+Allow: /
+
+Sitemap: https://urdf.deyuf.org/sitemap.xml

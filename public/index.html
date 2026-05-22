@@ -4,9 +4,31 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="color-scheme" content="light dark">
-  <meta name="description" content="Inspect, visualize, and interact with URDF and xacro robot models in the browser.">
+  <title>URDF Studio — URDF & xacro robot viewer in the browser</title>
+  <meta name="description" content="URDF Studio is a free, browser-based viewer for URDF and xacro robot models. Inspect links and joints, drive sliders, expand xacro, resolve ROS package:// paths, and validate inertias — all client-side, no upload.">
+  <meta name="keywords" content="URDF, xacro, ROS, robot, robot model viewer, urdf viewer, urdf editor, three.js, robotics, kinematics, SRDF">
+  <meta name="author" content="deyuf">
   <meta name="theme-color" content="#1a73e8">
-  <title>URDF Studio</title>
+  <link rel="canonical" href="https://urdf.deyuf.org/">
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="URDF Studio">
+  <meta property="og:title" content="URDF Studio — URDF & xacro robot viewer in the browser">
+  <meta property="og:description" content="Inspect, visualize and drive URDF and xacro robot models entirely in the browser. Joint sliders, package:// resolution, inertia & collision checks. No upload, no install.">
+  <meta property="og:url" content="https://urdf.deyuf.org/">
+  <meta property="og:image" content="https://urdf.deyuf.org/og-image.png">
+  <meta property="og:image:width" content="1440">
+  <meta property="og:image:height" content="900">
+  <meta property="og:image:alt" content="URDF Studio showing a Franka Research 3 robot loaded in the browser viewer.">
+  <meta property="og:locale" content="en_US">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="URDF Studio — URDF & xacro robot viewer in the browser">
+  <meta name="twitter:description" content="Inspect, visualize and drive URDF and xacro robot models entirely in the browser. No upload, no install.">
+  <meta name="twitter:image" content="https://urdf.deyuf.org/og-image.png">
+
   <link rel="icon" type="image/png" href="./icon.png">
   <link rel="apple-touch-icon" href="./icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -14,6 +36,48 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" media="all" onerror="this.media='nope'">
   <link rel="stylesheet" href="./styles.css">
   <link rel="stylesheet" href="./web.css">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebApplication",
+        "@id": "https://urdf.deyuf.org/#app",
+        "name": "URDF Studio",
+        "url": "https://urdf.deyuf.org/",
+        "description": "Browser-based viewer for URDF and xacro robot models. Inspect links and joints, drive sliders, expand xacro, resolve ROS package:// paths, validate inertias and collisions — entirely client-side.",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "Any (browser)",
+        "browserRequirements": "Requires a modern browser with WebGL2 (Chrome 114+, Firefox 115+, Safari 17+).",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        },
+        "softwareVersion": "0.2.2",
+        "license": "https://opensource.org/licenses/MIT",
+        "image": "https://urdf.deyuf.org/og-image.png",
+        "author": {
+          "@type": "Person",
+          "name": "deyuf",
+          "url": "https://github.com/deyuf"
+        },
+        "sameAs": [
+          "https://github.com/deyuf/urdf-studio",
+          "https://marketplace.visualstudio.com/items?itemName=deyuf.urdf-studio"
+        ]
+      },
+      {
+        "@type": "WebSite",
+        "@id": "https://urdf.deyuf.org/#website",
+        "name": "URDF Studio",
+        "url": "https://urdf.deyuf.org/",
+        "publisher": { "@id": "https://urdf.deyuf.org/#app" }
+      }
+    ]
+  }
+  </script>
 </head>
 <body>
   <div id="topbar"></div>
