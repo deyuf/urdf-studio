@@ -1,13 +1,15 @@
 ---
-title: Web app
+title: Web app (online URDF viewer)
 order: 1
+summary: Use URDF Studio as an online URDF viewer in your browser. Open URDF and xacro files from a local folder, resolve package:// paths, and drive joint sliders. No server, no upload.
 ---
 
-# Quickstart — Web app
+# Quickstart — online URDF viewer in the browser
 
-The browser build runs entirely client-side. File bytes never touch a
-server; the page asks for read access to a folder you choose and resolves
-`package://` URIs against it.
+URDF Studio's web build is a fully featured **online URDF viewer**. It runs
+entirely client-side — file bytes never touch a server; the page asks for
+read access to a folder you choose and resolves `package://` URIs against
+it.
 
 ## 1. Open the deployed URL
 
