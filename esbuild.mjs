@@ -38,6 +38,12 @@ async function copyWebAssets() {
   await copyFile('src/web/ui/web.css', 'dist-web/web.css');
   await copyFile('media/icon.png', 'dist-web/icon.png');
   await copyFile('public/_headers', 'dist-web/_headers').catch(() => undefined);
+  await copyFile('public/robots.txt', 'dist-web/robots.txt').catch(() => undefined);
+  // Open Graph / Twitter Card preview image. Reuses an existing screenshot
+  // so the social/search-result card shows the actual app rather than a
+  // bare favicon.
+  await copyFile('media/screenshots-web/02-fr3-light.png', 'dist-web/og-image.png')
+    .catch(() => undefined);
 }
 
 // VS Code extension build (unchanged from prior shape).
