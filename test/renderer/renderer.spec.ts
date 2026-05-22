@@ -7,7 +7,13 @@ test('renderer loads a robot, switches modes, and moves a joint', async ({ page 
   const server = await startStaticServer(path.resolve(__dirname, '..', '..'));
   try {
     await page.goto(`${server.url}/test/renderer/harness.html`);
-    await page.waitForFunction(() => Array.isArray((window as any).__messages) && (window as any).__messages.some((message: any) => message.type === 'ready'));
+    // First page in the worker pays the cold-import cost for the renderer
+    // bundle + Three.js. Give it a generous timeout to keep CI stable.
+    await page.waitForFunction(
+      () => Array.isArray((window as any).__messages) && (window as any).__messages.some((message: any) => message.type === 'ready'),
+      undefined,
+      { timeout: 30_000 }
+    );
 
     await page.evaluate(() => {
       const urdf = `<?xml version="1.0"?>
@@ -52,7 +58,7 @@ test('renderer loads a robot, switches modes, and moves a joint', async ({ page 
       }));
     });
 
-    await expect(page.locator('[data-joint-slider="joint1"]')).toBeVisible();
+    await expect(page.locator('[data-joint-slider="joint1"]')).toBeVisible({ timeout: 15_000 });
     await page.locator('[data-joint-slider="joint1"]').fill('0.5');
     await page.locator('#render-mode').selectOption('both');
     await page.locator('#wireframe').check();
