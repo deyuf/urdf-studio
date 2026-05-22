@@ -894,7 +894,12 @@ function selectLink(linkName: string | undefined): void {
   applyFramesMode();
   highlightSourceForLink(linkName);
   requestRevealForLink(linkName);
-  switchTab('inspector');
+  // Only auto-switch when the click actually hit a link. A miss in empty
+  // viewport space deselects but should leave the user on whatever tab
+  // (Joints, Source, ...) they were using.
+  if (linkName) {
+    switchTab('inspector');
+  }
   dirty = true;
 }
 

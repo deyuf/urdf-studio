@@ -343,6 +343,42 @@ test('renderRobotDocument expands ROS-style xacro with YAML, ternary and dict ac
   }
 });
 
+test('renderRobotDocument absorbs many cfg lookups when load_yaml fails (no per-expression retries)', async () => {
+  // Regression: real-world ROS xacros routinely reference 10-20 keys from a
+  // YAML loaded via `load_yaml($(find pkg)/cfg.yaml)`. When the package
+  // isn't in scope, every `${cfg['x']}` used to fail one at a time and
+  // exhaust the recovery budget (the user hit this with the huba_bringup
+  // xacro at attempt 17). The load_yaml null-sink must absorb all of them
+  // in a single pass — emitting one yamlMissing warning, not 20 retries.
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'urdfstudio-nullsink-'));
+  try {
+    const xacroPath = path.join(tmpDir, 'robot.urdf.xacro');
+    const keys = Array.from({ length: 24 }, (_, i) => `k${i}`);
+    const links = keys
+      .map(k => `  <link name="${k}"><visual><geometry><box size="0.1 0.1 0.1"/></geometry><origin xyz="\${cfg['${k}']} 0 0"/></visual></link>`)
+      .join('\n');
+    await fs.writeFile(
+      xacroPath,
+      `<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="t">
+  <xacro:property name="cfg" value="\${load_yaml('$(find missing_pkg)/cfg.yaml')}"/>
+${links}
+</robot>`,
+      'utf8'
+    );
+    const result = await renderRobotDocument(xacroPath, {}, {});
+    const errors = result.diagnostics.filter(d => d.severity === 'error');
+    assert.deepEqual(errors, [], `expected no errors, got ${JSON.stringify(result.diagnostics)}`);
+    for (const k of keys) {
+      assert.match(result.urdf, new RegExp(`<link name="${k}">`));
+    }
+    assert.ok(result.diagnostics.some(d => d.code === 'xacro.yamlMissing'),
+      `expected an xacro.yamlMissing diagnostic, got ${JSON.stringify(result.diagnostics)}`);
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
 test('renderRobotDocument exposes empty includedFiles for plain URDF', async () => {
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'urdfstudio-plain-'));
   try {
@@ -435,12 +471,12 @@ test('analyzeUrdf falls back to URDF-relative paths when the named package has n
     const stl = Buffer.concat([Buffer.alloc(80, 0x20), Buffer.from([0, 0, 0, 0])]);
     await fs.writeFile(path.join(tmpDir, 'meshes', 'visual', 'Base.STL'), stl);
     const urdf = `<?xml version="1.0"?>
-<robot name="p2">
+<robot name="franka">
   <link name="base">
-    <visual><geometry><mesh filename="package://p2_4_description/meshes/visual/Base.STL"/></geometry></visual>
+    <visual><geometry><mesh filename="package://franka_description/meshes/visual/Base.STL"/></geometry></visual>
   </link>
 </robot>`;
-    const urdfPath = path.join(tmpDir, 'urdf', 'p2.urdf');
+    const urdfPath = path.join(tmpDir, 'urdf', 'franka.urdf');
     await fs.writeFile(urdfPath, urdf, 'utf8');
 
     const meta = analyzeUrdf(urdf, urdfPath, /* packages */ {});

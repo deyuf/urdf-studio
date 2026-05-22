@@ -6,7 +6,37 @@ import type { PackageMap, RenderedRobotDocument, StudioDiagnostic, XacroArgument
 type LogFn = (message: string) => void;
 
 // Tunables — exported so callers/tests can introspect or adjust.
-export const MAX_XACRO_RECOVERY_ATTEMPTS = 16;
+export const MAX_XACRO_RECOVERY_ATTEMPTS = 32;
+
+// A "null-sink" value used by load_yaml when the YAML file can't be read.
+// Every key access returns another sink, calls return a sink, and primitive
+// coercion returns ''. This way a single missing yaml absorbs every
+// downstream `${cfg['a']['b']}` access without exploding the expression
+// evaluator — turning N cascading retries into zero.
+export function createNullSink(): unknown {
+  const handler: ProxyHandler<{ (): string }> = {
+    get(_target, prop) {
+      if (prop === Symbol.toPrimitive || prop === 'toString' || prop === 'valueOf') {
+        return () => '';
+      }
+      if (prop === Symbol.iterator) {
+        return function* () { /* empty */ };
+      }
+      if (prop === 'length') {
+        return 0;
+      }
+      return createNullSink();
+    },
+    apply() {
+      return createNullSink();
+    },
+    has() {
+      return false;
+    }
+  };
+  // Callable target so `cfg(...)` accidental usages also return a sink.
+  return new Proxy(function () { return ''; }, handler);
+}
 
 let logFn: LogFn = () => {};
 
@@ -190,10 +220,28 @@ function createXacroParser(
   functions.load_yaml = (yamlPath: string) => {
     const resolvedPath = io.isAbsolute(yamlPath) ? yamlPath : io.resolve(io.dirname(sourcePath), yamlPath);
     includedFiles.add(resolvedPath);
-    // Tolerate duplicate keys — some real-world ROS packages (e.g. franka fp3's
-    // inertials.yaml) ship YAML with repeated keys, and Python's loader accepts
-    // them silently. The last entry wins.
-    return YAML.parse(io.readTextSync(resolvedPath), { uniqueKeys: false });
+    try {
+      // Tolerate duplicate keys — some real-world ROS packages (e.g. franka fp3's
+      // inertials.yaml) ship YAML with repeated keys, and Python's loader accepts
+      // them silently. The last entry wins.
+      return YAML.parse(io.readTextSync(resolvedPath), { uniqueKeys: false });
+    } catch (error) {
+      // Common in user xacros: `load_yaml('$(find missing_pkg)/config.yaml')`
+      // throws ENOENT because the package isn't in scope, then every
+      // `${cfg['x']}` downstream fails one-at-a-time and exhausts the
+      // recovery budget. Returning a null-sink lets all subsequent key
+      // accesses and string coercions evaluate to empty in a single pass,
+      // turning what would otherwise be N parser retries into zero.
+      const detail = error instanceof Error ? error.message : String(error);
+      diagnostics.push({
+        severity: 'warning',
+        message: `load_yaml could not read "${resolvedPath}": ${detail}. Treating result as empty.`,
+        code: 'xacro.yamlMissing',
+        file: sourcePath
+      });
+      logFn(`load_yaml fallback (empty) for ${resolvedPath}: ${detail}`);
+      return createNullSink();
+    }
   };
   functions.bool = (value: unknown) => value === true || value === 'true' || value === 1 || value === '1';
   functions.float = (value: unknown) => Number(value);
@@ -287,7 +335,11 @@ export function sanitizeXacroContent(content: string, skippedExpressions: Readon
 
   // Step 2: Python `${...}` expressions — scope the removal to the inside of
   // `${...}` blocks. Empty strings and rospack tokens are skipped because
-  // they were either handled above or aren't applicable.
+  // they were either handled above or aren't applicable. When ANY skip
+  // target matches inside a block, drop the entire `${...}` block: the
+  // expression failed to evaluate, so the only meaningful "skip" semantics
+  // is "expression evaluated to empty". Preserving leftover operators or
+  // whitespace (e.g. `${ + }`) would only re-fail the next parser pass.
   const expressionSkips = Array.from(skippedExpressions).filter(target =>
     target.length > 0 && !(target.startsWith('$(') && target.endsWith(')'))
   );
@@ -296,10 +348,15 @@ export function sanitizeXacroContent(content: string, skippedExpressions: Readon
   }
   return result.replace(/\$\{([^{}]*)\}/g, (match, expression: string) => {
     let body = expression;
+    let changed = false;
     for (const target of expressionSkips) {
-      body = body.split(target).join('');
+      const next = body.split(target).join('');
+      if (next !== body) {
+        changed = true;
+        body = next;
+      }
     }
-    return body === expression ? match : `\${${body}}`;
+    return changed ? '' : match;
   });
 }
 
@@ -391,7 +448,22 @@ function rewritePowerOperator(content: string): string {
 }
 
 function extractFailedExpression(message: string): string | undefined {
-  return /Failed to process expression "([^"]+)"/.exec(message)?.[1];
+  const raw = /Failed to process expression "([^"]+)"/.exec(message)?.[1];
+  if (!raw) {
+    return undefined;
+  }
+  // XacroParser reports either the full attribute value or just the failing
+  // `${expr}`. sanitizeXacroContent's Python-expression branch matches the
+  // inner body — the surrounding `${...}` is the regex's job. Pull the first
+  // `${...}` substring out so the next-attempt sanitiser actually erases the
+  // failing fragment; without this, the loop adds the unmatched outer string
+  // to skippedExpressions, the sanitiser finds no substring to remove, and
+  // the second pass throws again with `skippedExpressions.has(...) === true`.
+  const inner = /\$\{([^{}]+)\}/.exec(raw)?.[1];
+  if (inner !== undefined) {
+    return inner;
+  }
+  return raw;
 }
 
 function summarizeExpressionFailure(message: string): string {

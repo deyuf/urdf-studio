@@ -9,10 +9,6 @@
 </p>
 
 <p align="center">
-  <img src="media/mascot.svg" alt="A small robot arm waving with floating sparkles" width="420">
-</p>
-
-<p align="center">
   <a href="https://urdf.deyuf.org"><img src="https://img.shields.io/badge/web%20app-urdf.deyuf.org-1a73e8?style=flat-square&labelColor=24292f" alt="Web app"></a>
   <a href="https://marketplace.visualstudio.com/items?itemName=deyuf.urdf-studio"><img src="https://vsmarketplacebadges.dev/version/deyuf.urdf-studio.svg?style=flat-square&labelColor=24292f" alt="Marketplace"></a>
   <a href="https://marketplace.visualstudio.com/items?itemName=deyuf.urdf-studio"><img src="https://vsmarketplacebadges.dev/installs/deyuf.urdf-studio.svg?style=flat-square&labelColor=24292f" alt="Installs"></a>
@@ -31,16 +27,28 @@
 
 ## Table of contents
 
+- [Table of contents](#table-of-contents)
 - [Quickstart](#quickstart)
+  - [Browser](#browser)
+  - [VS Code](#vs-code)
 - [How it looks](#how-it-looks)
+  - [Web app — Franka FR3 loaded](#web-app--franka-fr3-loaded)
+  - [VS Code extension — same robot, in-editor](#vs-code-extension--same-robot-in-editor)
+  - [Inspector — link details on click](#inspector--link-details-on-click)
+  - [Diagnostics surface as a bottom-corner toast](#diagnostics-surface-as-a-bottom-corner-toast)
 - [Features](#features)
+  - [🖥 Viewing](#-viewing)
+  - [🦾 Driving](#-driving)
+  - [🩺 Analysing](#-analysing)
+  - [🛠 Authoring](#-authoring)
+  - [🤖 ROS / URDF / xacro](#-ros--urdf--xacro)
 - [Tested models](#tested-models)
 - [Configuration](#configuration)
 - [Architecture](#architecture)
 - [Local development](#local-development)
 - [Deployment](#deployment)
 - [Releasing](#releasing)
-- [Contributing &amp; license](#contributing--license)
+- [Contributing \& license](#contributing--license)
 
 ---
 
@@ -63,10 +71,19 @@ matches how you work.
 ### VS Code
 
 1. Install [**deyuf.urdf-studio**](https://marketplace.visualstudio.com/items?itemName=deyuf.urdf-studio)
-   from the Marketplace.
+   from the Marketplace — or sideload from source (see below).
 2. Right-click a `.urdf`, `.urdf.xacro`, or `.xacro` file → **Open With**
    → **URDF Studio Preview**.
 3. The custom editor opens. Workspace package roots are auto-discovered.
+
+Sideload from source:
+
+```bash
+git clone https://github.com/deyuf/urdf-studio && cd urdf-studio
+npm ci
+npm run vsce:package                          # produces urdf-studio-<version>.vsix
+code --install-extension urdf-studio-*.vsix   # or: VS Code → Extensions → ⋯ → Install from VSIX
+```
 
 Full docs: **<https://urdf.deyuf.org/docs/>**.
 
@@ -278,6 +295,7 @@ Production builds:
 npm run package            # VS Code extension (dist/)
 npm run web:build          # web app + docs (dist-web/)
 npm run vsce:package       # .vsix for sideload / Marketplace
+# then: code --install-extension urdf-studio-*.vsix
 ```
 
 More: [docs/development/building →](https://urdf.deyuf.org/docs/development/building.html)

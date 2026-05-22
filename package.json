@@ -2,7 +2,7 @@
   "name": "urdf-studio",
   "displayName": "URDF Studio",
   "description": "Inspect and preview URDF and xacro robot models in VS Code.",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "publisher": "deyuf",
   "license": "MIT",
   "repository": {
@@ -137,7 +137,7 @@
     "test:unit": "node esbuild.mjs --tests && node --test dist/test/*.test.cjs",
     "test:renderer": "npm run compile && playwright test",
     "test": "npm run lint && npm run test:unit",
-    "vsce:package": "npm run package && vsce package",
+    "vsce:package": "npm run package && npx -y @vscode/vsce@^3.9.1 package",
     "web:dev": "node esbuild.mjs --web --serve",
     "web:build": "npm run check-types && node esbuild.mjs --web --production && npm run docs:build",
     "docs:build": "node scripts/build-docs.mjs",
@@ -146,9 +146,9 @@
   "dependencies": {
     "@xmldom/xmldom": "^0.8.11",
     "jsdom": "^26.1.0",
-    "jspdf": "^3.0.4",
+    "jspdf": "^4.2.1",
     "three": "^0.184.0",
-    "three-mesh-bvh": "^0.7.8",
+    "three-mesh-bvh": "^0.8.3",
     "urdf-loader": "^0.12.7",
     "xacro-parser": "^0.3.11",
     "yaml": "^2.8.3"
@@ -163,7 +163,6 @@
     "@typescript-eslint/eslint-plugin": "^8.59.4",
     "@typescript-eslint/parser": "^8.59.4",
     "@vscode/test-electron": "^2.5.2",
-    "@vscode/vsce": "^3.9.1",
     "esbuild": "^0.28.0",
     "eslint": "^10.4.0",
     "marked": "^18.0.4",

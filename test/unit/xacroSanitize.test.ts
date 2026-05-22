@@ -8,21 +8,25 @@ test('sanitizeXacroContent is a no-op when the skipped set is empty', () => {
   assert.equal(sanitizeXacroContent(input, new Set()), input);
 });
 
-test('sanitizeXacroContent removes a failed sub-expression inside ${} only', () => {
+test('sanitizeXacroContent drops the whole ${} block when its body matched a skip target', () => {
+  // Leaving `${}` behind re-fails the next parser pass ("Unknown character }").
+  // The sanitiser's job is to make the expression evaluate to empty, so the
+  // whole block must go.
   const input = '<robot name="r"><link name="${broken_call()}"/></robot>';
   const out = sanitizeXacroContent(input, new Set(['broken_call()']));
-  assert.equal(out, '<robot name="r"><link name="${}"/></robot>');
+  assert.equal(out, '<robot name="r"><link name=""/></robot>');
 });
 
 test('sanitizeXacroContent does NOT touch matching text outside ${} brackets', () => {
   // The skipped expression text also appears as the literal string "ghost" in
   // an attribute value. The old, full-document `split().join('')` would erase
-  // both — the new scoped pass must only touch the ${} occurrence.
+  // both — the scoped pass only touches the ${} occurrence (and now drops
+  // the whole block when it matches).
   const skipped = 'ghost';
   const input = '<robot><link name="ghost_outside_expr"/><joint axis="${ghost}"/></robot>';
   const out = sanitizeXacroContent(input, new Set([skipped]));
   assert.match(out, /name="ghost_outside_expr"/);
-  assert.match(out, /axis="\$\{\}"/);
+  assert.match(out, /axis=""/);
 });
 
 test('sanitizeXacroContent leaves the original ${} block intact when no skipped expression appears inside', () => {
@@ -34,13 +38,13 @@ test('sanitizeXacroContent leaves the original ${} block intact when no skipped 
 test('sanitizeXacroContent handles multiple skipped expressions in one block', () => {
   const input = '<robot><link name="${broken_a + broken_b}"/></robot>';
   const out = sanitizeXacroContent(input, new Set(['broken_a', 'broken_b']));
-  assert.equal(out, '<robot><link name="${ + }"/></robot>');
+  assert.equal(out, '<robot><link name=""/></robot>');
 });
 
 test('sanitizeXacroContent does not corrupt content between ${} blocks', () => {
   const input = 'before-${dead_call(a)}-middle-${ok}-after';
   const out = sanitizeXacroContent(input, new Set(['dead_call(a)']));
-  assert.equal(out, 'before-${}-middle-${ok}-after');
+  assert.equal(out, 'before--middle-${ok}-after');
 });
 
 test('sanitizeXacroContent tolerates empty-string in the skipped set', () => {
@@ -73,14 +77,14 @@ test('sanitizeXacroContent removes a failed $(arg ...) rospack substitution glob
 test('sanitizeXacroContent handles mixed rospack and Python expression skips together', () => {
   const input = '<robot><link name="$(arg foo)_${broken}_tail"/></robot>';
   const out = sanitizeXacroContent(input, new Set(['$(arg foo)', 'broken']));
-  assert.equal(out, '<robot><link name="_${}_tail"/></robot>');
+  assert.equal(out, '<robot><link name="__tail"/></robot>');
 });
 
 test('sanitizeXacroContent does not mistake a Python expression for rospack syntax', () => {
   // `$(`-prefixed text that isn't in the skipped set must survive untouched.
-  // The `${broken}` block still gets sanitised — but the lone `$(literal_token`
-  // text outside any expression block must remain.
+  // The `${broken}` block still gets sanitised (whole block dropped) — but
+  // the lone `$(literal_token` text outside any expression block must remain.
   const input = 'plain $(literal_token and ${broken}';
   const out = sanitizeXacroContent(input, new Set(['broken']));
-  assert.equal(out, 'plain $(literal_token and ${}');
+  assert.equal(out, 'plain $(literal_token and ');
 });

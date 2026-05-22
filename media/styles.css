@@ -8,6 +8,11 @@ body,
   height: 100%;
   width: 100%;
   margin: 0;
+  /* VS Code's webview injects `body { padding: 0 20px; }` by default
+     (see vscode/src/.../webview/browser/pre/index.html). That shifts our
+     full-width grid right by 20px and pushes the rightmost toolbar items
+     past the iframe edge. Force-reset it. */
+  padding: 0;
   overflow: hidden;
   font-family: var(--vscode-font-family);
   color: var(--vscode-foreground);
@@ -188,6 +193,24 @@ button.primary:hover {
   border-left: 1px solid var(--vscode-panel-border);
   background: var(--vscode-sideBar-background);
   overflow: hidden;
+  /* Container so the six-tab row can shrink its typography when the side
+     panel itself is narrow (workspace grid clamps the side to 300-390 px).
+     Without this the "Inspector" label ellipsises to "Inspec…". */
+  container-type: inline-size;
+  container-name: side;
+}
+
+@container side (max-width: 480px) {
+  .tab {
+    font-size: 12px;
+    padding: 0 2px;
+  }
+}
+
+@container side (max-width: 360px) {
+  .tab {
+    font-size: 11px;
+  }
 }
 
 .tabs {
