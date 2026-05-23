@@ -7,13 +7,17 @@ import { EditorView } from '@codemirror/view';
 export const urdfTheme = EditorView.theme({
   '&': {
     height: '100%',
-    fontSize: 'var(--cm-urdf-font-size, 12.5px)',
+    fontSize: 'var(--cm-urdf-font-size, 13px)',
     backgroundColor: 'var(--vscode-editor-background, transparent)',
     color: 'var(--vscode-editor-foreground, inherit)'
   },
   '.cm-scroller': {
     fontFamily: 'var(--vscode-editor-font-family, ui-monospace, Menlo, Consolas, monospace)',
-    lineHeight: '1.5'
+    lineHeight: '1.55'
+  },
+  '.cm-content': {
+    paddingBlock: '8px',
+    caretColor: 'var(--vscode-editorCursor-foreground, currentColor)'
   },
   '.cm-gutters': {
     backgroundColor: 'transparent',

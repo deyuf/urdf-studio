@@ -19,6 +19,11 @@ async function copyMedia(includeTestWorker = false) {
   await mkdir('dist/media', { recursive: true });
   await copyFile('media/styles.css', 'dist/media/styles.css');
   await copyFile('src/editor/editor.css', 'dist/media/editor.css');
+  // Copy the web theme into dist/media as well. The extension webview
+  // doesn't load it (VS Code provides --vscode-* colors directly), but
+  // the renderer test harness uses it to render screenshots with the
+  // same palette as the real web app.
+  await copyFile('src/web/ui/web.css', 'dist/media/web.css');
   await copyFile(
     'node_modules/jsdom/lib/jsdom/living/xhr/xhr-sync-worker.js',
     'dist/xhr-sync-worker.js'
