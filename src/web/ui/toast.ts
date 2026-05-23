@@ -1,6 +1,8 @@
 // Bottom toast / bubble component for surfacing parse and load errors.
 // Errors are sticky (manual dismiss); warnings auto-dismiss; info auto-dismisses.
 
+import { icon, type IconName } from './icons';
+
 export type ToastKind = 'error' | 'warning' | 'info';
 
 export interface Toast {
@@ -60,12 +62,12 @@ export function mountToast(): ToastApi {
     const node = document.createElement('div');
     node.className = `toast toast-${toast.kind}`;
     node.innerHTML = `
-      <div class="toast-icon" aria-hidden="true">${iconFor(toast.kind)}</div>
+      <div class="toast-icon" aria-hidden="true">${icon(iconFor(toast.kind), { size: 20 })}</div>
       <div class="toast-body">
         <div class="toast-message"></div>
         ${toast.detail ? '<div class="toast-detail"></div>' : ''}
       </div>
-      <button class="toast-close" aria-label="Dismiss">×</button>
+      <button class="toast-close" aria-label="Dismiss">${icon('close', { size: 16 })}</button>
     `;
     // Use textContent to avoid HTML injection from arbitrary diagnostic strings.
     node.querySelector('.toast-message')!.textContent = toast.message;
@@ -96,12 +98,8 @@ export function mountToast(): ToastApi {
   return { push, clear };
 }
 
-function iconFor(kind: ToastKind): string {
-  if (kind === 'error') {
-    return '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L1 21h22L12 2zm0 7v5m0 3v.01" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg>';
-  }
-  if (kind === 'warning') {
-    return '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><circle cx="12" cy="16" r="0.5" fill="currentColor"/></svg>';
-  }
-  return '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><circle cx="12" cy="8" r="0.5" fill="currentColor"/></svg>';
+function iconFor(kind: ToastKind): IconName {
+  if (kind === 'error') return 'error';
+  if (kind === 'warning') return 'warning';
+  return 'info';
 }

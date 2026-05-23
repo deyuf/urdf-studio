@@ -16,11 +16,11 @@
 </p>
 
 <p align="center">
-  <img src="media/screenshots-web/01-hero.png" alt="Franka FR3 loaded in URDF Studio's web app — joint sliders, 3D viewport, side panel tabs">
+  <img src="media/screenshots-web/01-hero.gif" alt="URDF Studio walking through key features on a Franka FR3: pose the arm, switch to the Source editor, switch to the Checks panel, return to Joints and re-pose">
 </p>
 
 <p align="center">
-  <em>Franka FR3 loaded from a local <code>franka_description</code> checkout — full xacro expansion, packages resolved, meshes streamed via blob URLs. No server.</em>
+  <em>Franka FR3 loaded from a local <code>franka_description</code> checkout — full xacro expansion, packages resolved, meshes streamed via blob URLs. The animation cycles through posing the arm, the Source editor, the Checks panel, and back. No server, no install.</em>
 </p>
 
 ---

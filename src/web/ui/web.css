@@ -290,17 +290,34 @@ textarea {
   color: var(--us-fg);
 }
 
-/* Icon-only buttons (Settings, Help). Match the height (36px) of the
-   adjacent labelled buttons but use a larger glyph so the ⚙ and ?
-   carry the same visual weight as text-bearing siblings. */
+/* Icon-only buttons in the topbar (Settings, Help). Sized to match the
+   adjacent labelled buttons; inner SVG inherits the button's color via
+   currentColor so the icon picks up the hover / muted states for free. */
 #help-btn,
 #settings-btn {
-  width: 40px;
+  width: 36px;
   padding: 0;
-  font-size: 20px;
-  font-weight: 500;
-  line-height: 1;
+  line-height: 0;
+  display: inline-flex;
+  align-items: center;
   justify-content: center;
+}
+
+/* Shared icon defaults (works in both the web app and the renderer
+   webview since the SVG inherits currentColor). */
+.icon {
+  display: inline-block;
+  vertical-align: middle;
+  flex-shrink: 0;
+  fill: currentColor;
+}
+
+button.icon-btn,
+.theme-switcher-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
 }
 
 #file-select {

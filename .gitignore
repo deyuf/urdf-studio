@@ -8,5 +8,12 @@ out/
 .vscode-test/
 *.log
 tmp-fr3/
+tmp/
 media/ui-audit/
 .codegraph
+
+# Local mesh staging — scripts/capture-screenshots.mjs expects a real
+# franka_description checkout under test/fixtures/franka_description/
+# (or FRANKA_DIR). Meshes weigh ~189MB and are NOT vendored; the
+# fixture directory in this repo ships xacro + yaml only.
+test/fixtures/franka_description/meshes/

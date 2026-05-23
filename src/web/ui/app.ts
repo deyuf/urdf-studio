@@ -9,6 +9,7 @@ import type { WebHost, HostStatus } from '../host';
 import { mountOnboarding, shouldShowOnboarding } from './onboarding';
 import { mountToast } from './toast';
 import { mountThemeSwitcher } from './theme';
+import { icon } from './icons';
 
 const URDF_PATTERNS = /\.(urdf|xacro|urdf\.xacro)$/i;
 
@@ -56,8 +57,8 @@ export class AppShell {
           </select>
           <a id="docs-link" class="ghost-link" href="./docs/" title="Open documentation" target="_blank" rel="noopener">Docs</a>
           <div id="theme-mount" class="theme-mount"></div>
-          <button id="help-btn" class="ghost" aria-label="Show onboarding tour" title="Show the onboarding tour">?</button>
-          <button id="settings-btn" class="ghost" aria-label="Settings">⚙</button>
+          <button id="help-btn" class="ghost icon-btn" aria-label="Show onboarding tour" title="Show the onboarding tour">${icon('help', { size: 18 })}</button>
+          <button id="settings-btn" class="ghost icon-btn" aria-label="Settings" title="Settings">${icon('settings', { size: 18 })}</button>
         </div>
       </div>
       <div id="topbar-status" class="topbar-status" hidden></div>

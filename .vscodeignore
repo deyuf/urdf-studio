@@ -24,6 +24,10 @@ media/**
 # Web screenshots referenced from README.md — kept under the same
 # numbering scheme used by scripts/capture-screenshots.mjs so changes
 # to that script flow through to the bundled .vsix automatically.
+# Note: the hero is an animated .gif; we also ship the .png poster for
+# Marketplace renderers that fall back to first-frame. The .webm source
+# stays out of the bundle (large + no Marketplace renderer reads it).
+!media/screenshots-web/01-hero.gif
 !media/screenshots-web/01-hero.png
 !media/screenshots-web/02-editor-split.png
 !media/screenshots-web/03-editor-fullscreen.png

@@ -6,14 +6,16 @@
 // View Transitions API drives a full-page crossfade between themes
 // when supported; older browsers swap instantly.
 
+import { icon, type IconName } from './icons';
+
 export type ThemeMode = 'light' | 'dark' | 'system';
 
 const KEY = 'urdf-studio:theme:v1';
 
-const MODE_META: Record<ThemeMode, { icon: string; title: string; aria: string }> = {
-  light:  { icon: '☀',  title: 'Light theme',          aria: 'Light theme' },
-  system: { icon: '🖥', title: 'Match system theme',   aria: 'Match system theme' },
-  dark:   { icon: '🌙', title: 'Dark theme',           aria: 'Dark theme' }
+const MODE_META: Record<ThemeMode, { icon: IconName; title: string; aria: string }> = {
+  light:  { icon: 'light_mode',       title: 'Light theme',        aria: 'Light theme' },
+  system: { icon: 'desktop_windows',  title: 'Match system theme', aria: 'Match system theme' },
+  dark:   { icon: 'dark_mode',        title: 'Dark theme',         aria: 'Dark theme' }
 };
 
 export function loadTheme(): ThemeMode {
@@ -74,7 +76,7 @@ export function mountThemeSwitcher(container: HTMLElement): { set(mode: ThemeMod
     btn.setAttribute('role', 'radio');
     btn.setAttribute('aria-label', MODE_META[mode].aria);
     btn.title = MODE_META[mode].title;
-    btn.textContent = MODE_META[mode].icon;
+    btn.innerHTML = icon(MODE_META[mode].icon, { size: 16 });
     btn.addEventListener('click', () => set(mode));
     switcher.appendChild(btn);
     buttons.set(mode, btn);
