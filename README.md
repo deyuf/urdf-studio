@@ -71,6 +71,10 @@ matches how you work.
 
 1. Install [**deyuf.urdf-studio**](https://marketplace.visualstudio.com/items?itemName=deyuf.urdf-studio)
    from the Marketplace — or sideload from source (see below).
+   Want the latest in-progress features? Click **Switch to Pre-Release
+   Version** on the extension page (or run `code --install-extension
+   deyuf.urdf-studio --pre-release`) — pre-releases ship from the
+   `develop` branch automatically on every push.
 2. Right-click a `.urdf`, `.urdf.xacro`, or `.xacro` file → **Open With**
    → **URDF Studio Preview**.
 3. The custom editor opens. Workspace package roots are auto-discovered.

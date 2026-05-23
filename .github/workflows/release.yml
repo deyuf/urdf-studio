@@ -3,11 +3,17 @@ name: Release pipeline
 # Single workflow handling the full CI → deploy chain:
 #
 #   test (always)
-#     ├──▶ deploy-web   (main only, needs test)
-#     ├──▶ publish      (main only, needs test, skips if version unchanged)
-#     └──▶ deploy-docs  (main only, needs deploy-web + publish)
+#     ├──▶ deploy-web         (main only,    needs test)
+#     ├──▶ preview-web        (non-main pushes, needs test)
+#     ├──▶ publish            (main only,    needs test, skips if version unchanged)
+#     ├──▶ publish-prerelease (develop only, needs test, every push)
+#     └──▶ deploy-docs        (main only,    needs deploy-web + publish)
 #
-# Branch previews live in preview-web.yml (manual dispatch only).
+# Marketplace lanes (Microsoft convention — odd minor = pre-release):
+#   stable:      0.4.x  (published from `main`)
+#   pre-release: 0.5.x  (published from `develop`, every push)
+#
+# Manual ad-hoc previews live in preview-web.yml.
 
 on:
   push:
@@ -336,6 +342,102 @@ jobs:
           name: v${{ steps.version.outputs.current }}
           generate_release_notes: true
           files: urdf-studio-${{ steps.version.outputs.current }}.vsix
+
+  # =================================================================
+  # publish-prerelease — VS Code Marketplace pre-release channel.
+  # Fires on every push to `develop`. Auto-derives a unique version
+  # from the package.json base + github.run_number so a manual bump
+  # is never required: pre-release lanes use the odd-minor convention
+  # (Marketplace requires pre-release versions to be strictly higher
+  # than stable, and the recommended scheme is even-minor = stable,
+  # odd-minor = pre-release).
+  # =================================================================
+  publish-prerelease:
+    name: Publish pre-release to VS Code Marketplace
+    needs: test
+    if: github.ref == 'refs/heads/develop' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Verify VSCE_PAT is configured
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          if [ -z "$VSCE_PAT" ]; then
+            cat <<'EOF' >&2
+          ::error::Secret VSCE_PAT is missing.
+
+          Create an Azure DevOps personal access token with `Marketplace: Manage`
+          scope (https://dev.azure.com/<your-org>/_usersSettings/tokens) and add
+          it under Settings → Secrets and variables → Actions as VSCE_PAT.
+          EOF
+            exit 1
+          fi
+          echo "VSCE_PAT present (${#VSCE_PAT} chars)."
+
+      - name: Compute pre-release version
+        id: version
+        run: |
+          # Strip any pre-existing -beta / -rc / -dev suffix from the
+          # package.json base.
+          base=$(node -p "require('./package.json').version" | sed 's/-.*//')
+          major=$(echo "$base" | cut -d. -f1)
+          minor=$(echo "$base" | cut -d. -f2)
+          # Pre-release lane lives on the next odd minor. Stable on main
+          # keeps even minors (0.4.x); develop publishes 0.5.x, etc.
+          if [ $((minor % 2)) -eq 0 ]; then
+            minor=$((minor + 1))
+          fi
+          # Patch comes from the GitHub Actions run number so every push
+          # produces a monotonically-increasing, unique version.
+          version="${major}.${minor}.${{ github.run_number }}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "::notice::Pre-release version: $version"
+
+      - name: Stamp package.json with the pre-release version
+        run: npm version --no-git-tag-version --allow-same-version ${{ steps.version.outputs.version }}
+
+      - name: Package .vsix (pre-release flavour)
+        run: npx --yes @vscode/vsce@^3.9.1 package --pre-release --out urdf-studio-${{ steps.version.outputs.version }}.vsix
+
+      - name: Publish to Marketplace (pre-release channel)
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: npx --yes @vscode/vsce@^3.9.1 publish --pre-release --packagePath urdf-studio-${{ steps.version.outputs.version }}.vsix
+
+      - name: Create GitHub pre-release tag
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: v${{ steps.version.outputs.version }} (pre-release)
+          generate_release_notes: true
+          prerelease: true
+          files: urdf-studio-${{ steps.version.outputs.version }}.vsix
+
+      - name: Summarise pre-release publish
+        run: |
+          {
+            echo "### Pre-release published"
+            echo
+            echo "- Version: \`${{ steps.version.outputs.version }}\`"
+            echo "- Branch:  \`${{ github.ref_name }}\` (commit \`${{ github.sha }}\`)"
+            echo "- Channel: VS Code Marketplace **pre-release**"
+            echo
+            echo "Users can install it from the Extensions view by clicking"
+            echo "**Switch to Pre-Release Version** on the URDF Studio entry,"
+            echo "or via CLI: \`code --install-extension deyuf.urdf-studio --pre-release\`."
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # =================================================================
   # deploy-docs — GitHub Pages.
