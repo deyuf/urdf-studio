@@ -21,5 +21,11 @@ media/**
 !media/icon.png
 !media/screenshots/viewer-joints.png
 !media/screenshots/inspector-selected.png
-!media/screenshots-web/03-fr3-posed.png
-!media/screenshots-web/11-toast-error.png
+# Web screenshots referenced from README.md — kept under the same
+# numbering scheme used by scripts/capture-screenshots.mjs so changes
+# to that script flow through to the bundled .vsix automatically.
+!media/screenshots-web/01-hero.png
+!media/screenshots-web/02-editor-split.png
+!media/screenshots-web/03-editor-fullscreen.png
+!media/screenshots-web/04-checks-health.png
+!media/screenshots-web/05-diagnostics-broken.png

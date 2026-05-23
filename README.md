@@ -16,11 +16,11 @@
 </p>
 
 <p align="center">
-  <img src="media/screenshots-web/03-fr3-posed.png" alt="Franka Research 3 loaded in the web app">
+  <img src="media/screenshots-web/01-hero.png" alt="Franka FR3 loaded in URDF Studio's web app — joint sliders, 3D viewport, side panel tabs">
 </p>
 
 <p align="center">
-  <em>Franka Research 3 loaded directly from a local <code>franka_description</code> checkout — full xacro expansion, packages resolved, meshes streamed via blob URLs. No server.</em>
+  <em>Franka FR3 loaded from a local <code>franka_description</code> checkout — full xacro expansion, packages resolved, meshes streamed via blob URLs. No server.</em>
 </p>
 
 ---
@@ -32,10 +32,11 @@
   - [Browser](#browser)
   - [VS Code](#vs-code)
 - [How it looks](#how-it-looks)
-  - [Web app — Franka FR3 loaded](#web-app--franka-fr3-loaded)
-  - [VS Code extension — same robot, in-editor](#vs-code-extension--same-robot-in-editor)
-  - [Inspector — link details on click](#inspector--link-details-on-click)
-  - [Diagnostics surface as a bottom-corner toast](#diagnostics-surface-as-a-bottom-corner-toast)
+  - [Main view — joints, panels, 3D viewport](#main-view--joints-panels-3d-viewport)
+  - [Source editor with syntax highlighting, lint markers, and live preview](#source-editor-with-syntax-highlighting-lint-markers-and-live-preview)
+  - [Fullscreen source — IDE mode with a picture-in-picture viewport](#fullscreen-source--ide-mode-with-a-picture-in-picture-viewport)
+  - [Checks panel with health score and grouped rules](#checks-panel-with-health-score-and-grouped-rules)
+  - [Diagnostics surface as a bottom-corner toast and a populated Checks list](#diagnostics-surface-as-a-bottom-corner-toast-and-a-populated-checks-list)
 - [Features](#features)
   - [🖥 Viewing](#-viewing)
   - [🦾 Driving](#-driving)
@@ -89,66 +90,59 @@ Full docs: **<https://urdf.deyuf.org/docs/>**.
 
 ## How it looks
 
-### Web app — Franka FR3 loaded
+### Main view — joints, panels, 3D viewport
 
-<img src="media/screenshots-web/03-fr3-posed.png" alt="Franka Research 3 loaded in the web app">
+<img src="media/screenshots-web/01-hero.png" alt="Franka FR3 loaded in URDF Studio with joint sliders, link tree, and a 3D viewport">
 
-The browser app loads a real ROS package off the local disk. The
-screenshot above is the upstream
-[`franka_description`](https://github.com/frankarobotics/franka_description)
-checkout, picked through **Open Folder**: xacro is expanded
-client-side, every `package://` URI is resolved to a blob URL by the
-host, and the meshes stream in via Three.js's `LoadingManager`. Joint
-sliders on the right drive the model in real time; the three joints in
-this shot are flexed to ~0.8 / -1.2 / 1.6 rad.
-
-### VS Code extension — same robot, in-editor
-
-<img src="media/screenshots/viewer-joints.png" alt="URDF Studio open as a VS Code custom editor">
-
-In VS Code, opening any `.urdf`, `.urdf.xacro`, or `.xacro` file
-through the custom editor yields the same viewport, the same joint
-panel, the same Inspector / Checks / Links / Tools tabs. The host shell
-differs (extension process + webview vs browser-side host) but the
-renderer and analyser are byte-for-byte identical — see
-[Architecture](docs/architecture/) for how the two hosts share core.
-
-### Inspector — link details on click
-
-<img src="media/screenshots/inspector-selected.png" alt="Inspector showing link details with bounding box highlight">
-
-Click any link in the viewport or in the **Links** tree to open the
-Inspector. It shows the parent and child joints with type/axis/limits,
-mass, center of mass, the full inertia tensor with eigenvalues, and
-the resolved absolute paths of every visual and collision mesh
-referenced by that link. The selected link gets a tight yellow
-bounding box on its own visual geometry.
+The browser app loads a real ROS package off the local disk. Xacro is
+expanded client-side, every `package://` URI is resolved to a blob URL
+by the host, and meshes stream in via Three.js's `LoadingManager`.
+Joint sliders on the right drive the model in real time. The side
+panel tabs (Joints / Inspector / Checks / Links / Source / Tools)
+share the same data model — clicking a link in the tree or in the
+viewport jumps straight to the inspector or the source line.
 
 ### Source editor with syntax highlighting, lint markers, and live preview
 
-<img src="media/screenshots-web/12-editor-franka.png" alt="CodeMirror 6 source editor showing Franka FR3 URDF with URDF-aware highlighting and lint markers">
+<img src="media/screenshots-web/02-editor-split.png" alt="CodeMirror 6 source editor showing Franka FR3 URDF in the default split layout">
 
 The Source tab is a full CodeMirror 6 editor: URDF-aware highlighting
 (structural tags, xacro namespace, `package://` URIs, `${expr}` blocks
-all get distinct colour), inline lint markers that share rule codes
+each get distinct colour), inline lint markers that share rule codes
 with the Checks panel, intelligent completion (start typing
 `<parent link="` and the editor offers every declared link name), and
-**live preview** — edits push through to the 3D viewport after a tiny
-160 ms debounce. Hit `F11` for the fullscreen view above. `Ctrl+S`
-saves changes back to disk (VS Code workspace edit or
-FileSystemAccess writable, depending on host).
+**live preview** — edits push through to the 3D viewport after a 160 ms
+debounce. `Ctrl+S` saves back to disk (VS Code workspace edit, or
+FileSystemAccess writable in the browser).
 
-### Diagnostics surface as a bottom-corner toast
+### Fullscreen source — IDE mode with a picture-in-picture viewport
 
-<img src="media/screenshots-web/11-toast-error.png" alt="Error toast pop-up listing parse problems">
+<img src="media/screenshots-web/03-editor-fullscreen.png" alt="Source editor in fullscreen mode with the 3D viewport shrunk into a corner PIP">
 
-When the parser or analyser finds problems, they are surfaced two ways
-at once. Every diagnostic shows up in the **Checks** panel with its
-severity, stable code, and source line. Errors and warnings also
-trigger a bottom-right toast: it pops up automatically, lists the
-first three messages, and links the user back to the Checks panel via
-the "see Checks tab" overflow line. Error toasts are sticky (manual
-dismiss); warning toasts auto-fade after a few seconds.
+Hit `F11` (or `Ctrl+Shift+F`) and the editor takes the whole canvas
+while the 3D view shrinks into a corner PIP — read a tight 700-line
+xacro on a small screen without losing the live model preview.
+
+### Checks panel with health score and grouped rules
+
+<img src="media/screenshots-web/04-checks-health.png" alt="Checks panel showing a 100/100 health score for a clean URDF">
+
+Every diagnostic surfaces here, grouped by rule code (`R-xxx`
+structural, `P-xxx` physics, `A-xxx` assets, `S-xxx` style/xacro). A
+0–100 health score quantifies overall fitness — useful when iterating
+on a model to clear errors quickly. Click any row to jump to the
+offending line in the Source tab.
+
+### Diagnostics surface as a bottom-corner toast and a populated Checks list
+
+<img src="media/screenshots-web/05-diagnostics-broken.png" alt="Broken URDF loaded — Checks panel lists multiple issues grouped by rule code, and a parse-error toast appears at the bottom">
+
+When the parser or analyser finds problems, they surface two ways at
+once. Every diagnostic shows up in the **Checks** panel grouped by
+rule code (with severity, message, and source line). Errors and
+warnings also trigger a bottom-corner toast that pops up automatically
+and links the user back to the Checks panel; error toasts stick until
+dismissed, warning toasts auto-fade.
 
 ## Features
 

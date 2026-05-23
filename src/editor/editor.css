@@ -13,6 +13,40 @@
   padding-block: 6px;
 }
 
+/* The default fold marker sits right next to the line number; add a bit
+   of breathing room so "1▾" doesn't read as a single glyph. */
+.cm-editor .cm-foldGutter .cm-gutterElement {
+  padding-left: 4px;
+  padding-right: 2px;
+}
+
+/* CM6 ships scrollbars styled by the browser, which on Chromium dark
+   themes show as a thick opaque white bar that crashes the page palette.
+   Replace with a slim semi-transparent thumb that fades into the dark
+   editor background. Firefox uses scrollbar-color, WebKit uses ::-webkit-
+   pseudos — set both. */
+.cm-editor .cm-scroller {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--vscode-foreground, #888) 30%, transparent) transparent;
+}
+.cm-editor .cm-scroller::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.cm-editor .cm-scroller::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--vscode-foreground, #888) 22%, transparent);
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.cm-editor .cm-scroller::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--vscode-foreground, #888) 40%, transparent);
+  background-clip: padding-box;
+}
+.cm-editor .cm-scroller::-webkit-scrollbar-track {
+  background: transparent;
+}
+
 /* ---- syntax token colours ----------------------------------------------- */
 
 .cm-urdf-tag {
@@ -132,16 +166,26 @@
 #panel-source .source-toolbar {
   display: flex;
   gap: 6px;
-  padding: 6px 10px;
+  /* Extra bottom padding so the buttons never butt up against the
+     toolbar's separator — that produced a visually-doubled hairline
+     (button border + toolbar border) at the right edge in earlier
+     iterations. */
+  padding: 7px 10px 8px;
+  /* One divider only — between the toolbar and the editor below it.
+     The toolbar's own background tint already provides the visual
+     separation from anything above. */
   border-bottom: 1px solid var(--vscode-panel-border);
   font-size: 11.5px;
   align-items: center;
-  background: color-mix(in srgb, var(--vscode-sideBar-background) 90%, transparent);
-  /* Don't let the toolbar itself collapse vertically when the file
-     name pushes things; the buttons are short enough that one row
-     always fits the side panel min-width. */
+  background: var(--vscode-editorGroupHeader-tabsBackground, color-mix(in srgb, var(--vscode-sideBar-background) 92%, var(--vscode-foreground) 8%));
   flex-wrap: nowrap;
-  min-height: 28px;
+  min-height: 30px;
+  /* CM6 renders a 1px gutter divider at its top edge in some themes;
+     pull the editor up by 1px so the two never stack into a double
+     hairline. */
+  margin-bottom: -1px;
+  position: relative;
+  z-index: 1;
 }
 
 #panel-source .source-toolbar .source-meta {
@@ -155,14 +199,19 @@
 }
 
 #panel-source .source-toolbar button {
-  padding: 3px 8px;
+  /* Compact toolbar buttons that share a line with the file-meta text.
+     Height matches the meta line-height so left and right sides of the
+     toolbar share a baseline. */
+  height: 22px;
+  padding: 0 8px;
   font-size: 11.5px;
   border-radius: 4px;
-  /* Toolbar buttons must stay single-line; "Edit: off" was wrapping to
-     "Edit:" + "off" when the side panel narrowed. */
   white-space: nowrap;
   flex: 0 0 auto;
-  line-height: 1.4;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 #panel-source .source-toolbar button.active {

@@ -74,16 +74,21 @@ export function mountSourcePane(host: HTMLElement, input: SourcePaneInput): Sour
   const editToggle = document.createElement('button');
   editToggle.type = 'button';
   editToggle.className = 'source-edit-toggle';
-  editToggle.textContent = input.editable ? 'Edit: on' : 'Edit: off';
-  editToggle.title = 'Toggle source editing';
+  // Toggle button: the label stays "Edit"; the on/off state is conveyed
+  // by the .active class (background fill) and the title attribute.
+  // Earlier "Edit: off" / "Edit: on" duplicated the state across both
+  // the text and the background, and made the off-state look like a
+  // hovered button to first-time users.
+  editToggle.textContent = 'Edit';
+  editToggle.setAttribute('aria-pressed', String(!!input.editable));
+  editToggle.title = input.editable ? 'Editing enabled — click to disable' : 'Editing disabled — click to enable';
   if (input.editable) editToggle.classList.add('active');
   toolbar.appendChild(editToggle);
 
   const fullscreenButton = document.createElement('button');
   fullscreenButton.type = 'button';
   fullscreenButton.className = 'source-fullscreen-toggle';
-  // Unicode "expand" glyph; falls back to readable text via title.
-  fullscreenButton.textContent = '⛶ Full';
+  fullscreenButton.textContent = 'Fullscreen';
   fullscreenButton.title = 'Toggle source fullscreen (F11)';
   toolbar.appendChild(fullscreenButton);
 
@@ -121,7 +126,8 @@ export function mountSourcePane(host: HTMLElement, input: SourcePaneInput): Sour
   editToggle.addEventListener('click', () => {
     const enabling = !editToggle.classList.contains('active');
     editToggle.classList.toggle('active', enabling);
-    editToggle.textContent = enabling ? 'Edit: on' : 'Edit: off';
+    editToggle.setAttribute('aria-pressed', String(enabling));
+    editToggle.title = enabling ? 'Editing enabled — click to disable' : 'Editing disabled — click to enable';
     editor.setReadOnly(!enabling);
   });
 
@@ -169,7 +175,8 @@ export function mountSourcePane(host: HTMLElement, input: SourcePaneInput): Sour
     getText: () => editor.getText(),
     setEditable(editable) {
       editToggle.classList.toggle('active', editable);
-      editToggle.textContent = editable ? 'Edit: on' : 'Edit: off';
+      editToggle.setAttribute('aria-pressed', String(editable));
+      editToggle.title = editable ? 'Editing enabled — click to disable' : 'Editing disabled — click to enable';
       editor.setReadOnly(!editable);
     },
     editor,

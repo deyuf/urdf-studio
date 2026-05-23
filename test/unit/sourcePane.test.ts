@@ -125,9 +125,12 @@ test('mountSourcePane(editable: false) starts in read-only mode and toggles on c
     const toggle = host.querySelector<HTMLButtonElement>('.source-edit-toggle');
     assert.ok(toggle);
     assert.equal(toggle!.classList.contains('active'), false);
+    assert.equal(toggle!.getAttribute('aria-pressed'), 'false');
     toggle!.click();
     assert.equal(toggle!.classList.contains('active'), true);
-    assert.match(toggle!.textContent ?? '', /on/i);
+    assert.equal(toggle!.getAttribute('aria-pressed'), 'true');
+    // Label stays as "Edit"; state is conveyed through aria-pressed + class.
+    assert.equal(toggle!.textContent, 'Edit');
   } finally {
     pane.dispose();
     host.remove();
