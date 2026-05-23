@@ -317,54 +317,6 @@ npm run vsce:package       # .vsix for sideload / Marketplace
 
 More: [docs/development/building →](https://urdf.deyuf.org/docs/development/building.html)
 
-### Preview deployments
-
-Branch pushes get an isolated preview environment:
-
-| Channel | Trigger | URL |
-|---|---|---|
-| **Production** (`main`) | push to `main` | https://urdf.deyuf.org |
-| **Branch preview** | any other push | `https://<sanitised-branch>.urdf-studio.pages.dev` |
-| **Manual preview** | Actions → "Preview web app on Cloudflare Pages" → Run workflow | same URL pattern |
-
-Branch previews are real Cloudflare Pages deployments but **not**
-production: the main app at urdf.deyuf.org never updates from a
-branch push. Job summary on each branch push prints the resolved
-preview URL.
-
-#### Publishing a VS Code Marketplace preview / pre-release
-
-The Marketplace supports **pre-release** versions that show up next to
-stable but behind a "Switch to Pre-Release Version" button. Workflow:
-
-1. **Bump to a pre-release version** in `package.json`:
-   ```jsonc
-   { "version": "0.4.0-beta.1" }
-   ```
-2. **Package and publish with `--pre-release`** from your branch
-   (locally, since CI publishes only from `main`):
-   ```bash
-   npm run package
-   npx @vscode/vsce package --pre-release -o urdf-studio-0.4.0-beta.1.vsix
-   VSCE_PAT=<token> npx @vscode/vsce publish --pre-release --packagePath urdf-studio-0.4.0-beta.1.vsix
-   ```
-   The `VSCE_PAT` is the same Azure DevOps personal access token the
-   production `publish` job uses; you can reuse the value from the
-   `VSCE_PAT` repo secret if you've authorised it locally.
-3. **Smoke-test on the Marketplace**: install from
-   `https://marketplace.visualstudio.com/items?itemName=deyuf.urdf-studio`
-   and click "Switch to Pre-Release Version" in the extension page.
-4. **Promote to stable**: when the pre-release is happy, bump
-   `package.json` to the stable version (`0.4.0`) on `main`. The
-   `publish` job in `release.yml` runs `vsce publish` without
-   `--pre-release` and ships the stable build.
-
-Per Microsoft's rules, pre-release versions must be **strictly higher**
-than the current stable, and one of the two must use an odd minor /
-patch convention. The simplest reliable scheme:
-- stable releases: even patches (0.4.0, 0.4.2, …)
-- pre-releases:    odd patches (0.4.1-beta.1, 0.4.3-beta.1, …)
-
 
 ---
 
