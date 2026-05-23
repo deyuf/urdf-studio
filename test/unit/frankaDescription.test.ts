@@ -21,11 +21,8 @@ if (!existsSync(FRANKA_ROOT)) {
     assert.ok(true);
   });
 } else {
-  test('franka_description: package.xml is present', () => {
+  test('franka_description: fixture is complete (package.xml + fr3 xacro)', () => {
     assert.ok(existsSync(path.join(FRANKA_ROOT, 'package.xml')));
-  });
-
-  test('franka_description: fr3.urdf.xacro file is present', () => {
     assert.ok(existsSync(path.join(FRANKA_ROOT, 'robots', 'fr3', 'fr3.urdf.xacro')));
   });
 

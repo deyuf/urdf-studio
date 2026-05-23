@@ -59,7 +59,7 @@ test('editor: mounts CodeMirror, applies URDF highlights, and responds to keyboa
   }
 });
 
-test('editor: fullscreen toggle adds the layout-source-fullscreen class', async ({ page }) => {
+test('editor: fullscreen toggle works via toolbar button AND Ctrl+Shift+F', async ({ page }) => {
   const server = await startStaticServer(path.resolve(__dirname, '..', '..'));
   try {
     await page.goto(`${server.url}/test/renderer/harness.html`);
@@ -76,18 +76,23 @@ test('editor: fullscreen toggle adds the layout-source-fullscreen class', async 
     await page.locator('[data-tab="source"]').click();
     await expect(page.locator('#panel-source .cm-editor')).toBeVisible({ timeout: 5000 });
 
+    // Path 1 — toolbar button enters fullscreen.
     await page.locator('#panel-source .source-fullscreen-toggle').click();
     await expect(page.locator('#workspace.layout-source-fullscreen')).toBeVisible();
 
-    // Toggle off again. In fullscreen mode the PIP viewport overlay can
-    // sit over the toolbar button depending on stacking; dispatch the
-    // custom event directly so the test exercises the layout-controller
-    // path, not Playwright's click hit-testing.
+    // Exit via custom event (Playwright's click hit-testing can hit the PIP
+    // in fullscreen mode; dispatching the event directly exercises the
+    // controller's exit path).
     await page.evaluate(() => {
-      const panel = document.querySelector('#panel-source');
-      panel!.dispatchEvent(new CustomEvent('urdf-studio:request-fullscreen-toggle', { bubbles: true }));
+      document.querySelector('#panel-source')!.dispatchEvent(
+        new CustomEvent('urdf-studio:request-fullscreen-toggle', { bubbles: true })
+      );
     });
     await expect(page.locator('#workspace.layout-source-fullscreen')).toHaveCount(0);
+
+    // Path 2 — Ctrl+Shift+F keybinding re-enters fullscreen.
+    await page.keyboard.press('Control+Shift+F');
+    await expect(page.locator('#workspace.layout-source-fullscreen')).toBeVisible();
   } finally {
     await server.close();
   }
@@ -181,32 +186,6 @@ test('editor: health score + grouped rules render in Checks panel for franka_pri
     const score = await page.locator('#panel-checks .health-score').first().textContent();
     const n = Number(score ?? '0');
     expect(n).toBeGreaterThanOrEqual(90);
-  } finally {
-    await server.close();
-  }
-});
-
-test('editor: F11 key toggles source fullscreen layout', async ({ page }) => {
-  const server = await startStaticServer(path.resolve(__dirname, '..', '..'));
-  try {
-    await page.goto(`${server.url}/test/renderer/harness.html`);
-    await page.waitForFunction(
-      () => (window as any).__messages?.some((m: any) => m.type === 'ready'),
-      undefined,
-      { timeout: 30_000 }
-    );
-    const urdf = readFileSync(FRANKA_FIXTURE, 'utf-8');
-    await page.evaluate(payload => {
-      window.dispatchEvent(new MessageEvent('message', { data: payload }));
-    }, buildLoadRobotMessage(urdf));
-
-    await page.locator('[data-tab="source"]').click();
-    await expect(page.locator('#panel-source .cm-editor')).toBeVisible({ timeout: 5000 });
-
-    // Some browsers reserve F11 for native fullscreen; using Ctrl+Shift+F
-    // as the documented alternate keybinding is more reliable here.
-    await page.keyboard.press('Control+Shift+F');
-    await expect(page.locator('#workspace.layout-source-fullscreen')).toBeVisible();
   } finally {
     await server.close();
   }

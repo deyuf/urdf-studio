@@ -82,7 +82,8 @@ export function mountSourcePane(host: HTMLElement, input: SourcePaneInput): Sour
   const fullscreenButton = document.createElement('button');
   fullscreenButton.type = 'button';
   fullscreenButton.className = 'source-fullscreen-toggle';
-  fullscreenButton.textContent = 'Fullscreen';
+  // Unicode "expand" glyph; falls back to readable text via title.
+  fullscreenButton.textContent = '⛶ Full';
   fullscreenButton.title = 'Toggle source fullscreen (F11)';
   toolbar.appendChild(fullscreenButton);
 

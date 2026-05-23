@@ -29,41 +29,25 @@ test('createLayoutController starts in default mode', () => {
   }
 });
 
-test('set("source-fullscreen") adds the right CSS class', () => {
-  const controller = createLayoutController(getWorkspace());
+test('set() applies the matching CSS class, removes the previous one, and fires onChange only on actual transitions', () => {
+  const workspace = getWorkspace();
+  workspace.classList.remove('layout-source-fullscreen', 'layout-split');
+  const events: string[] = [];
+  const controller = createLayoutController(workspace, mode => events.push(mode));
   try {
     controller.set('source-fullscreen');
     assert.equal(controller.current(), 'source-fullscreen');
-    assert.equal(getWorkspace().classList.contains('layout-source-fullscreen'), true);
-  } finally {
-    controller.dispose();
-  }
-});
+    assert.equal(workspace.classList.contains('layout-source-fullscreen'), true);
 
-test('set("split") adds layout-split class and removes any other layout', () => {
-  const workspace = getWorkspace();
-  workspace.classList.remove('layout-source-fullscreen', 'layout-split');
-  const controller = createLayoutController(workspace);
-  try {
-    controller.set('source-fullscreen');
     controller.set('split');
-    assert.equal(controller.current(), 'split');
     assert.equal(workspace.classList.contains('layout-split'), true);
     assert.equal(workspace.classList.contains('layout-source-fullscreen'), false);
-  } finally {
-    controller.dispose();
-  }
-});
 
-test('onChange fires once per actual change', () => {
-  const events: string[] = [];
-  const controller = createLayoutController(getWorkspace(), mode => events.push(mode));
-  try {
-    controller.set('split');
-    controller.set('split');           // no-op
-    controller.set('source-fullscreen');
+    controller.set('split');           // no-op (no transition)
     controller.set('default');
-    assert.deepEqual(events, ['split', 'source-fullscreen', 'default']);
+    assert.equal(workspace.classList.contains('layout-split'), false);
+
+    assert.deepEqual(events, ['source-fullscreen', 'split', 'default']);
   } finally {
     controller.dispose();
   }
@@ -82,46 +66,38 @@ test('cycle() walks default → split → source-fullscreen → default', () => 
   }
 });
 
-test('F11 key toggles source-fullscreen ↔ default', () => {
-  const workspace = getWorkspace();
-  workspace.classList.remove('layout-source-fullscreen', 'layout-split');
-  const controller = createLayoutController(workspace);
-  try {
-    const event = new dom.window.KeyboardEvent('keydown', { key: 'F11' });
-    dom.window.dispatchEvent(event);
-    assert.equal(controller.current(), 'source-fullscreen');
-    dom.window.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'F11' }));
-    assert.equal(controller.current(), 'default');
-  } finally {
-    controller.dispose();
+// Three independent inputs trigger the same toggle behaviour; consolidate
+// into a parametric loop instead of three near-identical tests.
+const TOGGLE_INPUTS: Array<{ name: string; fire: (workspace: HTMLElement) => void }> = [
+  {
+    name: 'F11 keydown',
+    fire: () => dom.window.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'F11' }))
+  },
+  {
+    name: 'Ctrl+Shift+F keydown',
+    fire: () => dom.window.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'F', ctrlKey: true, shiftKey: true }))
+  },
+  {
+    name: 'custom urdf-studio:request-fullscreen-toggle event',
+    fire: workspace => workspace.dispatchEvent(new dom.window.CustomEvent('urdf-studio:request-fullscreen-toggle', { bubbles: true }))
   }
-});
+];
 
-test('Ctrl+Shift+F toggles source-fullscreen', () => {
-  const workspace = getWorkspace();
-  workspace.classList.remove('layout-source-fullscreen', 'layout-split');
-  const controller = createLayoutController(workspace);
-  try {
-    dom.window.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'F', ctrlKey: true, shiftKey: true }));
-    assert.equal(controller.current(), 'source-fullscreen');
-  } finally {
-    controller.dispose();
-  }
-});
-
-test('custom event urdf-studio:request-fullscreen-toggle toggles layout', () => {
-  const workspace = getWorkspace();
-  workspace.classList.remove('layout-source-fullscreen', 'layout-split');
-  const controller = createLayoutController(workspace);
-  try {
-    workspace.dispatchEvent(new dom.window.CustomEvent('urdf-studio:request-fullscreen-toggle', { bubbles: true }));
-    assert.equal(controller.current(), 'source-fullscreen');
-    workspace.dispatchEvent(new dom.window.CustomEvent('urdf-studio:request-fullscreen-toggle', { bubbles: true }));
-    assert.equal(controller.current(), 'default');
-  } finally {
-    controller.dispose();
-  }
-});
+for (const { name, fire } of TOGGLE_INPUTS) {
+  test(`${name} toggles source-fullscreen ↔ default`, () => {
+    const workspace = getWorkspace();
+    workspace.classList.remove('layout-source-fullscreen', 'layout-split');
+    const controller = createLayoutController(workspace);
+    try {
+      fire(workspace);
+      assert.equal(controller.current(), 'source-fullscreen');
+      fire(workspace);
+      assert.equal(controller.current(), 'default');
+    } finally {
+      controller.dispose();
+    }
+  });
+}
 
 test('dispose removes keyboard listener so further F11 events have no effect', () => {
   const workspace = getWorkspace();

@@ -32,24 +32,17 @@ function lint(urdf: string, sourcePath = 'test.urdf', enabled?: Set<string>) {
 // franka_primitives.urdf — the "healthy" fixture
 // =====================================================================
 
-test('franka_primitives has no errors and a high health score', () => {
-  const urdf = load('franka_primitives.urdf');
-  const report = lint(urdf);
-  // Mesh / package rules can't fire because the fixture uses primitives.
+test('franka_primitives is clean: zero errors, high health score, and no structural/physics rule fires', () => {
+  const report = lint(load('franka_primitives.urdf'));
   const errors = report.diagnostics.filter(d => d.severity === 'error');
   assert.equal(errors.length, 0, `unexpected errors: ${JSON.stringify(errors, null, 2)}`);
   assert.ok(report.healthScore >= 95, `health score too low: ${report.healthScore}`);
-});
-
-test('franka_primitives passes every default-enabled rule', () => {
-  const urdf = load('franka_primitives.urdf');
-  const report = lint(urdf);
-  const triggeredCodes = Object.keys(report.byRule);
-  // The fixture intentionally avoids triggering structural / physics rules.
-  // Style rules (S-005 in particular) are off by default and won't fire.
-  const forbiddenForFranka = ['R-001', 'R-002', 'R-003', 'R-004', 'R-005', 'P-001', 'P-002', 'P-003', 'P-004', 'P-005', 'P-006'];
-  for (const code of forbiddenForFranka) {
-    assert.ok(!triggeredCodes.includes(code), `${code} unexpectedly fired on franka_primitives: ${JSON.stringify(report.byRule[code])}`);
+  const triggered = Object.keys(report.byRule);
+  // The fixture intentionally avoids triggering structural / physics
+  // rules; only A-* mesh/package rules can fire on a mesh-free fixture
+  // (and they don't, because there are no meshes).
+  for (const code of ['R-001', 'R-002', 'R-003', 'R-004', 'R-005', 'P-001', 'P-002', 'P-003', 'P-004', 'P-005', 'P-006']) {
+    assert.ok(!triggered.includes(code), `${code} unexpectedly fired: ${JSON.stringify(report.byRule[code])}`);
   }
 });
 
@@ -262,24 +255,20 @@ test('explicit enabled set restricts rules', () => {
 });
 
 // =====================================================================
-// Performance budget
+// Performance budget — analyzeUrdf + runAllRules on both fixtures
 // =====================================================================
 
-test('runAllRules completes in <50ms on franka_broken.urdf', () => {
-  const urdf = load('franka_broken.urdf');
-  // Warm-up the JIT so the cold-start cost doesn't pollute the median.
-  for (let i = 0; i < 5; i++) lint(urdf);
-  const t0 = performance.now();
-  for (let i = 0; i < 20; i++) lint(urdf);
-  const elapsed = (performance.now() - t0) / 20;
-  assert.ok(elapsed < 50, `lint took ${elapsed.toFixed(2)}ms/run (budget 50ms)`);
-});
-
-test('runAllRules completes in <100ms on franka_primitives.urdf (200 lines)', () => {
-  const urdf = load('franka_primitives.urdf');
-  for (let i = 0; i < 5; i++) lint(urdf);
-  const t0 = performance.now();
-  for (let i = 0; i < 20; i++) lint(urdf);
-  const elapsed = (performance.now() - t0) / 20;
-  assert.ok(elapsed < 100, `lint took ${elapsed.toFixed(2)}ms/run (budget 100ms)`);
-});
+for (const { fixture, budgetMs } of [
+  { fixture: 'franka_broken.urdf', budgetMs: 50 },
+  { fixture: 'franka_primitives.urdf', budgetMs: 100 }
+]) {
+  test(`runAllRules completes in <${budgetMs}ms on ${fixture}`, () => {
+    const urdf = load(fixture);
+    // Warm-up the JIT so the cold-start cost doesn't pollute the median.
+    for (let i = 0; i < 5; i++) lint(urdf);
+    const t0 = performance.now();
+    for (let i = 0; i < 20; i++) lint(urdf);
+    const elapsed = (performance.now() - t0) / 20;
+    assert.ok(elapsed < budgetMs, `lint took ${elapsed.toFixed(2)}ms/run (budget ${budgetMs}ms)`);
+  });
+}
