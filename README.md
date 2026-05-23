@@ -124,6 +124,20 @@ the resolved absolute paths of every visual and collision mesh
 referenced by that link. The selected link gets a tight yellow
 bounding box on its own visual geometry.
 
+### Source editor with syntax highlighting, lint markers, and live preview
+
+<img src="media/screenshots-web/12-editor-franka.png" alt="CodeMirror 6 source editor showing Franka FR3 URDF with URDF-aware highlighting and lint markers">
+
+The Source tab is a full CodeMirror 6 editor: URDF-aware highlighting
+(structural tags, xacro namespace, `package://` URIs, `${expr}` blocks
+all get distinct colour), inline lint markers that share rule codes
+with the Checks panel, intelligent completion (start typing
+`<parent link="` and the editor offers every declared link name), and
+**live preview** — edits push through to the 3D viewport after a tiny
+160 ms debounce. Hit `F11` for the fullscreen view above. `Ctrl+S`
+saves changes back to disk (VS Code workspace edit or
+FileSystemAccess writable, depending on host).
+
 ### Diagnostics surface as a bottom-corner toast
 
 <img src="media/screenshots-web/11-toast-error.png" alt="Error toast pop-up listing parse problems">
@@ -173,10 +187,15 @@ overview.
 
 | | |
 |---|---|
+| **Source editor (CodeMirror 6)** | URDF/xacro syntax highlighting, **live edit ↔ 3D preview** (debounced ~160 ms), **intelligent completion** (link/joint/joint-type/`package://` names), and **inline lint markers**. Toggle "Edit: on" from the Source tab. |
+| **Lint rule engine** | 18 rules covering structural (`R-001..005`), physics (`P-001..006`), assets (`A-001..003`), and xacro style (`S-001..005`). Grouped Checks panel with **health score** (0-100). |
+| **Quick fixes** | One-click fixes for missing `<limit>`, missing `<inertial>`, negative mass, zero effort/velocity, and stray limit on `continuous` joints. |
+| **Fullscreen source view** | `F11` (or `Ctrl+Shift+F`) flips the source pane to full width with the 3D viewport shrunk to a picture-in-picture corner — read tight URDF on a small screen. |
+| **3D screenshot** | Tools tab → **Save PNG** writes a transparent-background snapshot of the current viewport at 1×/2×/3×/4× scale; **Copy to clipboard** for instant paste into PRs/docs. |
 | **Reachability sampling** | Monte-Carlo workspace point cloud for any tip link. |
 | **Never-colliding pairs** | Sample for `<disable_collisions>` entries → write merged SRDF. |
 | **Pose & bookmarks** | Save pose, name bookmarks, restore on next open. |
-| **Export & screenshot** | JSON pose with camera; PNG screenshot at native resolution. |
+| **Export** | JSON pose with camera; PDF report bundling screenshot + checks + summary; BOM CSV. |
 
 ### 🤖 ROS / URDF / xacro
 
@@ -297,6 +316,54 @@ npm run vsce:package       # .vsix for sideload / Marketplace
 ```
 
 More: [docs/development/building →](https://urdf.deyuf.org/docs/development/building.html)
+
+### Preview deployments
+
+Branch pushes get an isolated preview environment:
+
+| Channel | Trigger | URL |
+|---|---|---|
+| **Production** (`main`) | push to `main` | https://urdf.deyuf.org |
+| **Branch preview** | any other push | `https://<sanitised-branch>.urdf-studio.pages.dev` |
+| **Manual preview** | Actions → "Preview web app on Cloudflare Pages" → Run workflow | same URL pattern |
+
+Branch previews are real Cloudflare Pages deployments but **not**
+production: the main app at urdf.deyuf.org never updates from a
+branch push. Job summary on each branch push prints the resolved
+preview URL.
+
+#### Publishing a VS Code Marketplace preview / pre-release
+
+The Marketplace supports **pre-release** versions that show up next to
+stable but behind a "Switch to Pre-Release Version" button. Workflow:
+
+1. **Bump to a pre-release version** in `package.json`:
+   ```jsonc
+   { "version": "0.4.0-beta.1" }
+   ```
+2. **Package and publish with `--pre-release`** from your branch
+   (locally, since CI publishes only from `main`):
+   ```bash
+   npm run package
+   npx @vscode/vsce package --pre-release -o urdf-studio-0.4.0-beta.1.vsix
+   VSCE_PAT=<token> npx @vscode/vsce publish --pre-release --packagePath urdf-studio-0.4.0-beta.1.vsix
+   ```
+   The `VSCE_PAT` is the same Azure DevOps personal access token the
+   production `publish` job uses; you can reuse the value from the
+   `VSCE_PAT` repo secret if you've authorised it locally.
+3. **Smoke-test on the Marketplace**: install from
+   `https://marketplace.visualstudio.com/items?itemName=deyuf.urdf-studio`
+   and click "Switch to Pre-Release Version" in the extension page.
+4. **Promote to stable**: when the pre-release is happy, bump
+   `package.json` to the stable version (`0.4.0`) on `main`. The
+   `publish` job in `release.yml` runs `vsce publish` without
+   `--pre-release` and ships the stable build.
+
+Per Microsoft's rules, pre-release versions must be **strictly higher**
+than the current stable, and one of the two must use an odd minor /
+patch convention. The simplest reliable scheme:
+- stable releases: even patches (0.4.0, 0.4.2, …)
+- pre-releases:    odd patches (0.4.1-beta.1, 0.4.3-beta.1, …)
 
 
 ---

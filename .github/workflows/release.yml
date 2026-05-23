@@ -207,6 +207,76 @@ jobs:
           command: pages deploy dist-web --project-name=${{ env.PAGES_PROJECT }} --branch=main
 
   # =================================================================
+  # preview-web — non-production Cloudflare Pages deploy for any branch
+  # push that isn't main and isn't a tag. Deploys under the branch alias
+  # so the URL is <branch>.urdf-studio.pages.dev and Cloudflare treats it
+  # as a preview environment (not the production main branch). Skipped
+  # for PR builds — those already get covered by the manual
+  # preview-web.yml workflow, and double-deploying would just burn quota.
+  # =================================================================
+  preview-web:
+    name: Preview deploy (branch → Cloudflare Pages preview)
+    needs: test
+    if: >-
+      github.ref != 'refs/heads/main'
+      && github.event_name == 'push'
+      && !startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      deployments: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build web bundle
+        run: npm run web:build
+
+      - name: Resolve preview branch alias
+        id: alias
+        run: |
+          alias='${{ github.ref_name }}'
+          # Cloudflare Pages branch aliases must match [a-z0-9-]; squash
+          # other chars and trim leading/trailing dashes.
+          alias=$(echo "$alias" \
+            | tr '[:upper:]' '[:lower:]' \
+            | sed 's/[^a-z0-9-]/-/g' \
+            | sed 's/--*/-/g' \
+            | sed 's/^-//;s/-$//')
+          # Cloudflare branch field cannot exceed 28 chars and must NOT
+          # equal the production branch name.
+          alias=${alias:0:28}
+          if [ "$alias" = "main" ]; then
+            alias="branch-main"
+          fi
+          echo "alias=$alias" >> "$GITHUB_OUTPUT"
+          echo "::notice::Preview alias for ${{ github.ref_name }} → ${alias}.urdf-studio.pages.dev"
+
+      - name: Deploy preview to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy dist-web --project-name=${{ env.PAGES_PROJECT }} --branch=${{ steps.alias.outputs.alias }}
+
+      - name: Summarize preview URL
+        run: |
+          echo "### Web preview deployed" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Branch: \`${{ github.ref_name }}\` → \`${{ steps.alias.outputs.alias }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "URL: https://${{ steps.alias.outputs.alias }}.${{ env.PAGES_PROJECT }}.pages.dev" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "This is a **preview** environment, not production. The main app at urdf.deyuf.org is only updated when changes land on \`main\`." >> "$GITHUB_STEP_SUMMARY"
+
+  # =================================================================
   # publish — VS Code Marketplace publish + GitHub Release.
   # Only on main, only after tests pass, only if package.json#version
   # changed (or workflow_dispatch with force_publish=true).

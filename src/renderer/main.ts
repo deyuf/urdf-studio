@@ -1420,6 +1420,79 @@ function computeRobotBoundsRadius(): void {
 // Reachability + collision-pair wizard (Tools tab)
 // =============================================================================
 
+// =============================================================================
+// Viewport screenshot (Tools panel)
+// =============================================================================
+
+function captureViewportPng(scale: number): string {
+  // Force a synchronous render so the captured frame reflects the
+  // current camera / pose. Then upscale by drawing into an offscreen
+  // canvas at the requested multiplier — Three.js by default renders
+  // at devicePixelRatio*viewport; the scale multiplier multiplies on top.
+  renderNow();
+  if (!Number.isFinite(scale) || scale <= 0) scale = 1;
+  const source = renderer.domElement;
+  if (scale === 1) {
+    return source.toDataURL('image/png');
+  }
+  const target = document.createElement('canvas');
+  target.width = Math.max(1, Math.round(source.width * scale));
+  target.height = Math.max(1, Math.round(source.height * scale));
+  const ctx = target.getContext('2d');
+  if (!ctx) return source.toDataURL('image/png');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(source, 0, 0, target.width, target.height);
+  return target.toDataURL('image/png');
+}
+
+function defaultScreenshotFileName(): string {
+  const robotName = currentData?.metadata.robotName?.replace(/[^A-Za-z0-9_-]+/g, '_') || 'robot';
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  return `${robotName}_${stamp}.png`;
+}
+
+function setScreenshotStatus(text: string, isError = false): void {
+  const status = document.querySelector<HTMLDivElement>('#screenshot-status');
+  if (!status) return;
+  status.textContent = text;
+  status.classList.toggle('error', isError);
+}
+
+function downloadViewportScreenshot(): void {
+  try {
+    const scale = Number((document.querySelector<HTMLSelectElement>('#screenshot-scale')?.value) ?? '2');
+    const dataUrl = captureViewportPng(scale);
+    const link = document.createElement('a');
+    link.href = dataUrl;
+    link.download = defaultScreenshotFileName();
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setScreenshotStatus(`Saved ${link.download}`);
+  } catch (error) {
+    setScreenshotStatus(`Screenshot failed: ${(error as Error).message}`, true);
+  }
+}
+
+async function copyViewportScreenshot(): Promise<void> {
+  try {
+    const scale = Number((document.querySelector<HTMLSelectElement>('#screenshot-scale')?.value) ?? '2');
+    const dataUrl = captureViewportPng(scale);
+    // Convert data URL -> Blob for clipboard.
+    const blob = await (await fetch(dataUrl)).blob();
+    const clipboard = (navigator as Navigator & { clipboard?: { write?: (items: ClipboardItem[]) => Promise<void> } }).clipboard;
+    if (!clipboard?.write) {
+      setScreenshotStatus('Clipboard API not available in this browser.', true);
+      return;
+    }
+    await clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+    setScreenshotStatus('Copied to clipboard.');
+  } catch (error) {
+    setScreenshotStatus(`Copy failed: ${(error as Error).message}`, true);
+  }
+}
+
 function renderToolsPanel(): void {
   const panel = qs('#panel-tools');
   const tipLinks = currentData
@@ -1451,6 +1524,22 @@ function renderToolsPanel(): void {
       <div class="muted" id="srdf-status">Run analysis to find never-colliding pairs.</div>
       <ul id="srdf-results" class="srdf-results"></ul>
     </div>
+    <h3>Screenshot</h3>
+    <div class="tool-block">
+      <div class="row-buttons">
+        <button id="screenshot-download" class="primary" title="Save the current 3D view as a PNG">Save PNG</button>
+        <button id="screenshot-copy" title="Copy the current 3D view to the clipboard">Copy to clipboard</button>
+        <label title="Higher = sharper, larger file"><span class="muted">Scale</span>
+          <select id="screenshot-scale">
+            <option value="1">1×</option>
+            <option value="2" selected>2×</option>
+            <option value="3">3×</option>
+            <option value="4">4×</option>
+          </select>
+        </label>
+      </div>
+      <div class="muted" id="screenshot-status">PNG of the current 3D viewport, no UI chrome.</div>
+    </div>
     <h3>Export</h3>
     <div class="tool-block">
       <div class="row-buttons">
@@ -1468,6 +1557,8 @@ function renderToolsPanel(): void {
   qs('#srdf-write').addEventListener('click', () => writeCollisionPairs());
   qs('#export-bom').addEventListener('click', () => exportBom());
   qs('#export-report').addEventListener('click', () => void exportPdfReport());
+  qs('#screenshot-download').addEventListener('click', () => downloadViewportScreenshot());
+  qs('#screenshot-copy').addEventListener('click', () => void copyViewportScreenshot());
   refreshMeasureUi();
 }
 
