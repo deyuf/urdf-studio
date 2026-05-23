@@ -1,0 +1,209 @@
+<?xml version="1.0"?>
+<!--
+  Primitives-only Franka FR3-like fixture used by live-preview and editor
+  tests. Kinematics roughly match the Panda/FR3 arm; geometry is cylinders
+  and boxes so the renderer needs no mesh assets to display the robot.
+-->
+<robot name="fr3_primitives">
+
+  <link name="fr3_link0">
+    <visual>
+      <geometry><cylinder radius="0.06" length="0.05"/></geometry>
+      <origin xyz="0 0 0.025"/>
+    </visual>
+    <inertial>
+      <mass value="2.0"/>
+      <inertia ixx="0.01" ixy="0" ixz="0" iyy="0.01" iyz="0" izz="0.01"/>
+    </inertial>
+  </link>
+
+  <link name="fr3_link1">
+    <visual>
+      <geometry><cylinder radius="0.055" length="0.16"/></geometry>
+      <origin xyz="0 0 0.08"/>
+    </visual>
+    <inertial>
+      <mass value="2.3"/>
+      <inertia ixx="0.01" ixy="0" ixz="0" iyy="0.01" iyz="0" izz="0.005"/>
+    </inertial>
+  </link>
+
+  <link name="fr3_link2">
+    <visual>
+      <geometry><cylinder radius="0.05" length="0.18"/></geometry>
+      <origin xyz="0 0 0.09"/>
+    </visual>
+    <inertial>
+      <mass value="2.3"/>
+      <inertia ixx="0.01" ixy="0" ixz="0" iyy="0.01" iyz="0" izz="0.005"/>
+    </inertial>
+  </link>
+
+  <link name="fr3_link3">
+    <visual>
+      <geometry><cylinder radius="0.05" length="0.16"/></geometry>
+      <origin xyz="0 0 0.08"/>
+    </visual>
+    <inertial>
+      <mass value="2.0"/>
+      <inertia ixx="0.01" ixy="0" ixz="0" iyy="0.01" iyz="0" izz="0.005"/>
+    </inertial>
+  </link>
+
+  <link name="fr3_link4">
+    <visual>
+      <geometry><cylinder radius="0.05" length="0.16"/></geometry>
+      <origin xyz="0 0 0.08"/>
+    </visual>
+    <inertial>
+      <mass value="2.0"/>
+      <inertia ixx="0.008" ixy="0" ixz="0" iyy="0.008" iyz="0" izz="0.004"/>
+    </inertial>
+  </link>
+
+  <link name="fr3_link5">
+    <visual>
+      <geometry><cylinder radius="0.045" length="0.20"/></geometry>
+      <origin xyz="0 0 0.10"/>
+    </visual>
+    <inertial>
+      <mass value="1.5"/>
+      <inertia ixx="0.006" ixy="0" ixz="0" iyy="0.006" iyz="0" izz="0.003"/>
+    </inertial>
+  </link>
+
+  <link name="fr3_link6">
+    <visual>
+      <geometry><cylinder radius="0.045" length="0.08"/></geometry>
+      <origin xyz="0 0 0.04"/>
+    </visual>
+    <inertial>
+      <mass value="1.0"/>
+      <inertia ixx="0.003" ixy="0" ixz="0" iyy="0.003" iyz="0" izz="0.002"/>
+    </inertial>
+  </link>
+
+  <link name="fr3_link7">
+    <visual>
+      <geometry><cylinder radius="0.04" length="0.06"/></geometry>
+      <origin xyz="0 0 0.03"/>
+    </visual>
+    <inertial>
+      <mass value="0.5"/>
+      <inertia ixx="0.001" ixy="0" ixz="0" iyy="0.001" iyz="0" izz="0.001"/>
+    </inertial>
+  </link>
+
+  <link name="fr3_hand">
+    <visual>
+      <geometry><box size="0.10 0.04 0.06"/></geometry>
+      <origin xyz="0 0 0.03"/>
+    </visual>
+    <inertial>
+      <mass value="0.7"/>
+      <inertia ixx="0.001" ixy="0" ixz="0" iyy="0.0025" iyz="0" izz="0.0017"/>
+    </inertial>
+  </link>
+
+  <link name="fr3_leftfinger">
+    <visual>
+      <geometry><box size="0.02 0.015 0.05"/></geometry>
+      <origin xyz="0 0 0.025"/>
+    </visual>
+    <inertial>
+      <mass value="0.015"/>
+      <inertia ixx="2.4e-6" ixy="0" ixz="0" iyy="2.4e-6" iyz="0" izz="7.5e-7"/>
+    </inertial>
+  </link>
+
+  <link name="fr3_rightfinger">
+    <visual>
+      <geometry><box size="0.02 0.015 0.05"/></geometry>
+      <origin xyz="0 0 0.025"/>
+    </visual>
+    <inertial>
+      <mass value="0.015"/>
+      <inertia ixx="2.4e-6" ixy="0" ixz="0" iyy="2.4e-6" iyz="0" izz="7.5e-7"/>
+    </inertial>
+  </link>
+
+  <joint name="fr3_joint1" type="revolute">
+    <parent link="fr3_link0"/>
+    <child link="fr3_link1"/>
+    <origin xyz="0 0 0.05" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-2.7437" upper="2.7437" effort="87" velocity="2.62"/>
+  </joint>
+
+  <joint name="fr3_joint2" type="revolute">
+    <parent link="fr3_link1"/>
+    <child link="fr3_link2"/>
+    <origin xyz="0 0 0.16" rpy="-1.5708 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-1.7837" upper="1.7837" effort="87" velocity="2.62"/>
+  </joint>
+
+  <joint name="fr3_joint3" type="revolute">
+    <parent link="fr3_link2"/>
+    <child link="fr3_link3"/>
+    <origin xyz="0 -0.18 0" rpy="1.5708 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-2.9007" upper="2.9007" effort="87" velocity="2.62"/>
+  </joint>
+
+  <joint name="fr3_joint4" type="revolute">
+    <parent link="fr3_link3"/>
+    <child link="fr3_link4"/>
+    <origin xyz="0.0825 0 0.16" rpy="1.5708 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-3.0421" upper="-0.1518" effort="87" velocity="2.62"/>
+  </joint>
+
+  <joint name="fr3_joint5" type="revolute">
+    <parent link="fr3_link4"/>
+    <child link="fr3_link5"/>
+    <origin xyz="-0.0825 0.16 0" rpy="-1.5708 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-2.8065" upper="2.8065" effort="12" velocity="5.26"/>
+  </joint>
+
+  <joint name="fr3_joint6" type="revolute">
+    <parent link="fr3_link5"/>
+    <child link="fr3_link6"/>
+    <origin xyz="0 0 0.20" rpy="1.5708 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="0.5445" upper="4.5169" effort="12" velocity="4.18"/>
+  </joint>
+
+  <joint name="fr3_joint7" type="revolute">
+    <parent link="fr3_link6"/>
+    <child link="fr3_link7"/>
+    <origin xyz="0.088 0 0.08" rpy="1.5708 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-3.0159" upper="3.0159" effort="12" velocity="5.26"/>
+  </joint>
+
+  <joint name="fr3_hand_joint" type="fixed">
+    <parent link="fr3_link7"/>
+    <child link="fr3_hand"/>
+    <origin xyz="0 0 0.107" rpy="0 0 -0.7854"/>
+  </joint>
+
+  <joint name="fr3_finger_joint1" type="prismatic">
+    <parent link="fr3_hand"/>
+    <child link="fr3_leftfinger"/>
+    <origin xyz="0 0 0.0584"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="0.0" upper="0.04" effort="100" velocity="0.2"/>
+  </joint>
+
+  <joint name="fr3_finger_joint2" type="prismatic">
+    <parent link="fr3_hand"/>
+    <child link="fr3_rightfinger"/>
+    <origin xyz="0 0 0.0584" rpy="0 0 3.1416"/>
+    <axis xyz="0 1 0"/>
+    <mimic joint="fr3_finger_joint1" multiplier="1" offset="0"/>
+    <limit lower="0.0" upper="0.04" effort="100" velocity="0.2"/>
+  </joint>
+
+</robot>

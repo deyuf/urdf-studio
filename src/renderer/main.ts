@@ -29,6 +29,10 @@ import {
   isAdjacent as isAdjacentPure
 } from './logic/selfCollision';
 import { mountSourcePane, type SourcePane } from './logic/sourcePane';
+import { createLayoutController, type LayoutController } from './layout/fullscreen';
+import { runAllRules, RULE_REGISTRY, type LintReport } from '../core/lintRules';
+import { createLivePreview, type LivePreviewHandle } from '../editor/livePreview';
+import type { CompletionContextProvider } from '../editor/completion';
 import { html, setInnerHtml } from './html';
 import {
   exportBom as exportBomFeature,
@@ -108,6 +112,10 @@ let robotBoundsRadius = 0.5;
 let framesOverlay: FramesOverlay | undefined;
 let labelsOverlay: LabelsOverlay | undefined;
 let sourcePane: SourcePane | undefined;
+let _layoutController: LayoutController | undefined;
+let livePreview: LivePreviewHandle | undefined;
+let currentLintReport: LintReport | undefined;
+let _editorDirtyText: string | undefined;
 let labelsMode: LabelsMode = 'off';
 let measurement: Measurement | undefined;
 let inertia: InertiaVisualisation | undefined;
@@ -161,7 +169,7 @@ document.getElementById('app')!.innerHTML = `
       </select>
     </label>
   </div>
-  <div class="workspace">
+  <div class="workspace" id="workspace">
     <div class="viewport-wrap">
       <canvas id="viewport"></canvas>
       <div id="hud" class="hud">Waiting for robot...</div>
@@ -349,6 +357,15 @@ function bindChrome(): void {
     target.value = '';
   });
   qsa<HTMLButtonElement>('.tab').forEach(tab => tab.addEventListener('click', () => switchTab(tab.dataset.tab!)));
+
+  // Layout controller: F11 / Ctrl+Shift+F / Fullscreen button in source pane.
+  _layoutController = createLayoutController(qs('#workspace'), () => {
+    // Layout change can resize the viewport; force a Three.js resize.
+    requestAnimationFrame(() => {
+      resize();
+      dirty = true;
+    });
+  });
 }
 
 async function loadRobot(data: LoadRobotMessage, forceCollisionGeometry = false): Promise<void> {
@@ -752,26 +769,116 @@ function getPose(): Record<string, number> {
 
 function renderChecks(data: LoadRobotMessage): void {
   const panel = qs('#panel-checks');
-  const diagnostics = data.diagnostics;
-  if (diagnostics.length === 0) {
-    setInnerHtml(panel, html`<div class="muted">No diagnostics.</div>`);
+
+  // Run the rule engine on top of the analyzeUrdf diagnostics so the
+  // Checks panel always reflects the same data the editor's inline
+  // linter shows. Rules are pure and run on the renderer side — fast,
+  // no I/O.
+  // Combine host-supplied diagnostics (analyzeUrdf + custom hooks like
+  // package resolution, plus anything the extension layer added) with the
+  // rule engine output. Diagnostics whose code isn't rebadged by any rule
+  // (e.g., generic xacro warnings) still need to surface — we passthrough
+  // them under a synthetic "OTHER" group.
+  const combinedInputDiagnostics = [...data.metadata.diagnostics, ...data.diagnostics];
+  const report = runAllRules({
+    urdf: data.urdf,
+    sourcePath: data.sourcePath,
+    packages: {},
+    metadata: { ...data.metadata, diagnostics: combinedInputDiagnostics }
+  });
+  // Passthrough: diagnostics from analyzeUrdf that no rule rebadged.
+  const knownCodes = new Set(Object.keys(RULE_REGISTRY.reduce((acc, r) => { acc[r.code] = true; return acc; }, {} as Record<string, true>)));
+  const rebadgedSourceCodes = new Set([
+    'tree.cycle', 'joint.parentMissing', 'joint.childMissing',
+    'link.duplicate', 'joint.duplicate', 'joint.mimicMissing',
+    'inertial.notPositiveDefinite', 'inertial.massInvalid',
+    'joint.limitMissing', 'mesh.missing', 'mesh.packageMissing',
+    'mesh.packageMalformed', 'mesh.packageFallback'
+  ]);
+  const passthrough = combinedInputDiagnostics.filter(diag => {
+    if (!diag.code) return true;
+    if (knownCodes.has(diag.code)) return false;
+    if (rebadgedSourceCodes.has(diag.code)) return false;
+    return true;
+  });
+  if (passthrough.length > 0) {
+    report.byRule['OTHER'] = (report.byRule['OTHER'] ?? []).concat(passthrough);
+    report.diagnostics.push(...passthrough);
+    for (const diag of passthrough) {
+      report.counts[diag.severity] += 1;
+    }
+  }
+  currentLintReport = report;
+
+  // Push diagnostics into the editor's inline linter.
+  sourcePane?.refreshDiagnostics(report.diagnostics);
+
+  if (report.diagnostics.length === 0) {
+    setInnerHtml(panel, html`
+      <div class="checks-summary">
+        <span class="health-score health-good">100</span>
+        <div class="checks-counts"><span class="count-pill">No diagnostics</span></div>
+      </div>
+    `);
     return;
   }
-  setInnerHtml(panel, html`${diagnostics.map(diagnostic => {
-    const details = [
-      diagnostic.code,
-      diagnostic.target,
-      diagnostic.line ? `line ${diagnostic.line}` : ''
-    ].filter(Boolean).join(' | ');
-    return html`
-      <div class="diagnostic">
-        <div class="severity ${diagnostic.severity}">${diagnostic.severity}</div>
-        <div>
-          <div>${diagnostic.message}</div>
-          <div class="muted">${details}</div>
-        </div>
-      </div>`;
-  })}`);
+
+  const grouped = new Map<string, typeof report.diagnostics>();
+  for (const diag of report.diagnostics) {
+    const code = diag.code ?? 'unknown';
+    if (!grouped.has(code)) grouped.set(code, []);
+    grouped.get(code)!.push(diag);
+  }
+
+  const healthClass = report.healthScore >= 90 ? 'health-good'
+    : report.healthScore >= 70 ? 'health-warn'
+    : 'health-poor';
+
+  const groupHtml = Array.from(grouped.entries())
+    .sort((a, b) => severityRank(b[1][0].severity) - severityRank(a[1][0].severity))
+    .map(([code, diagnostics]) => {
+      const description = RULE_REGISTRY.find(rule => rule.code === code)?.description ?? code;
+      return html`
+        <div class="checks-group">
+          <div class="checks-group-header">
+            <span>${code} · ${description}</span>
+            <span class="muted">${diagnostics.length}</span>
+          </div>
+          <ul class="checks-group-list">
+            ${diagnostics.map(diag => html`
+              <li class="checks-group-item severity-${diag.severity}" data-line="${diag.line ?? ''}">
+                ${diag.message}
+                ${diag.line ? html`<span class="check-line">line ${diag.line}</span>` : ''}
+              </li>`)}
+          </ul>
+        </div>`;
+    });
+
+  setInnerHtml(panel, html`
+    <div class="checks-summary">
+      <span class="health-score ${healthClass}" title="Health score (0-100)">${report.healthScore.toFixed(0)}</span>
+      <div class="checks-counts">
+        ${report.counts.error > 0 ? html`<span class="count-pill">${report.counts.error} error</span>` : ''}
+        ${report.counts.warning > 0 ? html`<span class="count-pill">${report.counts.warning} warning</span>` : ''}
+        ${report.counts.info > 0 ? html`<span class="count-pill">${report.counts.info} info</span>` : ''}
+      </div>
+    </div>
+    ${groupHtml}
+  `);
+
+  // Wire clicks: jump editor to the offending line.
+  panel.querySelectorAll<HTMLLIElement>('.checks-group-item[data-line]').forEach(item => {
+    item.addEventListener('click', () => {
+      const line = Number(item.dataset.line);
+      if (!Number.isFinite(line) || line <= 0) return;
+      sourcePane?.setActiveLine(line);
+      switchTab('source');
+    });
+  });
+}
+
+function severityRank(severity: 'error' | 'warning' | 'info'): number {
+  return severity === 'error' ? 3 : severity === 'warning' ? 2 : 1;
 }
 
 function renderLinks(tree: LinkTreeNode[]): void {
@@ -1313,6 +1420,79 @@ function computeRobotBoundsRadius(): void {
 // Reachability + collision-pair wizard (Tools tab)
 // =============================================================================
 
+// =============================================================================
+// Viewport screenshot (Tools panel)
+// =============================================================================
+
+function captureViewportPng(scale: number): string {
+  // Force a synchronous render so the captured frame reflects the
+  // current camera / pose. Then upscale by drawing into an offscreen
+  // canvas at the requested multiplier — Three.js by default renders
+  // at devicePixelRatio*viewport; the scale multiplier multiplies on top.
+  renderNow();
+  if (!Number.isFinite(scale) || scale <= 0) scale = 1;
+  const source = renderer.domElement;
+  if (scale === 1) {
+    return source.toDataURL('image/png');
+  }
+  const target = document.createElement('canvas');
+  target.width = Math.max(1, Math.round(source.width * scale));
+  target.height = Math.max(1, Math.round(source.height * scale));
+  const ctx = target.getContext('2d');
+  if (!ctx) return source.toDataURL('image/png');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(source, 0, 0, target.width, target.height);
+  return target.toDataURL('image/png');
+}
+
+function defaultScreenshotFileName(): string {
+  const robotName = currentData?.metadata.robotName?.replace(/[^A-Za-z0-9_-]+/g, '_') || 'robot';
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  return `${robotName}_${stamp}.png`;
+}
+
+function setScreenshotStatus(text: string, isError = false): void {
+  const status = document.querySelector<HTMLDivElement>('#screenshot-status');
+  if (!status) return;
+  status.textContent = text;
+  status.classList.toggle('error', isError);
+}
+
+function downloadViewportScreenshot(): void {
+  try {
+    const scale = Number((document.querySelector<HTMLSelectElement>('#screenshot-scale')?.value) ?? '2');
+    const dataUrl = captureViewportPng(scale);
+    const link = document.createElement('a');
+    link.href = dataUrl;
+    link.download = defaultScreenshotFileName();
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setScreenshotStatus(`Saved ${link.download}`);
+  } catch (error) {
+    setScreenshotStatus(`Screenshot failed: ${(error as Error).message}`, true);
+  }
+}
+
+async function copyViewportScreenshot(): Promise<void> {
+  try {
+    const scale = Number((document.querySelector<HTMLSelectElement>('#screenshot-scale')?.value) ?? '2');
+    const dataUrl = captureViewportPng(scale);
+    // Convert data URL -> Blob for clipboard.
+    const blob = await (await fetch(dataUrl)).blob();
+    const clipboard = (navigator as Navigator & { clipboard?: { write?: (items: ClipboardItem[]) => Promise<void> } }).clipboard;
+    if (!clipboard?.write) {
+      setScreenshotStatus('Clipboard API not available in this browser.', true);
+      return;
+    }
+    await clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+    setScreenshotStatus('Copied to clipboard.');
+  } catch (error) {
+    setScreenshotStatus(`Copy failed: ${(error as Error).message}`, true);
+  }
+}
+
 function renderToolsPanel(): void {
   const panel = qs('#panel-tools');
   const tipLinks = currentData
@@ -1344,6 +1524,22 @@ function renderToolsPanel(): void {
       <div class="muted" id="srdf-status">Run analysis to find never-colliding pairs.</div>
       <ul id="srdf-results" class="srdf-results"></ul>
     </div>
+    <h3>Screenshot</h3>
+    <div class="tool-block">
+      <div class="row-buttons">
+        <button id="screenshot-download" class="primary" title="Save the current 3D view as a PNG">Save PNG</button>
+        <button id="screenshot-copy" title="Copy the current 3D view to the clipboard">Copy to clipboard</button>
+        <label title="Higher = sharper, larger file"><span class="muted">Scale</span>
+          <select id="screenshot-scale">
+            <option value="1">1×</option>
+            <option value="2" selected>2×</option>
+            <option value="3">3×</option>
+            <option value="4">4×</option>
+          </select>
+        </label>
+      </div>
+      <div class="muted" id="screenshot-status">PNG of the current 3D viewport, no UI chrome.</div>
+    </div>
     <h3>Export</h3>
     <div class="tool-block">
       <div class="row-buttons">
@@ -1361,6 +1557,8 @@ function renderToolsPanel(): void {
   qs('#srdf-write').addEventListener('click', () => writeCollisionPairs());
   qs('#export-bom').addEventListener('click', () => exportBom());
   qs('#export-report').addEventListener('click', () => void exportPdfReport());
+  qs('#screenshot-download').addEventListener('click', () => downloadViewportScreenshot());
+  qs('#screenshot-copy').addEventListener('click', () => void copyViewportScreenshot());
   refreshMeasureUi();
 }
 
@@ -1370,11 +1568,62 @@ function renderToolsPanel(): void {
 
 function renderSource(data: LoadRobotMessage): void {
   const panel = qs('#panel-source');
+
+  // Fast-path: if the new URDF matches what the editor is already
+  // showing (a live-preview round-trip echoing the user's own edit
+  // back), keep the editor mounted and just refresh diagnostics so
+  // typing focus is preserved.
+  if (sourcePane && sourcePane.getText() === data.urdf) {
+    sourcePane.refreshDiagnostics(currentLintReport?.diagnostics ?? data.diagnostics);
+    return;
+  }
+
   sourcePane?.dispose();
+
+  const completionProvider: CompletionContextProvider = {
+    linkNames: () => Object.keys(currentData?.metadata.links ?? {}),
+    jointNames: () => Object.keys(currentData?.metadata.joints ?? {}),
+    movableJointNames: () => currentData?.metadata.movableJointNames ?? [],
+    packageNames: () => Object.keys(currentData?.packageMap ?? {})
+  };
+
+  // Initialize live-preview pipeline. Edits push through here; debounce
+  // is auto-bumped for large models so editing stays smooth.
+  if (!livePreview) {
+    livePreview = createLivePreview({
+      debounceMs: 160,
+      maxDebounceMs: 800,
+      apply: text => {
+        if (!currentData) return;
+        _editorDirtyText = undefined;
+        // Hand the new text to the host. The host re-runs analyze /
+        // xacro expansion and dispatches a fresh loadRobot. Sending a
+        // light-weight 'previewEdit' message keeps the protocol distinct
+        // from "real" file changes.
+        vscode.postMessage({ type: 'previewEdit', text });
+      }
+    });
+  }
+
   sourcePane = mountSourcePane(panel, {
     fileName: data.fileName,
     format: data.format,
-    urdf: data.urdf
+    urdf: data.urdf,
+    editable: false,
+    diagnostics: currentLintReport?.diagnostics ?? data.diagnostics,
+    completionProvider,
+    onChange: text => {
+      _editorDirtyText = text;
+      livePreview?.notify(text);
+    },
+    onSave: text => {
+      _editorDirtyText = undefined;
+      vscode.postMessage({ type: 'requestSaveSource', text });
+    },
+    onLineClick: line => {
+      // Best-effort: open the line in the host editor for VS Code users.
+      vscode.postMessage({ type: 'requestRevealRange', line });
+    }
   });
 }
 

@@ -1,227 +1,187 @@
-// Source-pane rendering, extracted so we can:
-//   1) replace the legacy `innerHTML +=` string assembly with safe DOM
-//      construction (no XSS risk from URDF text), and
-//   2) virtualise huge files (5000+ lines after xacro expansion) so we
-//      don't blow ~50 ms parsing markup or pin ~25 MB to the DOM tree.
+// Source-pane: CodeMirror 6 powered editor for URDF / xacro files.
 //
-// The module owns its own root inside the panel `<section>`; the renderer
-// just calls mountSourcePane on every load and setActiveLine when a link
-// is selected.
+// Maintains the legacy interface (mountSourcePane / setActiveLine /
+// mountedLineCount / activeLine / dispose) so callers don't need to
+// change. Adds new optional callbacks (onChange, onSave) the renderer
+// uses when the user enables editing.
+
+import { mountUrdfEditor, type UrdfEditorHandle } from '../../editor';
+import type { CompletionContextProvider } from '../../editor/completion';
+import type { LinterContext } from '../../editor/lintAdapter';
+import type { StudioDiagnostic } from '../../core/types';
 
 export interface SourcePaneInput {
   fileName: string;
   format: 'urdf' | 'xacro';
   urdf: string;
+  /** When true, the editor accepts text edits. */
+  editable?: boolean;
+  /** Diagnostics from the most recent analysis. */
+  diagnostics?: StudioDiagnostic[];
+  /** Source of completions (link/joint names etc). */
+  completionProvider?: CompletionContextProvider;
+  /** Called (debounced by the host) on each document change. */
+  onChange?: (text: string) => void;
+  /** Called when the user presses Ctrl/Cmd+S. */
+  onSave?: (text: string) => void;
+  /** Called when the user clicks a gutter line number. */
+  onLineClick?: (line: number) => void;
 }
 
 export interface SourcePane {
   setActiveLine(line: number | undefined): void;
-  /** For tests + diagnostics: how many DOM line elements are currently mounted. */
+  /** For tests + diagnostics: how many lines the editor currently holds. */
   mountedLineCount(): number;
-  /** For tests: which line is currently highlighted (1-based) or undefined. */
+  /** For tests: which line is currently highlighted (1-based). */
   activeLine(): number | undefined;
+  /** Refresh diagnostics displayed inline. */
+  refreshDiagnostics(diagnostics: StudioDiagnostic[]): void;
+  /** Get current document text. */
+  getText(): string;
+  /** Toggle read-only mode. */
+  setEditable(editable: boolean): void;
+  /** Underlying editor handle (test escape hatch). */
+  editor: UrdfEditorHandle;
   dispose(): void;
 }
 
-// Threshold above which we virtualise. Smaller documents render every line
-// upfront — the DOM cost is negligible and we avoid any scroll-driven layout
-// thrash. Tunable; kept conservative so behaviour-equivalence with the
-// legacy renderer is preserved for typical robots.
+// Kept exported for backwards-compat with the older virtualisation tests —
+// CodeMirror 6 handles virtualisation internally so we no longer act on
+// this value, but other code may import it.
 export const VIRTUALIZE_THRESHOLD_LINES = 2000;
 
-// How many extra lines to render above and below the visible window when
-// virtualising. Big enough to absorb wheel-scroll bursts without flashes.
-const OVERSCAN_LINES = 80;
-
-interface SourcePaneInternals {
-  meta: HTMLDivElement;
-  pre: HTMLPreElement;
-  code: HTMLElement;
-  spacer?: HTMLDivElement;        // virtualised mode: holds total height
-  rowsLayer?: HTMLDivElement;     // virtualised mode: absolutely positioned rows
-  lineHeight: number;
-}
+const EMPTY_PROVIDER: CompletionContextProvider = {
+  linkNames: () => [],
+  jointNames: () => [],
+  movableJointNames: () => [],
+  packageNames: () => []
+};
 
 export function mountSourcePane(host: HTMLElement, input: SourcePaneInput): SourcePane {
   while (host.firstChild) {
     host.removeChild(host.firstChild);
   }
 
-  const lines = input.urdf.split('\n');
-  const numWidth = String(lines.length).length;
-
+  // Top toolbar (filename + edit toggle + fullscreen).
+  const toolbar = document.createElement('div');
+  toolbar.className = 'source-toolbar';
   const meta = document.createElement('div');
-  meta.className = 'source-meta muted';
-  meta.textContent = `${input.fileName} · ${lines.length} lines${input.format === 'xacro' ? ' (expanded xacro)' : ''}`;
-  host.appendChild(meta);
+  meta.className = 'source-meta';
+  const lineCount = input.urdf.split('\n').length;
+  meta.textContent = `${input.fileName} · ${lineCount} lines${input.format === 'xacro' ? ' (expanded xacro)' : ''}`;
+  toolbar.appendChild(meta);
 
-  const pre = document.createElement('pre');
-  pre.className = 'source-view';
-  const code = document.createElement('code');
-  pre.appendChild(code);
-  host.appendChild(pre);
+  const editToggle = document.createElement('button');
+  editToggle.type = 'button';
+  editToggle.className = 'source-edit-toggle';
+  // Toggle button: the label stays "Edit"; the on/off state is conveyed
+  // by the .active class (background fill) and the title attribute.
+  // Earlier "Edit: off" / "Edit: on" duplicated the state across both
+  // the text and the background, and made the off-state look like a
+  // hovered button to first-time users.
+  editToggle.textContent = 'Edit';
+  editToggle.setAttribute('aria-pressed', String(!!input.editable));
+  editToggle.title = input.editable ? 'Editing enabled — click to disable' : 'Editing disabled — click to enable';
+  if (input.editable) editToggle.classList.add('active');
+  toolbar.appendChild(editToggle);
+
+  const fullscreenButton = document.createElement('button');
+  fullscreenButton.type = 'button';
+  fullscreenButton.className = 'source-fullscreen-toggle';
+  fullscreenButton.textContent = 'Fullscreen';
+  fullscreenButton.title = 'Toggle source fullscreen (F11)';
+  toolbar.appendChild(fullscreenButton);
+
+  host.appendChild(toolbar);
+
+  // Editor host.
+  const editorHost = document.createElement('div');
+  editorHost.className = 'editor-host';
+  host.appendChild(editorHost);
+
+  // Status bar.
+  const status = document.createElement('div');
+  status.className = 'editor-status';
+  host.appendChild(status);
 
   let activeLine: number | undefined;
-  const internals: SourcePaneInternals = { meta, pre, code, lineHeight: 18 };
+  let currentDiagnostics: StudioDiagnostic[] = input.diagnostics ?? [];
 
-  if (lines.length <= VIRTUALIZE_THRESHOLD_LINES) {
-    // Eager mode: drop every line into a fragment in one shot. Cheaper than
-    // the legacy innerHTML concatenation because we never serialise then
-    // re-parse the markup.
-    const frag = document.createDocumentFragment();
-    for (let i = 0; i < lines.length; i++) {
-      frag.appendChild(buildLineNode(lines[i], i + 1, numWidth));
-    }
-    code.appendChild(frag);
-
-    return {
-      setActiveLine(line) {
-        activeLine = applyActiveLine(code, line);
-      },
-      mountedLineCount: () => code.childElementCount,
-      activeLine: () => activeLine,
-      dispose() { /* GCed with host */ }
-    };
-  }
-
-  // Virtualised mode. Layout:
-  //   <pre class="source-view">
-  //     <code style="position:relative; height: TOTAL">
-  //       <div class="source-rows" style="position:absolute; top:0; left:0; right:0">
-  //         (only visible lines + overscan)
-  //       </div>
-  //     </code>
-  //   </pre>
-  // The <pre> is the scroll container (CSS already sets overflow: auto).
-  const rowsLayer = document.createElement('div');
-  rowsLayer.className = 'source-rows';
-  rowsLayer.style.position = 'absolute';
-  rowsLayer.style.top = '0';
-  rowsLayer.style.left = '0';
-  rowsLayer.style.right = '0';
-
-  code.style.position = 'relative';
-  code.style.display = 'block';
-  code.style.minHeight = '0';
-
-  // Use the gutter+text of a probe line to determine the actual rendered
-  // line height. Falls back to 18px if the probe can't be measured (e.g.
-  // panel hidden when first mounted).
-  const probe = buildLineNode(lines[0] ?? '', 1, numWidth);
-  code.appendChild(probe);
-  const probeRect = probe.getBoundingClientRect();
-  if (probeRect.height > 0) {
-    internals.lineHeight = probeRect.height;
-  }
-  code.removeChild(probe);
-
-  const spacer = document.createElement('div');
-  spacer.setAttribute('aria-hidden', 'true');
-  spacer.style.height = `${lines.length * internals.lineHeight}px`;
-  spacer.style.width = '1px';
-  code.appendChild(spacer);
-  code.appendChild(rowsLayer);
-
-  internals.spacer = spacer;
-  internals.rowsLayer = rowsLayer;
-
-  let mountedRange: [number, number] = [-1, -1];
-
-  const renderWindow = (): void => {
-    const viewportTop = pre.scrollTop;
-    const viewportHeight = pre.clientHeight || 600;
-    const first = Math.max(0, Math.floor(viewportTop / internals.lineHeight) - OVERSCAN_LINES);
-    const visibleCount = Math.ceil(viewportHeight / internals.lineHeight);
-    const last = Math.min(lines.length, first + visibleCount + OVERSCAN_LINES * 2);
-    if (mountedRange[0] === first && mountedRange[1] === last) {
-      return;
-    }
-    mountedRange = [first, last];
-
-    while (rowsLayer.firstChild) {
-      rowsLayer.removeChild(rowsLayer.firstChild);
-    }
-    rowsLayer.style.transform = `translateY(${first * internals.lineHeight}px)`;
-    const frag = document.createDocumentFragment();
-    for (let i = first; i < last; i++) {
-      frag.appendChild(buildLineNode(lines[i], i + 1, numWidth));
-    }
-    rowsLayer.appendChild(frag);
-    if (activeLine !== undefined) {
-      applyActiveLine(rowsLayer, activeLine);
-    }
+  const linterContext: LinterContext = {
+    getDiagnostics: () => currentDiagnostics
   };
 
-  let scheduled = false;
-  const onScroll = (): void => {
-    if (scheduled) {
-      return;
-    }
-    scheduled = true;
-    requestAnimationFrame(() => {
-      scheduled = false;
-      renderWindow();
-    });
-  };
+  const editor = mountUrdfEditor(editorHost, {
+    text: input.urdf,
+    readOnly: !input.editable,
+    format: input.format,
+    completionProvider: input.completionProvider ?? EMPTY_PROVIDER,
+    linterContext,
+    onChange: input.onChange,
+    onSave: input.onSave,
+    onLineClick: input.onLineClick
+  });
 
-  pre.addEventListener('scroll', onScroll, { passive: true });
-  renderWindow();
+  // Track edit toggle.
+  editToggle.addEventListener('click', () => {
+    const enabling = !editToggle.classList.contains('active');
+    editToggle.classList.toggle('active', enabling);
+    editToggle.setAttribute('aria-pressed', String(enabling));
+    editToggle.title = enabling ? 'Editing enabled — click to disable' : 'Editing disabled — click to enable';
+    editor.setReadOnly(!enabling);
+  });
+
+  fullscreenButton.addEventListener('click', () => {
+    const event = new CustomEvent('urdf-studio:request-fullscreen-toggle', { bubbles: true });
+    host.dispatchEvent(event);
+  });
+
+  function renderStatus(diagnostics: StudioDiagnostic[]): void {
+    const errors = diagnostics.filter(d => d.severity === 'error').length;
+    const warnings = diagnostics.filter(d => d.severity === 'warning').length;
+    const lines = editor.lineCount();
+    status.innerHTML = '';
+    const linesEl = document.createElement('span');
+    linesEl.textContent = `${lines} lines`;
+    status.appendChild(linesEl);
+    if (errors > 0) {
+      const errEl = document.createElement('span');
+      errEl.className = 'status-error';
+      errEl.textContent = `${errors} error${errors === 1 ? '' : 's'}`;
+      status.appendChild(errEl);
+    }
+    if (warnings > 0) {
+      const warnEl = document.createElement('span');
+      warnEl.className = 'status-dirty';
+      warnEl.textContent = `${warnings} warning${warnings === 1 ? '' : 's'}`;
+      status.appendChild(warnEl);
+    }
+  }
+
+  renderStatus(currentDiagnostics);
 
   return {
     setActiveLine(line) {
       activeLine = line;
-      if (line === undefined) {
-        applyActiveLine(rowsLayer, undefined);
-        return;
-      }
-      // Bring the line into the window even if it's currently virtualised.
-      const desiredTop = Math.max(0, (line - 1) * internals.lineHeight - pre.clientHeight / 2);
-      pre.scrollTop = desiredTop;
-      renderWindow();
-      const node = rowsLayer.querySelector<HTMLDivElement>(`[data-source-line="${line}"]`);
-      if (node) {
-        applyActiveLine(rowsLayer, line);
-        node.scrollIntoView({ block: 'center', behavior: 'smooth' });
-      }
+      editor.setActiveLine(line);
     },
-    mountedLineCount: () => rowsLayer.childElementCount,
+    mountedLineCount: () => editor.lineCount(),
     activeLine: () => activeLine,
+    refreshDiagnostics(diagnostics) {
+      currentDiagnostics = diagnostics;
+      editor.refreshLint();
+      renderStatus(diagnostics);
+    },
+    getText: () => editor.getText(),
+    setEditable(editable) {
+      editToggle.classList.toggle('active', editable);
+      editToggle.setAttribute('aria-pressed', String(editable));
+      editToggle.title = editable ? 'Editing enabled — click to disable' : 'Editing disabled — click to enable';
+      editor.setReadOnly(!editable);
+    },
+    editor,
     dispose() {
-      pre.removeEventListener('scroll', onScroll);
+      editor.dispose();
     }
   };
-}
-
-// Build a single line element. Returns a fresh detached node — the caller
-// chooses whether to append to a fragment or a live tree.
-function buildLineNode(text: string, lineNo: number, numWidth: number): HTMLDivElement {
-  const row = document.createElement('div');
-  row.className = 'source-line';
-  row.dataset.sourceLine = String(lineNo);
-
-  const gutter = document.createElement('span');
-  gutter.className = 'source-gutter';
-  gutter.textContent = String(lineNo).padStart(numWidth, ' ');
-  row.appendChild(gutter);
-
-  const body = document.createElement('span');
-  body.className = 'source-text';
-  // Empty lines need a non-breaking space placeholder so the row still has
-  // visible height — matches the legacy `escapeHtml(line) || ' '` fallback.
-  body.textContent = text.length > 0 ? text : ' ';
-  row.appendChild(body);
-
-  return row;
-}
-
-function applyActiveLine(scope: ParentNode, line: number | undefined): number | undefined {
-  scope.querySelectorAll('.source-line.active').forEach(el => el.classList.remove('active'));
-  if (!line) {
-    return undefined;
-  }
-  const target = scope.querySelector<HTMLElement>(`[data-source-line="${line}"]`);
-  if (target) {
-    target.classList.add('active');
-  }
-  return line;
 }
