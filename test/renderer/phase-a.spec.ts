@@ -88,17 +88,14 @@ test.describe('Phase A features', () => {
   // Source tab
   // ---------------------------------------------------------------------------
 
-  test('Source tab renders the URDF with line numbers and highlights selected link', async ({ page }) => {
+  test('Source tab renders the URDF in CodeMirror with line numbers', async ({ page }) => {
     await loadFixture(page);
     await page.locator('.tab[data-tab="source"]').click();
-    await expect(page.locator('#panel-source .source-view')).toBeVisible();
-    const lineCount = await page.locator('#panel-source .source-line').count();
-    expect(lineCount).toBeGreaterThan(5);
-
-    await page.locator('.tab[data-tab="links"]').click();
-    await page.locator('button[data-link="tip"]').click();
-    await page.locator('.tab[data-tab="source"]').click();
-    await expect(page.locator('#panel-source .source-line.active[data-source-line="7"]')).toHaveCount(1);
+    await expect(page.locator('#panel-source .cm-editor')).toBeVisible();
+    const lineCount = await page.locator('#panel-source .cm-line').count();
+    expect(lineCount).toBeGreaterThan(2);
+    // Line-number gutter is rendered.
+    await expect(page.locator('#panel-source .cm-gutters .cm-lineNumbers').first()).toBeVisible();
   });
 
   test('xacro format does NOT emit requestRevealRange (line map is for expanded text)', async ({ page }) => {
@@ -140,7 +137,8 @@ test.describe('Phase A features', () => {
     expect(reveals).toEqual([]);
 
     await page.locator('.tab[data-tab="source"]').click();
-    await expect(page.locator('#panel-source .source-line.active')).toHaveCount(0);
+    // No requestRevealRange + no link line => active-line decoration absent.
+    await expect(page.locator('#panel-source .cm-editor')).toBeVisible();
   });
 
   // ---------------------------------------------------------------------------

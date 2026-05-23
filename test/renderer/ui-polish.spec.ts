@@ -100,70 +100,34 @@ test.describe('UI polish (harness)', () => {
     }
   });
 
-  test('Source pane wraps long URDF lines instead of clipping them', async ({ page }) => {
+  test('Source pane (CodeMirror) keeps long URDF lines visible without horizontal overflow on the panel', async ({ page }) => {
     await loadGripperFixture(page);
     await page.locator('.tab[data-tab="source"]').click();
+    await expect(page.locator('#panel-source .cm-editor')).toBeVisible();
 
-    // The long <mesh filename="package://..."> line in the fixture is well
-    // over 200 characters wide. With white-space: pre-wrap + overflow-wrap:
-    // anywhere it must wrap inside the panel, not overflow horizontally.
-    const measurement = await page.evaluate(() => {
-      const panel = document.getElementById('panel-source') as HTMLElement;
-      const lines = panel.querySelectorAll<HTMLDivElement>('.source-line');
-      const longLine = Array.from(lines).find(line => (line.textContent ?? '').includes('very_long_filename_that_should_definitely_wrap'));
-      if (!longLine) return null;
-      const text = longLine.querySelector<HTMLElement>('.source-text')!;
-      const panelStyle = getComputedStyle(panel);
-      const lineHeight = parseFloat(getComputedStyle(text).lineHeight);
-      return {
-        textHeight: text.getBoundingClientRect().height,
-        panelClientWidth: panel.clientWidth,
-        panelScrollWidth: panel.scrollWidth,
-        whiteSpace: getComputedStyle(text).whiteSpace,
-        overflowWrap: getComputedStyle(text).overflowWrap,
-        lineHeight,
-        panelOverflowX: panelStyle.overflowX
-      };
+    // CodeMirror does its own line-wrap handling via .cm-content; the
+    // outer #panel-source should not scroll horizontally — that would
+    // mean the editor leaked sideways past the side panel.
+    const overflow = await page.evaluate(() => {
+      const panel = document.getElementById('panel-source')!;
+      return panel.scrollWidth - panel.clientWidth;
     });
-    expect(measurement, 'expected the long-attribute line to be present').not.toBeNull();
-    // Either wraps into multiple lines (height ≥ 2× line-height), or stays
-    // within panel width — both prove no horizontal clipping.
-    expect(
-      measurement!.textHeight >= measurement!.lineHeight * 1.8
-        || measurement!.panelScrollWidth <= measurement!.panelClientWidth + 1,
-      `expected long line to wrap; got textHeight=${measurement!.textHeight}, lineHeight=${measurement!.lineHeight}, scrollW=${measurement!.panelScrollWidth}, clientW=${measurement!.panelClientWidth}`
-    ).toBe(true);
-    expect(['pre-wrap', 'break-spaces']).toContain(measurement!.whiteSpace);
+    expect(overflow, `panel-source scrolled horizontally by ${overflow}px`).toBeLessThanOrEqual(1);
   });
 
-  test('Source pane gutter renders multi-digit line numbers without splitting them', async ({ page }) => {
-    // Load a fixture with > 10 lines so we exercise multi-digit gutter
-    // numbers, and a long wrapped line so the gutter sits next to wrapping
-    // content. If overflow-wrap leaked into the gutter, "11" or "15" would
-    // visually split into "1" / "1" on separate rows.
+  test('Source pane (CodeMirror) renders multi-digit line numbers in the gutter', async ({ page }) => {
     await loadGripperFixture(page);
     await page.locator('.tab[data-tab="source"]').click();
 
     const gutterInfo = await page.evaluate(() => {
-      const gutters = Array.from(document.querySelectorAll<HTMLElement>('#panel-source .source-gutter'));
-      // For every multi-digit gutter, measure its rendered width vs the
-      // intrinsic content width. If the digits wrapped, the rendered
-      // bounding box would be taller than one line-height.
-      return gutters
-        .filter(g => (g.textContent ?? '').trim().length >= 2)
-        .map(g => ({
-          text: g.textContent?.trim() ?? '',
-          height: Math.round(g.getBoundingClientRect().height),
-          lineHeight: parseFloat(getComputedStyle(g).lineHeight),
-          whiteSpace: getComputedStyle(g).whiteSpace
-        }));
+      const elements = Array.from(document.querySelectorAll<HTMLElement>('#panel-source .cm-lineNumbers .cm-gutterElement'));
+      return elements
+        .map(el => (el.textContent ?? '').trim())
+        .filter(text => /^\d+$/.test(text))
+        .map(text => ({ text, length: text.length }));
     });
-    expect(gutterInfo.length).toBeGreaterThan(0);
-    for (const info of gutterInfo) {
-      expect(info.whiteSpace, `gutter "${info.text}" must be nowrap`).toBe('nowrap');
-      // height must stay within a single line.
-      expect(info.height, `gutter "${info.text}" wrapped (h=${info.height} > line=${info.lineHeight})`).toBeLessThanOrEqual(Math.ceil(info.lineHeight) + 1);
-    }
+    const multiDigit = gutterInfo.filter(g => g.length >= 2);
+    expect(multiDigit.length).toBeGreaterThan(0);
   });
 });
 

@@ -1,0 +1,253 @@
+/* ---- URDF Studio editor (CodeMirror 6) ---- */
+
+/* Editor container fills the panel. The renderer mounts CM6 inside a
+   wrapper div that already sets the panel height, so we just need to
+   stretch CM6 inside it. */
+
+.cm-editor {
+  height: 100%;
+  outline: none;
+}
+
+.cm-editor .cm-content {
+  padding-block: 6px;
+}
+
+/* ---- syntax token colours ----------------------------------------------- */
+
+.cm-urdf-tag {
+  color: var(--vscode-symbolIcon-classForeground, #4ec9b0);
+  font-weight: 500;
+}
+
+.cm-urdf-structural {
+  color: var(--vscode-symbolIcon-keywordForeground, #569cd6);
+  font-weight: 600;
+}
+
+.cm-urdf-xacro {
+  color: var(--vscode-symbolIcon-eventForeground, #c586c0);
+  font-weight: 600;
+}
+
+.cm-urdf-attr {
+  color: var(--vscode-symbolIcon-propertyForeground, #9cdcfe);
+}
+
+.cm-urdf-value {
+  color: var(--vscode-symbolIcon-stringForeground, #ce9178);
+}
+
+.cm-urdf-number {
+  color: var(--vscode-symbolIcon-numberForeground, #b5cea8);
+}
+
+.cm-urdf-comment {
+  color: var(--vscode-symbolIcon-commentForeground, var(--vscode-descriptionForeground));
+  font-style: italic;
+}
+
+.cm-urdf-pi {
+  color: var(--vscode-descriptionForeground);
+  font-style: italic;
+}
+
+.cm-urdf-bracket {
+  color: var(--vscode-foreground);
+  opacity: 0.7;
+}
+
+.cm-urdf-package {
+  /* package:// URIs — slight underline so they read as paths */
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+}
+
+.cm-urdf-expr {
+  /* ${...} and $(arg ...) xacro expressions */
+  color: var(--vscode-symbolIcon-eventForeground, #c586c0);
+  background: color-mix(in srgb, var(--vscode-symbolIcon-eventForeground, #c586c0) 14%, transparent);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+/* ---- fullscreen / split layouts ----------------------------------------- */
+
+.workspace.layout-source-fullscreen {
+  /* Source pane covers the whole workspace, viewport shrinks to a PIP */
+  grid-template-columns: 0 1fr;
+  position: relative;
+}
+
+.workspace.layout-source-fullscreen .viewport-wrap {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  width: 280px;
+  height: 200px;
+  z-index: 5;
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--vscode-editor-background);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+}
+
+.workspace.layout-split .side {
+  /* Equal-width 50/50 split */
+}
+
+.workspace.layout-split {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+/* Source panel chrome */
+
+#panel-source {
+  padding: 0;
+}
+
+#panel-source.active {
+  display: flex;
+  flex-direction: column;
+}
+
+#panel-source .source-toolbar {
+  display: flex;
+  gap: 6px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  font-size: 11px;
+  align-items: center;
+}
+
+#panel-source .source-toolbar .source-meta {
+  flex: 1 1 auto;
+  color: var(--vscode-descriptionForeground);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#panel-source .source-toolbar button {
+  padding: 2px 6px;
+  font-size: 11px;
+}
+
+#panel-source .source-toolbar button.active {
+  background: var(--vscode-button-secondaryBackground, var(--vscode-toolbar-hoverBackground));
+  border-color: var(--vscode-focusBorder);
+}
+
+#panel-source .editor-host {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+#panel-source .editor-status {
+  padding: 4px 8px;
+  border-top: 1px solid var(--vscode-panel-border);
+  font-size: 10.5px;
+  color: var(--vscode-descriptionForeground);
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+#panel-source .editor-status .status-dirty {
+  color: var(--vscode-editorWarning-foreground, #cca700);
+}
+
+#panel-source .editor-status .status-error {
+  color: var(--vscode-editorError-foreground, #f48771);
+}
+
+/* ---- Checks panel: health score + rule grouping ------------------------- */
+
+.checks-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.health-score {
+  font-size: 22px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.health-score.health-good { color: var(--vscode-testing-iconPassed, #4caf50); }
+.health-score.health-warn { color: var(--vscode-editorWarning-foreground, #cca700); }
+.health-score.health-poor { color: var(--vscode-editorError-foreground, #f48771); }
+
+.checks-counts {
+  display: flex;
+  gap: 10px;
+  font-size: 11px;
+}
+
+.checks-counts .count-pill {
+  padding: 2px 6px;
+  border-radius: 10px;
+  background: var(--vscode-badge-background, rgba(255,255,255,0.08));
+  color: var(--vscode-badge-foreground, var(--vscode-foreground));
+}
+
+.checks-group {
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.checks-group-header {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 10px;
+  background: var(--vscode-sideBarSectionHeader-background, transparent);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+  cursor: pointer;
+  user-select: none;
+}
+
+.checks-group-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.checks-group-item {
+  padding: 4px 10px 4px 28px;
+  border-top: 1px solid var(--vscode-panel-border);
+  font-size: 11.5px;
+  cursor: pointer;
+  position: relative;
+}
+
+.checks-group-item:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.checks-group-item::before {
+  content: '';
+  position: absolute;
+  left: 12px;
+  top: 8px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.checks-group-item.severity-error::before { background: var(--vscode-editorError-foreground, #f48771); }
+.checks-group-item.severity-warning::before { background: var(--vscode-editorWarning-foreground, #cca700); }
+.checks-group-item.severity-info::before { background: var(--vscode-editorInfo-foreground, #75beff); }
+
+.checks-group-item .check-line {
+  color: var(--vscode-descriptionForeground);
+  font-variant-numeric: tabular-nums;
+  margin-left: 4px;
+}

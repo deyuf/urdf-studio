@@ -18,6 +18,7 @@ const common = {
 async function copyMedia(includeTestWorker = false) {
   await mkdir('dist/media', { recursive: true });
   await copyFile('media/styles.css', 'dist/media/styles.css');
+  await copyFile('src/editor/editor.css', 'dist/media/editor.css');
   await copyFile(
     'node_modules/jsdom/lib/jsdom/living/xhr/xhr-sync-worker.js',
     'dist/xhr-sync-worker.js'
@@ -35,6 +36,7 @@ async function copyWebAssets() {
   await mkdir('dist-web', { recursive: true });
   await copyFile('public/index.html', 'dist-web/index.html');
   await copyFile('media/styles.css', 'dist-web/styles.css');
+  await copyFile('src/editor/editor.css', 'dist-web/editor.css');
   await copyFile('src/web/ui/web.css', 'dist-web/web.css');
   await copyFile('media/icon.png', 'dist-web/icon.png');
   await copyFile('public/_headers', 'dist-web/_headers').catch(() => undefined);

@@ -144,6 +144,16 @@
     "docs:watch": "node scripts/build-docs.mjs --watch"
   },
   "dependencies": {
+    "@codemirror/autocomplete": "^6.20.2",
+    "@codemirror/commands": "^6.10.3",
+    "@codemirror/lang-xml": "^6.1.0",
+    "@codemirror/language": "^6.12.3",
+    "@codemirror/lint": "^6.9.6",
+    "@codemirror/search": "^6.7.0",
+    "@codemirror/state": "^6.6.0",
+    "@codemirror/view": "^6.43.0",
+    "@lezer/highlight": "^1.2.3",
+    "@lezer/xml": "^1.0.6",
     "@xmldom/xmldom": "^0.8.11",
     "jsdom": "^26.1.0",
     "jspdf": "^4.2.1",
