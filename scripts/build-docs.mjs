@@ -29,6 +29,19 @@ const OUT = path.join(REPO, 'dist-web', 'docs');
 const SITE_ORIGIN = 'https://urdf.deyuf.org';
 const DEFAULT_OG_IMAGE = `${SITE_ORIGIN}/og-image.png`;
 
+// Single source of truth for author identity across every docs page.
+// Mirrored in public/index.html for the web-app entry; keep both in sync
+// when names / profile URLs change.
+const AUTHOR = {
+  name: 'Deyu Fu',
+  url: 'https://me.deyuf.org/',
+  sameAs: [
+    'https://github.com/deyuf',
+    'https://www.linkedin.com/in/deyu-fu',
+    'https://me.deyuf.org/'
+  ]
+};
+
 // Section ordering and labels — controls the sidebar group order. Sections
 // not listed here are appended alphabetically.
 const SECTION_ORDER = [
@@ -326,6 +339,37 @@ function layout({ title, description, canonical, sidebar, toc, body, pager, dept
   const appHref = `${'../'.repeat(depth + 1)}`;
   const ghHref = 'https://github.com/deyuf/urdf-studio';
   const fullTitle = `${title} · URDF Studio`;
+
+  // schema.org TechArticle per-page metadata. Author and publisher both
+  // resolve to the same Person; isPartOf ties the article back to the
+  // URDF Studio WebSite at SITE_ORIGIN so search engines can render
+  // sitelinks / breadcrumb-like trails. License matches the repo.
+  const articleJsonLd = JSON.stringify({
+    '@context': 'https://schema.org',
+    '@type': 'TechArticle',
+    headline: fullTitle,
+    description,
+    inLanguage: 'en',
+    mainEntityOfPage: canonical,
+    isPartOf: {
+      '@type': 'WebSite',
+      name: 'URDF Studio',
+      url: SITE_ORIGIN
+    },
+    author: {
+      '@type': 'Person',
+      name: AUTHOR.name,
+      url: AUTHOR.url,
+      sameAs: AUTHOR.sameAs
+    },
+    publisher: {
+      '@type': 'Person',
+      name: AUTHOR.name,
+      url: AUTHOR.url
+    },
+    license: 'https://opensource.org/licenses/MIT'
+  });
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -335,6 +379,8 @@ function layout({ title, description, canonical, sidebar, toc, body, pager, dept
   <meta name="theme-color" content="#1a73e8">
   <title>${escapeHtml(fullTitle)}</title>
   <meta name="description" content="${escapeHtml(description)}">
+  <meta name="author" content="${escapeHtml(AUTHOR.name)}">
+  <link rel="author" href="${escapeHtml(AUTHOR.url)}">
   <link rel="canonical" href="${escapeHtml(canonical)}">
   <meta property="og:type" content="article">
   <meta property="og:site_name" content="URDF Studio">
@@ -352,6 +398,7 @@ function layout({ title, description, canonical, sidebar, toc, body, pager, dept
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
   <link rel="stylesheet" href="${cssHref}">
+  <script type="application/ld+json">${articleJsonLd}</script>
 </head>
 <body>
   <header class="docs-header">
