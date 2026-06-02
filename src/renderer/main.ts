@@ -44,12 +44,11 @@ import { Reachability } from './features/reachability';
 import { InertiaVisualisation } from './features/inertia';
 import { FramesOverlay, type FramesMode } from './features/frames';
 import { SelfCollision } from './features/selfCollision';
+import { applyRenderModeVisibility, type RenderMode } from './features/renderMode';
 
 (THREE.Mesh.prototype as unknown as { raycast: typeof acceleratedRaycast }).raycast = acceleratedRaycast;
 (THREE.BufferGeometry.prototype as unknown as { computeBoundsTree: typeof computeBoundsTree }).computeBoundsTree = computeBoundsTree;
 (THREE.BufferGeometry.prototype as unknown as { disposeBoundsTree: typeof disposeBoundsTree }).disposeBoundsTree = disposeBoundsTree;
-
-type RenderMode = 'visual' | 'collision' | 'both';
 
 interface LoadRobotMessage {
   type: 'loadRobot';
@@ -1025,22 +1024,7 @@ function applyRenderMode(): void {
   if (!robot) {
     return;
   }
-  for (const visual of Object.values(robot.visual ?? {}) as Object3D[]) {
-    visual.visible = renderMode === 'visual' || renderMode === 'both';
-  }
-  for (const collider of Object.values(robot.colliders ?? {}) as Object3D[]) {
-    collider.visible = renderMode === 'collision' || renderMode === 'both';
-    collider.traverse((child: Object3D) => {
-      const mesh = child as THREE.Mesh;
-      if (mesh.isMesh) {
-        forEachMaterial(mesh, material => {
-          material.transparent = true;
-          material.opacity = renderMode === 'both' ? 0.26 : 0.62;
-          material.color.set(0x71d0ff);
-        });
-      }
-    });
-  }
+  applyRenderModeVisibility(robot, renderMode, { forEachMaterial });
   dirty = true;
 }
 
