@@ -74,10 +74,20 @@ export function parseSrdf(content: string, file = 'model.srdf'): SemanticMetadat
     });
   }
 
+  // Memoize fully-expanded joint lists per group so a subgroup referenced by
+  // many parents (a "diamond") is expanded once, not once per path. `seen`
+  // tracks the current recursion path (for cycle detection) and is mutated in
+  // place / restored rather than cloned per child, keeping expansion linear
+  // instead of O(2^n) on diamond-shaped group graphs.
+  const memo = new Map<string, string[]>();
   const expand = (name: string, seen = new Set<string>()): string[] => {
     if (seen.has(name)) {
       diagnostics.push({ severity: 'warning', message: `SRDF group cycle involving "${name}" was ignored.`, code: 'srdf.groupCycle', target: name, file });
       return [];
+    }
+    const cached = memo.get(name);
+    if (cached) {
+      return cached;
     }
     const raw = rawGroups.get(name);
     if (!raw) {
@@ -85,7 +95,10 @@ export function parseSrdf(content: string, file = 'model.srdf'): SemanticMetadat
       return [];
     }
     seen.add(name);
-    return Array.from(new Set([...raw.joints, ...raw.groups.flatMap(group => expand(group, new Set(seen)))]));
+    const result = Array.from(new Set([...raw.joints, ...raw.groups.flatMap(group => expand(group, seen))]));
+    seen.delete(name);
+    memo.set(name, result);
+    return result;
   };
 
   const groups = Array.from(rawGroups.keys()).map(name => ({ name, joints: expand(name) }));
@@ -182,14 +195,19 @@ export function mergeDisableCollisionsIntoSrdf(content: string, entries: Disable
   }
 
   const existing = new Set<string>();
-  const existingRegex = /<disable_collisions\s+([^/>]*)\/>/g;
+  // Match both the self-closing form `<disable_collisions .../>` and the
+  // element form `<disable_collisions ...></disable_collisions>` so existing
+  // non-self-closing entries are deduped too.
+  const existingRegex = /<disable_collisions\s+([^>]*?)\/?>/g;
   let match: RegExpExecArray | null;
   while ((match = existingRegex.exec(content)) !== null) {
     const attrs = match[1];
-    const a = /link1="([^"]+)"/.exec(attrs)?.[1];
-    const b = /link2="([^"]+)"/.exec(attrs)?.[1];
+    const a = /link1="([^"]*)"/.exec(attrs)?.[1];
+    const b = /link2="([^"]*)"/.exec(attrs)?.[1];
     if (a && b) {
-      existing.add(canonicalPair(a, b));
+      // On-disk values are XML-escaped; entry.link1/link2 are raw. Unescape
+      // before comparing so the two sides are normalized to the same form.
+      existing.add(canonicalPair(unescapeXmlAttr(a), unescapeXmlAttr(b)));
     }
   }
 
@@ -199,10 +217,19 @@ export function mergeDisableCollisionsIntoSrdf(content: string, entries: Disable
   }
 
   const xml = buildDisableCollisionsXml(newEntries);
-  const closeTag = /<\/robot>\s*$/m;
-  if (closeTag.test(content)) {
+  // Anchor to the LAST `</robot>` at the true end of the document. We can't use
+  // a `/m` regex with `$` because that would match a `</robot>` sitting inside
+  // a comment on its own line. Locate the final closing tag by index instead.
+  const closeIndex = content.lastIndexOf('</robot>');
+  // Only treat it as the document's closing tag if nothing but whitespace
+  // follows it.
+  if (closeIndex >= 0 && content.slice(closeIndex + '</robot>'.length).trim() === '') {
+    // Use a replacer FUNCTION so user-controlled link names in `xml` (e.g. a
+    // link named `a$&b`) are inserted literally rather than interpreted as
+    // String.replace special patterns ($&, $', $`, $n).
+    const before = content.slice(0, closeIndex);
     return {
-      srdf: content.replace(closeTag, `${xml}\n</robot>\n`),
+      srdf: `${before}${xml}\n</robot>\n`,
       added: newEntries.length
     };
   }
@@ -210,6 +237,15 @@ export function mergeDisableCollisionsIntoSrdf(content: string, entries: Disable
     srdf: `${content.trimEnd()}\n${xml}\n`,
     added: newEntries.length
   };
+}
+
+function unescapeXmlAttr(value: string): string {
+  return value
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&');
 }
 
 function canonicalPair(a: string, b: string): string {

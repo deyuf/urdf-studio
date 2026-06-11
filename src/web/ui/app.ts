@@ -4,6 +4,12 @@ import { DirectoryHandleVfs } from '../vfs/directoryHandle';
 import { FileListVfs } from '../vfs/fileList';
 import { setActiveVfs } from '../ioBrowser';
 import { getSettings, saveSettings, type UserSettings } from '../storage';
+import {
+  canPersistHandles,
+  clearStoredDirectoryHandle,
+  getStoredDirectoryHandle,
+  setStoredDirectoryHandle
+} from '../handleStore';
 import type { BrowserVfs } from '../vfs/types';
 import type { WebHost, HostStatus } from '../host';
 import { mountOnboarding, shouldShowOnboarding } from './onboarding';
@@ -19,9 +25,22 @@ declare global {
   }
 }
 
+// The File System Access permission API isn't in the default TS DOM lib yet.
+type PermissionDescriptor = { mode?: 'read' | 'readwrite' };
+type PermissionableHandle = FileSystemDirectoryHandle & {
+  queryPermission?(descriptor?: PermissionDescriptor): Promise<PermissionState>;
+  requestPermission?(descriptor?: PermissionDescriptor): Promise<PermissionState>;
+};
+
 export class AppShell {
   private vfs: BrowserVfs | null = null;
   private currentFile: string | null = null;
+  // Monotonic token guarding folder-open races: opening folder A then B must
+  // let B win even if A's scan finishes later (latest-should-win).
+  private openToken = 0;
+  // AbortController for the in-flight directory scan, so starting a new open
+  // cancels the previous one.
+  private activeScan: AbortController | null = null;
   private readonly onboarding = mountOnboarding();
   private readonly toast = mountToast();
 
@@ -35,6 +54,9 @@ export class AppShell {
       // Defer to the next frame so the topbar finishes laying out first.
       requestAnimationFrame(() => this.onboarding.open());
     }
+    // Offer to reopen the last folder if one was persisted. Fire-and-forget;
+    // surfaces a button in the topbar when a stored handle is found.
+    void this.maybeOfferReopen();
   }
 
   private render(): void {
@@ -51,6 +73,7 @@ export class AppShell {
         </div>
         <div class="topbar-actions">
           <button id="open-directory" class="primary" title="Open a ROS package folder">Open Folder</button>
+          <button id="reopen-directory" class="ghost" title="Reopen the last folder you used" hidden></button>
           <button id="open-files" class="ghost" title="Fallback if your browser does not support folder picker">Pick Files</button>
           <select id="file-select" disabled>
             <option value="">No folder loaded</option>
@@ -139,15 +162,9 @@ export class AppShell {
     if (!window.showDirectoryPicker) {
       return;
     }
+    let handle: FileSystemDirectoryHandle;
     try {
-      const handle = await window.showDirectoryPicker({ id: 'urdf-studio', mode: 'read' });
-      this.renderStatus({ type: 'progress', message: `Scanning ${handle.name}...` });
-      const vfs = await DirectoryHandleVfs.create(handle, {
-        onProgress: (fileCount, dirCount) => {
-          this.renderStatus({ type: 'progress', message: `Scanning ${handle.name}: ${fileCount} files, ${dirCount} dirs` });
-        }
-      });
-      this.setVfs(vfs);
+      handle = await window.showDirectoryPicker({ id: 'urdf-studio', mode: 'read' });
     } catch (error) {
       if ((error as DOMException)?.name === 'AbortError') {
         return;
@@ -155,13 +172,71 @@ export class AppShell {
       const detail = error instanceof Error ? error.message : String(error);
       this.renderStatus({ type: 'error', message: 'Could not open folder.' });
       this.toast.push({ kind: 'error', message: 'Could not open folder', detail });
+      return;
+    }
+    // Persist so the next visit can offer to reopen it. Best-effort: ignore
+    // failures (private mode, no IndexedDB).
+    void setStoredDirectoryHandle(handle).catch(() => undefined);
+    await this.scanHandle(handle);
+  }
+
+  /** Scan a directory handle into a VFS, applying the open-token race guard
+   *  and aborting any previous in-flight scan. */
+  private async scanHandle(handle: FileSystemDirectoryHandle): Promise<void> {
+    // A newer open supersedes any in-flight one.
+    this.activeScan?.abort();
+    const controller = new AbortController();
+    this.activeScan = controller;
+    const token = ++this.openToken;
+
+    try {
+      this.renderStatus({ type: 'progress', message: `Scanning ${handle.name}...` });
+      const vfs = await DirectoryHandleVfs.create(handle, {
+        signal: controller.signal,
+        onProgress: (fileCount, dirCount) => {
+          if (token === this.openToken) {
+            this.renderStatus({ type: 'progress', message: `Scanning ${handle.name}: ${fileCount} files, ${dirCount} dirs` });
+          }
+        }
+      });
+      // A newer open started while we were scanning — discard this result so
+      // the latest open wins. Dispose the now-orphaned VFS.
+      if (token !== this.openToken) {
+        vfs.dispose();
+        return;
+      }
+      this.setVfs(vfs);
+    } catch (error) {
+      if ((error as DOMException)?.name === 'AbortError') {
+        return;
+      }
+      if (token !== this.openToken) {
+        return;
+      }
+      const detail = error instanceof Error ? error.message : String(error);
+      this.renderStatus({ type: 'error', message: 'Could not open folder.' });
+      this.toast.push({ kind: 'error', message: 'Could not open folder', detail });
+    } finally {
+      if (this.activeScan === controller) {
+        this.activeScan = null;
+      }
     }
   }
 
   private async handleFileList(files: FileList): Promise<void> {
+    // FileListVfs construction is synchronous, but still bump the token and
+    // abort any in-flight directory scan so a pending folder open can't
+    // overwrite this selection.
+    this.activeScan?.abort();
+    this.activeScan = null;
+    const token = ++this.openToken;
     try {
       this.renderStatus({ type: 'progress', message: 'Indexing files...' });
       const vfs = new FileListVfs(files);
+      if (token !== this.openToken) {
+        vfs.dispose();
+        return;
+      }
       this.setVfs(vfs);
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
@@ -170,10 +245,65 @@ export class AppShell {
     }
   }
 
+  /** On startup, look up the persisted directory handle (if any) and surface a
+   *  "Reopen <name>" button. Permission must be re-granted on a user gesture,
+   *  so we cannot scan here — we only reveal the affordance. */
+  private async maybeOfferReopen(): Promise<void> {
+    // Only the File System Access path can persist; FileListVfs can't.
+    if (!canPersistHandles() || !window.showDirectoryPicker) {
+      return;
+    }
+    const handle = await getStoredDirectoryHandle().catch(() => null);
+    if (!handle) {
+      return;
+    }
+    const button = document.getElementById('reopen-directory') as HTMLButtonElement | null;
+    if (!button) {
+      return;
+    }
+    button.hidden = false;
+    button.textContent = `Reopen ${handle.name}`;
+    button.title = `Reopen the last folder: ${handle.name}`;
+    button.addEventListener('click', () => void this.reopenStoredHandle(handle, button));
+  }
+
+  /** Re-grant permission for a stored handle (requires the user gesture this
+   *  click provides) and rebuild the VFS. Clears the stored handle on denial
+   *  or if it has gone stale. */
+  private async reopenStoredHandle(handleRaw: FileSystemDirectoryHandle, button: HTMLButtonElement): Promise<void> {
+    const handle = handleRaw as PermissionableHandle;
+    try {
+      let state: PermissionState = 'granted';
+      if (typeof handle.queryPermission === 'function') {
+        state = await handle.queryPermission({ mode: 'read' });
+      }
+      if (state !== 'granted' && typeof handle.requestPermission === 'function') {
+        state = await handle.requestPermission({ mode: 'read' });
+      }
+      if (state !== 'granted') {
+        this.toast.push({ kind: 'warning', message: 'Folder access was not granted.' });
+        return;
+      }
+      button.hidden = true;
+      await this.scanHandle(handle);
+    } catch (error) {
+      // A stale/invalid handle (folder moved/deleted, or NotFoundError on
+      // permission) — drop it and fall back to the empty state.
+      button.hidden = true;
+      void clearStoredDirectoryHandle().catch(() => undefined);
+      const detail = error instanceof Error ? error.message : String(error);
+      this.toast.push({ kind: 'error', message: 'Could not reopen the last folder', detail });
+    }
+  }
+
   private setVfs(vfs: BrowserVfs): void {
     if (this.vfs) {
       this.vfs.dispose();
     }
+    // Reset the active selection: the previously-open document pointed into the
+    // now-disposed VFS, so it must not linger (the host would otherwise keep
+    // reloading a path that no longer exists).
+    this.currentFile = null;
     this.vfs = vfs;
     setActiveVfs(vfs);
     this.populateFileSelect();
