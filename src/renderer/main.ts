@@ -85,24 +85,26 @@ const vscode: VsCodeApi = typeof apiHost.acquireVsCodeApi === 'function'
   ? apiHost.acquireVsCodeApi()
   : { postMessage: () => undefined, setState: () => undefined, getState: () => undefined };
 
-// Reject messages that clearly originate from a foreign browsing context,
-// while accepting every legitimate host delivery path:
-//   - VS Code webview: the extension's messages are relayed into the content
-//     iframe by its PARENT frame, so event.source === window.parent and the
-//     origin differs from ours. (This is why a plain `source !== window`
-//     check breaks the extension: loadRobot never arrives and the preview
-//     sits at "Waiting for robot...".)
-//   - Standalone web app: the host posts on our own window (source === window).
-//   - Test harness: synthetic MessageEvents carry no source.
-// A hostile cross-origin embedder/opener is neither `window` nor (in the web
-// deployment, which sends `frame-ancestors 'none'`) ever our parent, and a
-// real window.open opener arrives as a third window — all rejected.
+// Accept messages from same-origin senders only.
+//
+// Empirically verified against real VS Code (see test/integration): the
+// extension's messages arrive with event.source set to a FOREIGN WindowProxy
+// (neither `window` nor `window.parent` — the webview content is a top-level
+// frame with parent === self) but with event.origin equal to the webview's
+// own origin (`vscode-webview://<uuid>`), because the relaying frame is
+// same-origin with the content. Source-identity checks therefore break the
+// extension (loadRobot silently dropped → "Waiting for robot..." forever);
+// the origin is the reliable invariant.
+//
+//   - VS Code webview: origin === our own vscode-webview://<uuid>  → accept.
+//   - Standalone web app: the host posts on our own window with our origin
+//     as the explicit target                                        → accept.
+//   - Test harness: synthetic MessageEvents carry an empty origin; only
+//     same-origin scripts can dispatch events at all                → accept.
+//   - Cross-origin embedder / window.open opener: postMessage always stamps
+//     the SENDER's origin, which cannot equal ours                  → reject.
 function isTrustedMessageEvent(event: MessageEvent): boolean {
-  const source = event.source;
-  if (!source || source === window) {
-    return true;
-  }
-  return source === window.parent;
+  return !event.origin || event.origin === window.location.origin;
 }
 
 const meshCache = new Map<string, Promise<Object3D | null>>();
@@ -221,8 +223,21 @@ document.getElementById('app')!.innerHTML = `
   </div>
 </div>`;
 
-initThree();
-bindChrome();
+try {
+  initThree();
+  bindChrome();
+} catch (error) {
+  // Startup failures (e.g. WebGL context creation) previously died silently
+  // behind a perpetual "Waiting for robot..." HUD. Show the error and report
+  // it to the host log instead.
+  const detail = error instanceof Error ? error.message : String(error);
+  const hud = document.getElementById('hud');
+  if (hud) {
+    hud.textContent = `Renderer failed to start: ${detail}`;
+  }
+  vscode.postMessage({ type: '__rendererError', detail: `startup failed: ${detail}` });
+  throw error;
+}
 vscode.postMessage({ type: 'ready' });
 
 window.addEventListener('message', event => {
@@ -231,6 +246,13 @@ window.addEventListener('message', event => {
   // else stops an embedding/opener page from injecting loadRobot (with
   // attacker-controlled asset URLs) or otherwise driving the renderer.
   if (!isTrustedMessageEvent(event)) {
+    // Surface the rejection to the host's log: a silently dropped host
+    // message is exactly the failure mode that froze the preview at
+    // "Waiting for robot..." — never let it be invisible again.
+    vscode.postMessage({
+      type: '__rendererError',
+      detail: `rejected cross-origin message type=${String((event.data as { type?: string } | null)?.type)} origin=${event.origin}`
+    });
     return;
   }
   const message = event.data;

@@ -85,6 +85,23 @@ jobs:
       - name: Playwright (renderer + web shell)
         run: npx playwright test
 
+      # Real VS Code integration test: opens the Franka FR3 xacro with the
+      # custom editor inside an actual VS Code instance and asserts the full
+      # host↔webview handshake (ready → loadRobot → geometryLoaded). This is
+      # the only tier that exercises VS Code's real webview message delivery —
+      # two shipped regressions were invisible to every browser-based test.
+      - name: Cache VS Code test build
+        uses: actions/cache@v4
+        with:
+          path: .vscode-test
+          key: ${{ runner.os }}-vscode-test-${{ hashFiles('package-lock.json') }}
+
+      - name: VS Code integration test (real webview, Franka FR3)
+        # Explicit screen args: the stock xvfb-run default (640x480) is too
+        # small/shallow for Electron's compositor — the webview renderer
+        # process never paints and the handshake never starts.
+        run: xvfb-run -a --server-args="-screen 0 1280x1024x24" node test/integration/run.cjs
+
       - name: Upload Playwright report on failure
         if: failure()
         uses: actions/upload-artifact@v4

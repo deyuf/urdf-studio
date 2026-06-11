@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import path from 'node:path';
-import { promises as fs } from 'node:fs';
+import { promises as fs, appendFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import './core/io.node';
 import { discoverPackages } from './core/packageMap';
@@ -17,6 +17,22 @@ let outputChannel: vscode.OutputChannel;
 
 export function log(message: string): void {
   outputChannel?.appendLine(`[${new Date().toISOString()}] ${message}`);
+}
+
+// Integration-test hook: when URDF_STUDIO_TEST_LOG points at a file, append
+// one line per webview message sent/received so the @vscode/test-electron
+// suite can observe the host↔renderer handshake (ready → loadRobot →
+// geometryLoaded) from outside the webview. No-op in normal use.
+const testLogFile = process.env.URDF_STUDIO_TEST_LOG;
+function testLog(line: string): void {
+  if (!testLogFile) {
+    return;
+  }
+  try {
+    appendFileSync(testLogFile, `${line}\n`);
+  } catch {
+    // never let test instrumentation break the extension
+  }
 }
 
 interface WebviewPackageMap {
@@ -110,6 +126,11 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
     });
 
     webviewPanel.webview.onDidReceiveMessage(async message => {
+      testLog(`recv:${String(message?.type)}${message?.type === '__rendererError' ? `:${String(message.detail)}` : ''}`);
+      if (message?.type === '__rendererError') {
+        log(`Renderer error: ${String(message.detail)}`);
+        return;
+      }
       switch (message?.type) {
         case 'ready':
           await this.loadIntoWebview(preview);
@@ -210,6 +231,7 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       log(`Failed to load preview: ${msg}`);
+      testLog(`error:${msg}`);
       this.updateDiagnostics(preview.document.uri, [{ severity: 'error', message: msg, code: 'preview.loadFailed', file: preview.document.uri.fsPath }]);
     }
   }
@@ -273,6 +295,7 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
       savedState,
       bookmarks: this.getBookmarks(preview.document.uri)
     });
+    testLog('sent:loadRobot');
   }
 
   private refreshWatcher(preview: ActivePreview, filePaths: string[]): void {
@@ -343,6 +366,31 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
 </head>
 <body>
   <div id="app"></div>
+  <script nonce="${nonce}">
+    // Crash reporter: surface renderer startup failures (script load errors,
+    // uncaught exceptions, unhandled rejections) to the extension's output
+    // channel instead of dying silently behind a "Waiting for robot..." HUD.
+    // acquireVsCodeApi() may only be called once per session, so wrap it and
+    // hand the same instance to the renderer module.
+    (function () {
+      var api = acquireVsCodeApi();
+      window.acquireVsCodeApi = function () { return api; };
+      function report(detail) {
+        try { api.postMessage({ type: '__rendererError', detail: String(detail) }); } catch (e) { /* ignore */ }
+      }
+      window.addEventListener('error', function (event) {
+        if (event.target && event.target !== window && (event.target.src || event.target.href)) {
+          report('resource failed: ' + (event.target.src || event.target.href));
+        } else {
+          report((event.message || 'error') + ' @ ' + (event.filename || '?') + ':' + (event.lineno || 0) + (event.error && event.error.stack ? '\\n' + event.error.stack : ''));
+        }
+      }, true);
+      window.addEventListener('unhandledrejection', function (event) {
+        var reason = event.reason;
+        report('unhandledrejection: ' + (reason && reason.stack ? reason.stack : String(reason)));
+      });
+    })();
+  </script>
   <script nonce="${nonce}" type="module" src="${rendererUri}"></script>
 </body>
 </html>`;

@@ -114,5 +114,27 @@ export default [
     rules: {
       '@typescript-eslint/no-explicit-any': 'off'
     }
+  },
+  {
+    // Plain CommonJS Node scripts (VS Code integration test runner/suite).
+    files: ['test/**/*.cjs', 'scripts/**/*.cjs'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'commonjs',
+      globals: {
+        require: 'readonly',
+        module: 'writable',
+        exports: 'writable',
+        process: 'readonly',
+        console: 'readonly',
+        __dirname: 'readonly',
+        __filename: 'readonly',
+        Buffer: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+        setInterval: 'readonly',
+        clearInterval: 'readonly'
+      }
+    }
   }
 ];
