@@ -97,7 +97,10 @@ jobs:
           key: ${{ runner.os }}-vscode-test-${{ hashFiles('package-lock.json') }}
 
       - name: VS Code integration test (real webview, Franka FR3)
-        run: xvfb-run -a node test/integration/run.cjs
+        # Explicit screen args: the stock xvfb-run default (640x480) is too
+        # small/shallow for Electron's compositor — the webview renderer
+        # process never paints and the handshake never starts.
+        run: xvfb-run -a --server-args="-screen 0 1280x1024x24" node test/integration/run.cjs
 
       - name: Upload Playwright report on failure
         if: failure()
