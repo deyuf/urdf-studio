@@ -55,15 +55,20 @@ const LOAD_ROBOT_MESSAGE = {
   renderSettings: { renderMode: 'visual', upAxis: '+Z' }
 };
 
-test('renderer accepts loadRobot relayed by the PARENT frame (VS Code webview delivery)', async ({ page }) => {
+test('renderer accepts loadRobot from a SAME-ORIGIN relay frame (VS Code-style delivery)', async ({ page }) => {
   const server = await startStaticServer(REPO_ROOT);
   try {
-    // Embed the renderer harness in an iframe and drive it from the parent —
-    // the same window topology VS Code uses. The parent page lives on
-    // about:blank, so inside the iframe event.source === window.parent and
-    // event.origin differs from the iframe's own origin, exactly like the
-    // extension host relay.
-    await page.setContent(`<iframe id="webview" src="${server.url}/test/renderer/harness.html" style="width:1000px;height:700px"></iframe>`);
+    // Real VS Code relays extension messages into the webview content from a
+    // frame that is SAME-ORIGIN with it (origin vscode-webview://<uuid>) but
+    // whose WindowProxy is foreign — neither `window` nor `window.parent`
+    // from the content's perspective (verified by test/integration). Model
+    // that here: a same-origin parent page posts into the harness iframe, so
+    // event.source is a foreign window but event.origin matches.
+    await page.route(`${server.url}/relay-parent.html`, route => route.fulfill({
+      contentType: 'text/html',
+      body: `<iframe id="webview" src="${server.url}/test/renderer/harness.html" style="width:1000px;height:700px"></iframe>`
+    }));
+    await page.goto(`${server.url}/relay-parent.html`);
 
     const frame = page.frame({ url: /harness\.html/ });
     expect(frame, 'harness iframe must attach').toBeTruthy();
@@ -75,8 +80,8 @@ test('renderer accepts loadRobot relayed by the PARENT frame (VS Code webview de
       { timeout: 30_000 }
     );
 
-    // Post from the PARENT context into the iframe — source becomes the
-    // parent window, not the iframe's own window.
+    // Post from the parent context into the iframe — same origin, foreign
+    // source window, like VS Code's relay.
     await page.evaluate(message => {
       const iframe = document.getElementById('webview') as HTMLIFrameElement;
       iframe.contentWindow!.postMessage(message, '*');
@@ -90,43 +95,68 @@ test('renderer accepts loadRobot relayed by the PARENT frame (VS Code webview de
   }
 });
 
-test('renderer still rejects messages from a foreign (non-parent) window', async ({ page }) => {
+test('renderer rejects loadRobot from a CROSS-ORIGIN embedder', async ({ page }) => {
   const server = await startStaticServer(REPO_ROOT);
   try {
-    // Two sibling iframes: a hostile frame posting into the harness frame.
-    // The harness sees source === the SIBLING window (neither itself nor its
-    // parent) — the renderer must drop it.
-    await page.setContent(`
-      <iframe id="webview" src="${server.url}/test/renderer/harness.html" style="width:1000px;height:700px"></iframe>
-      <iframe id="attacker" src="about:blank"></iframe>
-    `);
-    const frame = page.frame({ url: /harness\.html/ });
-    expect(frame).toBeTruthy();
-    await frame!.waitForFunction(
-      () => Array.isArray((window as unknown as { __messages?: Array<{ type?: string }> }).__messages)
-        && (window as unknown as { __messages: Array<{ type?: string }> }).__messages.some(message => message.type === 'ready'),
-      undefined,
-      { timeout: 30_000 }
+    // A hostile page on a different origin embeds the harness and posts
+    // loadRobot into it. postMessage stamps the SENDER's origin, which cannot
+    // equal the harness origin — the renderer must drop the message.
+    // The attacker is a REAL second loopback server on another port:
+    // different port = different origin, while keeping both pages in the
+    // "local" address space so Chrome's Local Network Access checks don't
+    // block the iframe (route-fulfilled pages are treated as non-local).
+    const attacker = await startPageServer(
+      `<iframe id="webview" src="${server.url}/test/renderer/harness.html" style="width:1000px;height:700px"></iframe>`
     );
+    try {
+      await page.goto(`${attacker.url}/evil.html`);
 
-    // Run the postMessage INSIDE the attacker frame so the message source is
-    // the sibling window (neither the harness window nor its parent).
-    const attacker = page.frames().find(f => f !== page.mainFrame() && !/harness\.html/.test(f.url()));
-    expect(attacker).toBeTruthy();
-    await attacker!.evaluate(message => {
-      const target = (window.parent.document.getElementById('webview') as HTMLIFrameElement).contentWindow!;
-      target.postMessage(JSON.parse(message), '*');
-    }, JSON.stringify(LOAD_ROBOT_MESSAGE));
+      // Cross-origin iframes attach asynchronously (OOPIF) — wait for the
+      // element, then resolve its content frame.
+      const handle = await page.waitForSelector('#webview', { timeout: 15_000 });
+      const frame = await handle.contentFrame();
+      expect(frame).toBeTruthy();
+      await frame!.waitForFunction(
+        () => Array.isArray((window as unknown as { __messages?: Array<{ type?: string }> }).__messages)
+          && (window as unknown as { __messages: Array<{ type?: string }> }).__messages.some(message => message.type === 'ready'),
+        undefined,
+        { timeout: 30_000 }
+      );
 
-    // Give the renderer a beat; the robot must NOT load.
-    await page.waitForTimeout(1500);
-    await expect(frame!.locator('[data-joint-slider="joint1"]')).toHaveCount(0);
-    const hud = await frame!.locator('#hud').textContent();
-    expect(hud).toContain('Waiting for robot');
+      await page.evaluate(message => {
+        const iframe = document.getElementById('webview') as HTMLIFrameElement;
+        iframe.contentWindow!.postMessage(message, '*');
+      }, LOAD_ROBOT_MESSAGE);
+
+      // Give the renderer a beat; the robot must NOT load.
+      await page.waitForTimeout(1500);
+      await expect(frame!.locator('[data-joint-slider="joint1"]')).toHaveCount(0);
+      const hud = await frame!.locator('#hud').textContent();
+      expect(hud).toContain('Waiting for robot');
+    } finally {
+      await attacker.close();
+    }
   } finally {
     await server.close();
   }
 });
+
+// Serve a single fixed HTML page on its own loopback port (its own origin).
+async function startPageServer(html: string): Promise<{ url: string; close(): Promise<void> }> {
+  const server: Server = createServer((_request, response) => {
+    response.writeHead(200, { 'content-type': 'text/html' });
+    response.end(html);
+  });
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  if (!address || typeof address === 'string') {
+    throw new Error('Could not start attacker page server.');
+  }
+  return {
+    url: `http://127.0.0.1:${address.port}`,
+    close: () => new Promise<void>(resolve => server.close(() => resolve()))
+  };
+}
 
 test.describe('Franka FR3 (web shell, full xacro pipeline)', () => {
   let server: { url: string; close(): Promise<void> } | undefined;
