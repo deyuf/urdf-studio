@@ -18,18 +18,12 @@ scripts
 .gitignore
 
 media/**
+# Bundle ONLY the extension icon: it is read straight from the .vsix via
+# package.json "icon". README screenshots are deliberately NOT packaged —
+# vsce rewrites the README's relative `media/...` paths to absolute GitHub
+# raw URLs at package time (verified: `media/...` →
+# `https://github.com/deyuf/urdf-studio/raw/HEAD/media/...`), so the
+# Marketplace page and the in-editor README fetch them remotely. The image
+# files stay in the repo (those URLs resolve against the default branch);
+# they just no longer bloat the .vsix with a multi-MB hero gif.
 !media/icon.png
-!media/screenshots/viewer-joints.png
-!media/screenshots/inspector-selected.png
-# Web screenshots referenced from README.md — kept under the same
-# numbering scheme used by scripts/capture-screenshots.mjs so changes
-# to that script flow through to the bundled .vsix automatically.
-# Note: the hero is an animated .gif; we also ship the .png poster for
-# Marketplace renderers that fall back to first-frame. The .webm source
-# stays out of the bundle (large + no Marketplace renderer reads it).
-!media/screenshots-web/01-hero.gif
-!media/screenshots-web/01-hero.png
-!media/screenshots-web/02-editor-split.png
-!media/screenshots-web/03-editor-fullscreen.png
-!media/screenshots-web/04-checks-health.png
-!media/screenshots-web/05-diagnostics-broken.png
