@@ -79,9 +79,10 @@ export function urdfCompletionSource(
   format: 'urdf' | 'xacro'
 ) {
   return (context: CompletionContext): CompletionResult | null => {
-    const text = context.state.doc.toString();
     const cursor = context.pos;
-    const before = text.slice(Math.max(0, cursor - 200), cursor);
+    // Only the 200 chars before the cursor matter; slicing the doc directly
+    // avoids materialising the whole document as a string on every keystroke.
+    const before = context.state.sliceDoc(Math.max(0, cursor - 200), cursor);
 
     // 1. Attribute-value contexts. Look for: parent link="...|", child link="...|",
     //    mimic joint="...|", type="...|", or filename="package://...|".

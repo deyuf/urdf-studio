@@ -149,6 +149,16 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
         case 'requestRevealRange':
           await this.revealRangeForLink(document.uri, message.line, message.link);
           break;
+        case 'previewEdit':
+          if (typeof message.text === 'string') {
+            await this.loadIntoWebview(preview, message.text);
+          }
+          break;
+        case 'requestSaveSource':
+          if (typeof message.text === 'string') {
+            await this.saveSource(document.uri, message.text);
+          }
+          break;
         case 'geometryLoaded':
           void vscode.window.setStatusBarMessage(
             `URDF Studio: ${message.linkCount ?? 0} links, ${message.jointCount ?? 0} joints, ${message.movableJointCount ?? 0} movable.`,
@@ -194,9 +204,9 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
     return undefined;
   }
 
-  private async loadIntoWebview(preview: ActivePreview): Promise<void> {
+  private async loadIntoWebview(preview: ActivePreview, overrideUrdf?: string): Promise<void> {
     try {
-      await this.doLoadIntoWebview(preview);
+      await this.doLoadIntoWebview(preview, overrideUrdf);
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       log(`Failed to load preview: ${msg}`);
@@ -204,13 +214,28 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
     }
   }
 
-  private async doLoadIntoWebview(preview: ActivePreview): Promise<void> {
+  private async doLoadIntoWebview(preview: ActivePreview, overrideUrdf?: string): Promise<void> {
     const config = vscode.workspace.getConfiguration('urdfStudio');
     const packageRoots = this.packageRoots(config);
     const packages = await discoverPackages(packageRoots);
 
-    log(`Loading: ${preview.document.uri.fsPath}`);
-    const rendered = await renderRobotDocument(preview.document.uri.fsPath, packages, preview.xacroArgs);
+    // `overrideUrdf` is a live edit echoed back from the Source pane: it is an
+    // already-expanded URDF, so skip xacro expansion and analyze it directly.
+    // The on-disk watcher is left untouched (the edit hasn't been saved yet).
+    let rendered: Awaited<ReturnType<typeof renderRobotDocument>>;
+    if (overrideUrdf !== undefined) {
+      rendered = {
+        sourcePath: preview.document.uri.fsPath,
+        format: 'urdf',
+        urdf: overrideUrdf,
+        xacroArgs: [],
+        includedFiles: [],
+        diagnostics: []
+      };
+    } else {
+      log(`Loading: ${preview.document.uri.fsPath}`);
+      rendered = await renderRobotDocument(preview.document.uri.fsPath, packages, preview.xacroArgs);
+    }
     const metadata = analyzeUrdf(rendered.urdf, preview.document.uri.fsPath, packages);
     const semanticFiles = this.semanticFiles(config);
     const semantic = await loadSemanticMetadata(semanticFiles, packages);
@@ -220,7 +245,9 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
     preview.metadata = metadata;
     preview.semanticSourceFile = semantic.sourceFile;
 
-    this.refreshWatcher(preview, [preview.document.uri.fsPath, ...rendered.includedFiles]);
+    if (overrideUrdf === undefined) {
+      this.refreshWatcher(preview, [preview.document.uri.fsPath, ...rendered.includedFiles]);
+    }
 
     const savedState = preview.pendingState ?? this.getPreviewState(preview.document.uri);
     preview.pendingState = undefined;
@@ -537,6 +564,18 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
     } catch (error) {
       log(`saveReport failed: ${String(error)}`);
       void vscode.window.showErrorMessage(`URDF Studio: could not write PDF (${error instanceof Error ? error.message : String(error)}).`);
+    }
+  }
+
+  private async saveSource(uri: vscode.Uri, text: string): Promise<void> {
+    try {
+      await vscode.workspace.fs.writeFile(uri, Buffer.from(text, 'utf8'));
+      void vscode.window.setStatusBarMessage(`URDF Studio: saved ${vscode.workspace.asRelativePath(uri)}.`, 2500);
+      // The file watcher will observe the write and reload the preview from the
+      // canonical on-disk content (re-expanding xacro if applicable).
+    } catch (error) {
+      log(`saveSource failed: ${String(error)}`);
+      void vscode.window.showErrorMessage(`URDF Studio: could not save source (${error instanceof Error ? error.message : String(error)}).`);
     }
   }
 

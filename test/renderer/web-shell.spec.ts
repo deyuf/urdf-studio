@@ -28,7 +28,9 @@ test.describe('web shell', () => {
   });
 
   test.afterAll(async () => {
-    await server.close();
+    // Guard against beforeAll having thrown before `server` was assigned, so
+    // the real setup error surfaces instead of a TypeError from this hook.
+    await server?.close();
   });
 
   test('loads a xacro fixture via the webkitdirectory fallback, renders, moves a joint, exports a screenshot', async ({ page, browserName }) => {

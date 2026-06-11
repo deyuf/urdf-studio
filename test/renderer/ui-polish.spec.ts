@@ -147,7 +147,9 @@ test.describe('UI polish (web shell)', () => {
   });
 
   test.afterAll(async () => {
-    await server.close();
+    // Guard against beforeAll having thrown before `server` was assigned, so
+    // the real setup error surfaces instead of a TypeError from this hook.
+    await server?.close();
   });
 
   test('Inspector tab is fully rendered (no ellipsis) at a typical laptop width', async ({ page, browserName }) => {

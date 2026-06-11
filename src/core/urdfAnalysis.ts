@@ -181,9 +181,12 @@ export function analyzeUrdf(urdf: string, sourcePath: string, packages: PackageM
   }
   diagnostics.push(...detectCycles(links, parentToChildren, sourcePath));
 
+  // One visited set shared across every root so a node reachable from more
+  // than one root (or via a diamond) is still expanded at most once total.
+  const treeSeen = new Set<string>();
   const tree = rootLinks.length > 0
-    ? rootLinks.map(rootLink => buildTree(rootLink, parentToChildren, new Set()))
-    : Object.keys(links).slice(0, 1).map(rootLink => buildTree(rootLink, parentToChildren, new Set()));
+    ? rootLinks.map(rootLink => buildTree(rootLink, parentToChildren, treeSeen))
+    : Object.keys(links).slice(0, 1).map(rootLink => buildTree(rootLink, parentToChildren, treeSeen));
   const movableJointNames = Object.values(joints)
     .filter(joint => MOVABLE_JOINT_TYPES.has(joint.type) && !joint.mimic)
     .map(joint => joint.name);
@@ -282,6 +285,13 @@ function emptyMetadata(message: string, file: string): RobotMetadata {
   };
 }
 
+// `seen` is a *global* visited set shared across the whole traversal (not
+// cloned per child). A link reachable via multiple parents — a "diamond" — is
+// therefore expanded at most once; subsequent encounters become leaf stubs.
+// This keeps a malformed multi-parent / diamond graph linear (O(V+E)) instead
+// of the previous O(2^n) blow-up from `new Set(seen)` per child. The
+// duplicate-parent case is already reported separately via tree.multipleParents,
+// so collapsing the repeated subtree here loses no diagnostic information.
 function buildTree(link: string, children: Map<string, Array<{ joint: string; child: string }>>, seen: Set<string>): LinkTreeNode {
   if (seen.has(link)) {
     return { link, children: [] };
@@ -290,7 +300,7 @@ function buildTree(link: string, children: Map<string, Array<{ joint: string; ch
   return {
     link,
     children: (children.get(link) ?? []).map(child => ({
-      ...buildTree(child.child, children, new Set(seen)),
+      ...buildTree(child.child, children, seen),
       joint: child.joint
     }))
   };

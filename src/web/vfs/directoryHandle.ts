@@ -42,6 +42,11 @@ export class DirectoryHandleVfs implements BrowserVfs {
 
   private readonly files = new Map<string, IndexedFile>();
   private readonly dirs = new Map<string, IndexedDir>();
+  // Lowercased path -> canonical path, built lazily on first case-insensitive
+  // miss. Lets URDFs that reference `Link0.STL` resolve an on-disk `link0.stl`
+  // on case-sensitive hosts (Linux/web), matching desktop behaviour on
+  // case-insensitive macOS/Windows.
+  private lowerIndex: Map<string, string> | null = null;
   private readonly textCache = new Map<string, string>();
   // Two-generation blob URL cache. currentBlobs holds URLs for the in-flight
   // load; previousBlobs holds URLs from the prior load, kept alive until the
@@ -105,8 +110,36 @@ export class DirectoryHandleVfs implements BrowserVfs {
     options.onProgress?.(fileCount, dirCount);
   }
 
+  /** Build (once) and return the lowercased path -> canonical path index. */
+  private buildLowerIndex(): Map<string, string> {
+    if (this.lowerIndex) {
+      return this.lowerIndex;
+    }
+    const index = new Map<string, string>();
+    // Files take priority over dirs on a clash (rare), but iterate dirs first
+    // so files win the last-write.
+    for (const dirPath of this.dirs.keys()) {
+      index.set(dirPath.toLowerCase(), dirPath);
+    }
+    for (const filePath of this.files.keys()) {
+      index.set(filePath.toLowerCase(), filePath);
+    }
+    this.lowerIndex = index;
+    return index;
+  }
+
+  /** Resolve a path, preferring an exact match and falling back to a
+   *  case-insensitive match against the indexed paths. Returns undefined if
+   *  neither matches. */
+  private resolvePath(absPath: string): string | undefined {
+    if (this.files.has(absPath) || this.dirs.has(absPath)) {
+      return absPath;
+    }
+    return this.buildLowerIndex().get(absPath.toLowerCase());
+  }
+
   existsSync(absPath: string): boolean {
-    return this.files.has(absPath) || this.dirs.has(absPath);
+    return this.resolvePath(absPath) !== undefined;
   }
 
   async readText(absPath: string): Promise<string> {
@@ -149,7 +182,11 @@ export class DirectoryHandleVfs implements BrowserVfs {
   }
 
   async readdir(absPath: string): Promise<DirEntry[]> {
-    const dir = this.dirs.get(absPath);
+    let dir = this.dirs.get(absPath);
+    if (!dir) {
+      const resolved = this.resolvePath(absPath);
+      dir = resolved !== undefined ? this.dirs.get(resolved) : undefined;
+    }
     if (!dir) {
       throw new Error(`Not a directory: ${absPath}`);
     }
@@ -220,11 +257,16 @@ export class DirectoryHandleVfs implements BrowserVfs {
     this.releaseBlobs();
     this.files.clear();
     this.dirs.clear();
+    this.lowerIndex = null;
     this.textCache.clear();
   }
 
   private async getFile(absPath: string): Promise<File> {
-    const entry = this.files.get(absPath);
+    let entry = this.files.get(absPath);
+    if (!entry) {
+      const resolved = this.resolvePath(absPath);
+      entry = resolved !== undefined ? this.files.get(resolved) : undefined;
+    }
     if (!entry) {
       throw new Error(`File not found in VFS: ${absPath}`);
     }

@@ -34,12 +34,21 @@ export class FileListVfs implements BrowserVfs {
     if (list.length === 0) {
       throw new Error('FileListVfs: empty file list');
     }
-    const firstPath = (list[0] as File & { webkitRelativePath?: string }).webkitRelativePath ?? list[0].name;
-    const rootName = firstPath.includes('/') ? firstPath.split('/')[0] : 'files';
+    const firstPath = (list[0] as File & { webkitRelativePath?: string }).webkitRelativePath || list[0].name;
+    // When webkitRelativePath carries a folder (the directory-picker case) the
+    // root is that top folder. With a plain multi-file selection (Safari/mobile
+    // fallback) webkitRelativePath is empty, so there is no shared parent — we
+    // synthesize a "files" root AND store every file underneath it so that
+    // `this.root` actually exists in the tree (package discovery and the
+    // display-path strip both depend on root being a real node).
+    const hasFolder = firstPath.includes('/');
+    const rootName = hasFolder ? firstPath.split('/')[0] : 'files';
     this.label = rootName;
     this.root = `/${rootName}`;
     for (const file of list) {
-      const rel = (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name;
+      const raw = (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name;
+      // Normalize so both cases land under `this.root`.
+      const rel = hasFolder ? raw : `${rootName}/${raw}`;
       if (SKIP_DIR_REGEX.test(`/${rel}`)) {
         continue;
       }
@@ -77,7 +86,20 @@ export class FileListVfs implements BrowserVfs {
       if (cursor.kind !== 'dir') {
         return undefined;
       }
-      const next = cursor.children.get(part);
+      // Prefer an exact match; fall back to a case-insensitive match against
+      // the children so a URDF referencing `Link0.STL` resolves an on-disk
+      // `link0.stl` on case-sensitive hosts (Linux/web). Desktop macOS/Windows
+      // already match here because their filesystems are case-insensitive.
+      let next = cursor.children.get(part);
+      if (!next) {
+        const lower = part.toLowerCase();
+        for (const [name, child] of cursor.children) {
+          if (name.toLowerCase() === lower) {
+            next = child;
+            break;
+          }
+        }
+      }
       if (!next) {
         return undefined;
       }
@@ -196,10 +218,16 @@ export class FileListVfs implements BrowserVfs {
   }
 
   private requireFile(absPath: string): File {
-    const file = this.files.get(absPath);
-    if (!file) {
-      throw new Error(`File not found in VFS: ${absPath}`);
+    const exact = this.files.get(absPath);
+    if (exact) {
+      return exact;
     }
-    return file;
+    // Case-insensitive fallback via the tree walk (covers mixed-case mesh
+    // references on case-sensitive hosts).
+    const node = this.findNode(absPath);
+    if (node && node.kind === 'file') {
+      return node.file;
+    }
+    throw new Error(`File not found in VFS: ${absPath}`);
   }
 }

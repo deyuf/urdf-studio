@@ -80,14 +80,29 @@ function num(value: number): string {
   if (!Number.isFinite(value)) {
     return '';
   }
-  // Six significant digits is enough for kg / m / kg·m² without scientific
-  // notation noise for everyday robots.
-  return Number(value.toFixed(6)).toString();
+  if (value === 0) {
+    return '0';
+  }
+  // Six *significant* digits — not six decimal places. toFixed(6) would round
+  // tiny inertias like 2.5e-7 down to "0"; toPrecision(6) preserves them.
+  // Number(...) then strips trailing-zero / scientific-notation noise where
+  // it can (e.g. "1.25000" -> "1.25") while still falling back to exponential
+  // form for genuinely tiny/huge magnitudes.
+  return Number(value.toPrecision(6)).toString();
 }
 
 function escapeCsv(value: string): string {
-  if (/[",\n\r]/.test(value)) {
-    return `"${value.replace(/"/g, '""')}"`;
+  // CSV formula injection: a cell beginning with = + - @ (optionally after a
+  // leading space/tab) is executed as a formula by Excel / Google Sheets.
+  // Neutralize by prefixing a single quote, then apply the usual quoting.
+  // A leading `-` is also legal for negative numbers, so don't quote-guard a
+  // cell that is a plain numeric value (e.g. "-1.25") — only genuine text.
+  let cell = value;
+  if (/^[\s]*[=+\-@]/.test(cell) && !/^-?\d/.test(cell)) {
+    cell = `'${cell}`;
   }
-  return value;
+  if (/[",\n\r]/.test(cell)) {
+    return `"${cell.replace(/"/g, '""')}"`;
+  }
+  return cell;
 }

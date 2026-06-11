@@ -78,12 +78,15 @@ function wordRangeForLinkOrJoint(document: vscode.TextDocument, position: vscode
   const line = document.lineAt(position.line).text;
   const offsetInLine = position.character;
 
+  // Allow other attributes before the one we key off (e.g.
+  // `<joint type="revolute" name="j1">`). The `\b[^>]*\b` prefix mirrors
+  // locateNamedTag so the target attribute need not be first.
   const matchers: Array<{ kind: 'link' | 'joint' | 'parent' | 'child' | 'mimic'; pattern: RegExp }> = [
-    { kind: 'parent', pattern: /<parent\s+link="([^"]+)"/g },
-    { kind: 'child', pattern: /<child\s+link="([^"]+)"/g },
-    { kind: 'mimic', pattern: /<mimic\s+joint="([^"]+)"/g },
-    { kind: 'link', pattern: /<link\s+name="([^"]+)"/g },
-    { kind: 'joint', pattern: /<joint\s+name="([^"]+)"/g }
+    { kind: 'parent', pattern: /<parent\b[^>]*\blink="([^"]+)"/g },
+    { kind: 'child', pattern: /<child\b[^>]*\blink="([^"]+)"/g },
+    { kind: 'mimic', pattern: /<mimic\b[^>]*\bjoint="([^"]+)"/g },
+    { kind: 'link', pattern: /<link\b[^>]*\bname="([^"]+)"/g },
+    { kind: 'joint', pattern: /<joint\b[^>]*\bname="([^"]+)"/g }
   ];
 
   for (const matcher of matchers) {
@@ -207,12 +210,14 @@ class UrdfReferenceProvider implements vscode.ReferenceProvider {
     }
     const text = document.getText();
     const escaped = target.name.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&');
+    // `\b[^>]*\b` lets the keyed attribute appear after other attributes,
+    // e.g. `<joint type="revolute" name="j1">`.
     const patterns = target.kind === 'joint' || target.kind === 'mimic'
-      ? [new RegExp(`<joint\\s+name="${escaped}"`, 'g'), new RegExp(`<mimic\\s+joint="${escaped}"`, 'g')]
+      ? [new RegExp(`<joint\\b[^>]*\\bname="${escaped}"`, 'g'), new RegExp(`<mimic\\b[^>]*\\bjoint="${escaped}"`, 'g')]
       : [
-        new RegExp(`<link\\s+name="${escaped}"`, 'g'),
-        new RegExp(`<parent\\s+link="${escaped}"`, 'g'),
-        new RegExp(`<child\\s+link="${escaped}"`, 'g')
+        new RegExp(`<link\\b[^>]*\\bname="${escaped}"`, 'g'),
+        new RegExp(`<parent\\b[^>]*\\blink="${escaped}"`, 'g'),
+        new RegExp(`<child\\b[^>]*\\blink="${escaped}"`, 'g')
       ];
     const locations: vscode.Location[] = [];
     for (const pattern of patterns) {

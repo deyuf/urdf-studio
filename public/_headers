@@ -4,9 +4,20 @@
   Permissions-Policy: clipboard-read=(self), clipboard-write=(self)
   Referrer-Policy: strict-origin-when-cross-origin
   X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; worker-src 'self' blob:; child-src 'self' blob:; connect-src 'self' blob: data:; frame-ancestors 'none'; base-uri 'self'; object-src 'none'
 
+# The entry script and the copied CSS files are emitted under fixed,
+# un-hashed names (app.js, styles.css, editor.css, web.css). They must be
+# revalidated on every load so a redeploy is picked up immediately —
+# otherwise a year-cached app.js would import now-missing hashed chunks.
 /app.js
-  Cache-Control: public, max-age=31536000, immutable
+  Cache-Control: public, max-age=0, must-revalidate
 
 /*.css
+  Cache-Control: public, max-age=0, must-revalidate
+
+# Code-split chunks are content-hashed (chunks/[name]-[hash].js), so they are
+# safe to cache forever — a new deploy mints new filenames.
+/chunks/*
   Cache-Control: public, max-age=31536000, immutable
