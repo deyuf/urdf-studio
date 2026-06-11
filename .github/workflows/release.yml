@@ -3,11 +3,17 @@ name: Release pipeline
 # Single workflow handling the full CI → deploy chain:
 #
 #   test (always)
-#     ├──▶ deploy-web   (main only, needs test)
-#     ├──▶ publish      (main only, needs test, skips if version unchanged)
-#     └──▶ deploy-docs  (main only, needs deploy-web + publish)
+#     ├──▶ deploy-web          (main only, needs test)
+#     ├──▶ publish             (main only, needs test, skips if version unchanged)
+#     ├──▶ publish-prerelease  (develop push only, needs test)
+#     ├──▶ preview-web         (non-main push, needs test)
+#     └──▶ deploy-docs         (main only, needs deploy-web + publish)
 #
-# Branch previews live in preview-web.yml (manual dispatch only).
+# Marketplace channels:
+#   - main    → stable release  (even minor, e.g. 0.4.x), version-gated.
+#   - develop → pre-release      (odd minor, e.g. 0.5.<run_number>), every push.
+#
+# Branch previews of the WEB app live in preview-web.yml (manual dispatch only).
 
 on:
   push:
@@ -336,6 +342,70 @@ jobs:
           name: v${{ steps.version.outputs.current }}
           generate_release_notes: true
           files: urdf-studio-${{ steps.version.outputs.current }}.vsix
+
+  # =================================================================
+  # publish-prerelease — VS Code Marketplace PRE-RELEASE publish.
+  # Runs on every push to develop (after tests pass). The version is
+  # derived, not committed: stable releases use an even minor (0.4.x on
+  # main); pre-releases bump to the next odd minor and use the GitHub run
+  # number as the patch (0.5.<run_number>), which is strictly increasing
+  # across runs so the Marketplace always accepts it. VS Code shows these
+  # only to users who opted into the pre-release channel.
+  # =================================================================
+  publish-prerelease:
+    name: Publish pre-release to VS Code Marketplace
+    needs: test
+    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Verify VSCE_PAT is configured
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          if [ -z "$VSCE_PAT" ]; then
+            echo "::error::Missing required secret VSCE_PAT. Configure it under Settings → Secrets and variables → Actions (Azure DevOps PAT with Marketplace · Manage)."
+            exit 1
+          fi
+          echo "VSCE_PAT present (${#VSCE_PAT} chars)."
+
+      - name: Compute pre-release version
+        id: version
+        run: |
+          base=$(node -p "require('./package.json').version")
+          major=$(echo "$base" | cut -d. -f1)
+          minor=$(echo "$base" | cut -d. -f2)
+          # Pre-releases live on the next ODD minor (VS Code's recommended
+          # separation from even-minor stable releases). If the base minor is
+          # already odd, keep it.
+          if [ $(( minor % 2 )) -eq 0 ]; then
+            minor=$(( minor + 1 ))
+          fi
+          version="${major}.${minor}.${{ github.run_number }}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Base $base → pre-release $version"
+
+      - name: Set package version (not committed)
+        run: npm version "${{ steps.version.outputs.version }}" --no-git-tag-version --allow-same-version
+
+      # `vsce publish` runs the `vscode:prepublish` script (npm run package),
+      # which type-checks and builds the production bundle, then packages and
+      # publishes in one step — reading the version we just set above.
+      - name: Publish pre-release to Marketplace
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: npx --yes @vscode/vsce@^3.9.1 publish --pre-release
 
   # =================================================================
   # deploy-docs — GitHub Pages.
