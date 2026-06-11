@@ -85,21 +85,24 @@ const vscode: VsCodeApi = typeof apiHost.acquireVsCodeApi === 'function'
   ? apiHost.acquireVsCodeApi()
   : { postMessage: () => undefined, setState: () => undefined, getState: () => undefined };
 
-// Reject messages that clearly originate from another browsing context. The
-// web host posts on our own window (source === window, origin === our origin);
-// the VS Code extension and the test harness deliver with a null source and an
-// empty origin. A cross-origin embedder/opener always surfaces as a foreign
-// source window and/or a non-empty origin that differs from ours, so both are
-// blocked — stopping an embedding page from injecting loadRobot (with
-// attacker-controlled asset URLs) or otherwise driving the renderer.
+// Reject messages that clearly originate from a foreign browsing context,
+// while accepting every legitimate host delivery path:
+//   - VS Code webview: the extension's messages are relayed into the content
+//     iframe by its PARENT frame, so event.source === window.parent and the
+//     origin differs from ours. (This is why a plain `source !== window`
+//     check breaks the extension: loadRobot never arrives and the preview
+//     sits at "Waiting for robot...".)
+//   - Standalone web app: the host posts on our own window (source === window).
+//   - Test harness: synthetic MessageEvents carry no source.
+// A hostile cross-origin embedder/opener is neither `window` nor (in the web
+// deployment, which sends `frame-ancestors 'none'`) ever our parent, and a
+// real window.open opener arrives as a third window — all rejected.
 function isTrustedMessageEvent(event: MessageEvent): boolean {
-  if (event.source && event.source !== window) {
-    return false;
+  const source = event.source;
+  if (!source || source === window) {
+    return true;
   }
-  if (event.origin && event.origin !== window.location.origin) {
-    return false;
-  }
-  return true;
+  return source === window.parent;
 }
 
 const meshCache = new Map<string, Promise<Object3D | null>>();
