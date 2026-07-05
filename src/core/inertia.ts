@@ -9,12 +9,28 @@ export interface InertiaTensor {
   izz: number;
 }
 
-export function inertiaEigenvalues(tensor: InertiaTensor): [number, number, number] {
-  // Symmetric 3x3 Jacobi rotation. Returns sorted descending.
+interface JacobiResult {
+  /** Eigenvalues in the natural (unsorted) Jacobi diagonal order. */
+  values: [number, number, number];
+  /** Eigenvectors as columns: vectors[k] is the unit eigenvector for values[k]. */
+  vectors: [[number, number, number], [number, number, number], [number, number, number]];
+}
+
+// Symmetric 3x3 Jacobi rotation that also accumulates the eigenvector basis.
+// The previous implementation discarded the rotation matrix, which is why the
+// ellipsoid visualisation could not be oriented along the principal axes.
+function jacobiEigen(tensor: InertiaTensor): JacobiResult {
   const m = [
     [tensor.ixx, tensor.ixy, tensor.ixz],
     [tensor.ixy, tensor.iyy, tensor.iyz],
     [tensor.ixz, tensor.iyz, tensor.izz]
+  ];
+  // v accumulates the product of Jacobi rotations; its columns are the
+  // eigenvectors once m has been diagonalised.
+  const v = [
+    [1, 0, 0],
+    [0, 1, 0],
+    [0, 0, 1]
   ];
   for (let iter = 0; iter < 64; iter += 1) {
     let p = 0;
@@ -55,24 +71,85 @@ export function inertiaEigenvalues(tensor: InertiaTensor): [number, number, numb
         m[q][r] = m[r][q];
       }
     }
+    // Rotate the eigenvector basis with the same (c, s) so its columns track
+    // the diagonalisation.
+    for (let r = 0; r < 3; r += 1) {
+      const vrp = v[r][p];
+      const vrq = v[r][q];
+      v[r][p] = c * vrp - s * vrq;
+      v[r][q] = s * vrp + c * vrq;
+    }
   }
-  const values: [number, number, number] = [m[0][0], m[1][1], m[2][2]];
+  return {
+    values: [m[0][0], m[1][1], m[2][2]],
+    vectors: [
+      [v[0][0], v[1][0], v[2][0]],
+      [v[0][1], v[1][1], v[2][1]],
+      [v[0][2], v[1][2], v[2][2]]
+    ]
+  };
+}
+
+export function inertiaEigenvalues(tensor: InertiaTensor): [number, number, number] {
+  // Returns eigenvalues sorted descending (callers that only need magnitudes:
+  // positive-definiteness checks, BOM display).
+  const values = jacobiEigen(tensor).values;
   values.sort((a, b) => b - a);
   return values;
 }
 
-export function ellipsoidSemiAxes(inertial: InertialInfo): [number, number, number] {
+export interface InertiaEllipsoid {
+  /** Semi-axes along the principal axes, matching `rotation`'s columns. */
+  semiAxes: [number, number, number];
+  /** Row-major 3x3 rotation whose columns are the principal axes (right-handed). */
+  rotation: number[];
+}
+
+const IDENTITY_3X3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+
+// Full ellipsoid description: semi-axes AND the principal-axis orientation.
+// The semi-axes correspond one-to-one with the eigenvectors (no sorting), so
+// the caller can build a correctly oriented ellipsoid for non-diagonal tensors.
+export function inertiaEllipsoid(inertial: InertialInfo): InertiaEllipsoid {
   if (inertial.mass <= 0) {
-    return [0, 0, 0];
+    return { semiAxes: [0, 0, 0], rotation: [...IDENTITY_3X3] };
   }
-  const eigenvalues = inertiaEigenvalues(inertial);
+  const { values, vectors } = jacobiEigen(inertial);
   // For a uniform-density solid ellipsoid with semi-axes (a, b, c) and mass m:
-  //   I_x = (m/5)(b^2 + c^2),  I_y = (m/5)(a^2 + c^2),  I_z = (m/5)(a^2 + b^2)
-  // Solving gives  a^2 = (5/2m)(I_y + I_z - I_x), etc.
-  const [l1, l2, l3] = eigenvalues;
+  //   I_1 = (m/5)(b^2 + c^2),  I_2 = (m/5)(a^2 + c^2),  I_3 = (m/5)(a^2 + b^2)
+  // Solving gives  a^2 = (5/2m)(I_2 + I_3 - I_1), etc., where (I_1,I_2,I_3) are
+  // the principal moments along the eigenvectors.
+  const [l1, l2, l3] = values;
   const factor = 5 / (2 * inertial.mass);
-  const a2 = Math.max(0, factor * (l2 + l3 - l1));
-  const b2 = Math.max(0, factor * (l1 + l3 - l2));
-  const c2 = Math.max(0, factor * (l1 + l2 - l3));
-  return [Math.sqrt(a2), Math.sqrt(b2), Math.sqrt(c2)];
+  const semiAxes: [number, number, number] = [
+    Math.sqrt(Math.max(0, factor * (l2 + l3 - l1))),
+    Math.sqrt(Math.max(0, factor * (l1 + l3 - l2))),
+    Math.sqrt(Math.max(0, factor * (l1 + l2 - l3)))
+  ];
+  // Row-major matrix whose columns are the eigenvectors: element(row, col) =
+  // vectors[col][row].
+  const rotation = [
+    vectors[0][0], vectors[1][0], vectors[2][0],
+    vectors[0][1], vectors[1][1], vectors[2][1],
+    vectors[0][2], vectors[1][2], vectors[2][2]
+  ];
+  // Guarantee a right-handed basis (det = +1) so the ellipsoid is not mirrored.
+  if (determinant3(rotation) < 0) {
+    rotation[2] = -rotation[2];
+    rotation[5] = -rotation[5];
+    rotation[8] = -rotation[8];
+  }
+  return { semiAxes, rotation };
+}
+
+function determinant3(m: number[]): number {
+  return (
+    m[0] * (m[4] * m[8] - m[5] * m[7]) -
+    m[1] * (m[3] * m[8] - m[5] * m[6]) +
+    m[2] * (m[3] * m[7] - m[4] * m[6])
+  );
+}
+
+export function ellipsoidSemiAxes(inertial: InertialInfo): [number, number, number] {
+  return inertiaEllipsoid(inertial).semiAxes;
 }

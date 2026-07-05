@@ -191,3 +191,71 @@ test('FileListVfs.releaseBlobs revokes everything tracked across both generation
 test('FileListVfs throws on construction with an empty file list', () => {
   assert.throws(() => new FileListVfs([] as unknown as File[]), /empty file list/);
 });
+
+// =============================================================================
+// Empty webkitRelativePath (plain multi-file select — Safari/mobile fallback)
+// =============================================================================
+
+// A File with NO webkitRelativePath, mirroring a plain <input type="file"
+// multiple> selection where the browser exposes only bare names.
+function makeBareFile(name: string, content = ''): File {
+  const f = new File([content], name);
+  // Browsers set webkitRelativePath to '' (empty string) in this case.
+  Object.defineProperty(f, 'webkitRelativePath', { value: '', configurable: true });
+  return f;
+}
+
+test('FileListVfs: root exists in the tree when webkitRelativePath is empty', () => {
+  const vfs = new FileListVfs([
+    makeBareFile('robot.urdf', '<robot/>'),
+    makeBareFile('link0.stl', 'bytes')
+  ]);
+  // Synthesized root.
+  assert.equal(vfs.root, '/files');
+  assert.equal(vfs.label, 'files');
+  // The root must be a real directory node (package discovery / readdir need it).
+  assert.equal(vfs.existsSync('/files'), true);
+  // Files are stored UNDER the root so vfs.root is consistent with file paths.
+  assert.equal(vfs.existsSync('/files/robot.urdf'), true);
+  assert.equal(vfs.existsSync('/files/link0.stl'), true);
+  assert.deepEqual(vfs.allFiles(), ['/files/link0.stl', '/files/robot.urdf']);
+});
+
+test('FileListVfs: readdir on synthesized root lists the bare files', async () => {
+  const vfs = new FileListVfs([
+    makeBareFile('a.urdf', ''),
+    makeBareFile('b.stl', '')
+  ]);
+  const entries = await vfs.readdir('/files');
+  const names = entries.map(e => e.name).sort();
+  assert.deepEqual(names, ['a.urdf', 'b.stl']);
+});
+
+test('FileListVfs: display-path strip works against the synthesized root', () => {
+  const vfs = new FileListVfs([makeBareFile('robot.urdf', '')]);
+  const path = '/files/robot.urdf';
+  assert.equal(path.replace(`${vfs.root}/`, ''), 'robot.urdf');
+});
+
+// =============================================================================
+// Case-insensitive mesh fallback (Linux/web case-sensitive host)
+// =============================================================================
+
+test('FileListVfs: existsSync falls back to a case-insensitive match', () => {
+  const vfs = new FileListVfs([makeFile('pkg/meshes/link0.stl', 'bytes')]);
+  // Exact still works.
+  assert.equal(vfs.existsSync('/pkg/meshes/link0.stl'), true);
+  // URDF references differing only in case resolve via fallback.
+  assert.equal(vfs.existsSync('/pkg/meshes/Link0.STL'), true);
+  assert.equal(vfs.existsSync('/PKG/MESHES/LINK0.STL'), true);
+  // A genuinely missing file still reports false.
+  assert.equal(vfs.existsSync('/pkg/meshes/other.stl'), false);
+});
+
+test('FileListVfs: readText falls back to a case-insensitive match', async () => {
+  const vfs = new FileListVfs([makeFile('pkg/meshes/Link0.STL', 'STL-BYTES')]);
+  const exact = await vfs.readText('/pkg/meshes/Link0.STL');
+  const insensitive = await vfs.readText('/pkg/meshes/link0.stl');
+  assert.equal(exact, 'STL-BYTES');
+  assert.equal(insensitive, 'STL-BYTES');
+});

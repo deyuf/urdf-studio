@@ -2,9 +2,13 @@ import { DOMParser } from '@xmldom/xmldom';
 
 export function parseXml(content: string, source = 'XML'): Document {
   const errors: string[] = [];
+  // Browsers (and other lenient XML consumers) accept documents that the
+  // strict @xmldom/xmldom handler would emit a *warning* for. Treat only
+  // `error`/`fatalError` as fatal; warnings are collected but never abort the
+  // parse so files real browsers accept are not rejected here.
   const doc = new DOMParser({
     errorHandler: {
-      warning: message => errors.push(String(message)),
+      warning: () => { /* non-fatal: browsers accept these; ignore */ },
       error: message => errors.push(String(message)),
       fatalError: message => errors.push(String(message))
     }
@@ -15,6 +19,15 @@ export function parseXml(content: string, source = 'XML'): Document {
 
   if (errors.length > 0) {
     throw new Error(`${source} parse failed: ${errors.join('; ')}`);
+  }
+
+  // @xmldom/xmldom can return a Document with a null documentElement for
+  // root-less input (e.g. `<?xml version="1.0"?><!-- comment -->`) without
+  // reporting any error. Callers immediately dereference documentElement, so
+  // surface this as a clear thrown Error and let their try/catch degrade to a
+  // diagnostic instead of crashing with a TypeError.
+  if (!doc.documentElement) {
+    throw new Error(`${source} parse failed: document has no root element`);
   }
 
   return doc;

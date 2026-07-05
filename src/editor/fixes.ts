@@ -28,6 +28,74 @@ function indentOf(text: string): string {
   return m ? m[1] : '';
 }
 
+// Resolve where to insert a child element into the <tagName> element that
+// starts at (or just after) the diagnostic line. Handles two shapes:
+//   <link name="a">...</link>   → insert before the matching </tag>
+//   <link name="a"/>            → expand the self-closing tag into a pair
+// Returning a description rather than mutating keeps each fix's intent clear
+// and avoids the old bug where a self-closing element made the scan land on a
+// LATER element's closing tag.
+type ElementInsertion =
+  | { kind: 'before'; from: number; indent: string }
+  | { kind: 'expand'; from: number; to: number; indent: string };
+
+function locateElementInsertion(view: EditorView, startLine: number, tagName: string): ElementInsertion | undefined {
+  const doc = view.state.doc;
+  // Find the line that opens the element (the diagnostic usually points at it,
+  // but be tolerant of a small offset).
+  const opener = new RegExp(`<${tagName}\\b`);
+  let tagLine = -1;
+  for (let i = startLine; i <= Math.min(doc.lines, startLine + 5); i++) {
+    if (opener.test(doc.line(i).text)) {
+      tagLine = i;
+      break;
+    }
+  }
+  if (tagLine === -1) {
+    return undefined;
+  }
+  const tagLineInfo = doc.line(tagLine);
+  const tagIndent = indentOf(tagLineInfo.text);
+  const tagStartCol = tagLineInfo.text.search(opener);
+  const tagStartOffset = tagLineInfo.from + tagStartCol;
+
+  // Scan forward from the tag start to the end of the opening tag, ignoring
+  // '>' characters inside quoted attribute values, to learn whether it is
+  // self-closing.
+  const tail = doc.sliceString(tagStartOffset, doc.length);
+  let quote: string | null = null;
+  for (let k = 0; k < tail.length; k++) {
+    const ch = tail[k];
+    if (quote) {
+      if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === '\'') {
+      quote = ch;
+      continue;
+    }
+    if (ch === '>') {
+      const selfClose = tail[k - 1] === '/';
+      if (selfClose) {
+        // Replace the trailing "/>" with ">"; the caller's child + close tag
+        // follow.
+        return { kind: 'expand', from: tagStartOffset + k - 1, to: tagStartOffset + k + 1, indent: tagIndent };
+      }
+      break; // Open tag with children — fall through to find the close tag.
+    }
+  }
+
+  // Open/close form: find the matching </tagName>.
+  const closer = new RegExp(`</${tagName}\\s*>`);
+  for (let i = tagLine; i <= doc.lines; i++) {
+    const lineInfo = doc.line(i);
+    if (closer.test(lineInfo.text)) {
+      return { kind: 'before', from: lineInfo.from, indent: indentOf(lineInfo.text) + '  ' };
+    }
+  }
+  return undefined;
+}
+
 // ---- P-004: insert default <limit/> --------------------------------------
 
 const fixInsertLimit: QuickFix = {
@@ -35,21 +103,18 @@ const fixInsertLimit: QuickFix = {
   apply(view, diag, runner) {
     const line = findLineForDiagnostic(view, diag);
     if (line === undefined) return;
-    // Walk forward to find </joint>
-    const doc = view.state.doc;
-    for (let i = line; i <= doc.lines; i++) {
-      const lineInfo = doc.line(i);
-      const text = doc.sliceString(lineInfo.from, lineInfo.to);
-      if (/<\/joint\s*>/.test(text)) {
-        const indent = indentOf(text) + '  ';
-        const insertion = `${indent}<limit lower="-1.57" upper="1.57" effort="100" velocity="1.0"/>\n`;
-        view.dispatch({
-          changes: { from: lineInfo.from, insert: insertion }
-        });
-        runner.notify?.('P-004', diag);
-        return;
-      }
+    const target = locateElementInsertion(view, line, 'joint');
+    if (!target) return;
+    const limit = (indent: string) => `${indent}<limit lower="-1.57" upper="1.57" effort="100" velocity="1.0"/>`;
+    if (target.kind === 'before') {
+      view.dispatch({ changes: { from: target.from, insert: `${limit(target.indent)}\n` } });
+    } else {
+      const childIndent = target.indent + '  ';
+      view.dispatch({
+        changes: { from: target.from, to: target.to, insert: `>\n${limit(childIndent)}\n${target.indent}</joint>` }
+      });
     }
+    runner.notify?.('P-004', diag);
   }
 };
 
@@ -139,22 +204,22 @@ const fixInsertInertial: QuickFix = {
   apply(view, diag, runner) {
     const line = findLineForDiagnostic(view, diag);
     if (line === undefined) return;
-    const doc = view.state.doc;
-    for (let i = line; i <= Math.min(doc.lines, line + 50); i++) {
-      const lineInfo = doc.line(i);
-      const text = doc.sliceString(lineInfo.from, lineInfo.to);
-      if (/<\/link\s*>/.test(text)) {
-        const indent = indentOf(text) + '  ';
-        const insertion =
-          `${indent}<inertial>\n` +
-          `${indent}  <mass value="1.0"/>\n` +
-          `${indent}  <inertia ixx="0.01" ixy="0" ixz="0" iyy="0.01" iyz="0" izz="0.01"/>\n` +
-          `${indent}</inertial>\n`;
-        view.dispatch({ changes: { from: lineInfo.from, insert: insertion } });
-        runner.notify?.('P-001', diag);
-        return;
-      }
+    const target = locateElementInsertion(view, line, 'link');
+    if (!target) return;
+    const inertial = (indent: string) =>
+      `${indent}<inertial>\n` +
+      `${indent}  <mass value="1.0"/>\n` +
+      `${indent}  <inertia ixx="0.01" ixy="0" ixz="0" iyy="0.01" iyz="0" izz="0.01"/>\n` +
+      `${indent}</inertial>`;
+    if (target.kind === 'before') {
+      view.dispatch({ changes: { from: target.from, insert: `${inertial(target.indent)}\n` } });
+    } else {
+      const childIndent = target.indent + '  ';
+      view.dispatch({
+        changes: { from: target.from, to: target.to, insert: `>\n${inertial(childIndent)}\n${target.indent}</link>` }
+      });
     }
+    runner.notify?.('P-001', diag);
   }
 };
 

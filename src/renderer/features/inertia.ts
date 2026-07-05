@@ -7,7 +7,7 @@
 
 import * as THREE from 'three';
 import type { URDFRobot } from 'urdf-loader/src/URDFClasses';
-import { ellipsoidSemiAxes } from '../../core/inertia';
+import { inertiaEllipsoid } from '../../core/inertia';
 import type { RobotMetadata } from '../../core/types';
 
 export interface InertiaDeps {
@@ -49,6 +49,12 @@ export class InertiaVisualisation {
 
   /** Wipe everything and reset visibility to the renderer's default (off). */
   dispose(): void {
+    this.disposeHelpers();
+    this.deps.onStateChange?.();
+  }
+
+  /** Remove + dispose all per-link helpers and the aggregate marker. */
+  private disposeHelpers(): void {
     for (const group of this.helpers.values()) {
       group.parent?.remove(group);
       group.traverse(object => {
@@ -69,13 +75,18 @@ export class InertiaVisualisation {
       (this.totalMarker.material as THREE.Material).dispose();
       this.totalMarker = undefined;
     }
-    this.deps.onStateChange?.();
   }
 
   /** Build per-link ellipsoid + CoM markers, plus the aggregate marker. */
   build(robot: URDFRobot, metadata: RobotMetadata): void {
     if (!robot.links) {
       return;
+    }
+    // Defensive: clear any previously built helpers so a repeated build (e.g.
+    // a reload that races with a prior load) cannot orphan ellipsoid groups
+    // on links or leave a stale aggregate marker in the scene.
+    if (this.helpers.size > 0 || this.totalMarker) {
+      this.disposeHelpers();
     }
     for (const link of Object.values(metadata.links)) {
       const inertial = link.inertial;
@@ -88,15 +99,13 @@ export class InertiaVisualisation {
       }
       const group = new THREE.Group();
       group.position.set(inertial.origin[0], inertial.origin[1], inertial.origin[2]);
-      group.rotation.set(inertial.rotation[0], inertial.rotation[1], inertial.rotation[2]);
+      // URDF rpy is extrinsic XYZ = intrinsic ZYX, matching urdf-loader's own
+      // joint/visual origin handling. The default THREE 'XYZ' order would
+      // mis-orient inertial frames with two or more non-zero rpy components.
+      group.rotation.set(inertial.rotation[0], inertial.rotation[1], inertial.rotation[2], 'ZYX');
 
-      const semi = ellipsoidSemiAxes(inertial);
+      const { semiAxes, rotation } = inertiaEllipsoid(inertial);
       const ellipsoidGeometry = new THREE.SphereGeometry(1, 24, 16);
-      ellipsoidGeometry.scale(
-        Math.max(semi[0], 1e-4),
-        Math.max(semi[1], 1e-4),
-        Math.max(semi[2], 1e-4)
-      );
       const ellipsoidMaterial = new THREE.MeshStandardMaterial({
         color: 0x9ad7ff,
         transparent: true,
@@ -105,7 +114,22 @@ export class InertiaVisualisation {
         metalness: 0,
         depthWrite: false
       });
-      group.add(new THREE.Mesh(ellipsoidGeometry, ellipsoidMaterial));
+      const ellipsoidMesh = new THREE.Mesh(ellipsoidGeometry, ellipsoidMaterial);
+      // Orient the ellipsoid along the tensor's principal axes (eigenvectors),
+      // then scale by the matching semi-axes.
+      const principal = new THREE.Matrix4().set(
+        rotation[0], rotation[1], rotation[2], 0,
+        rotation[3], rotation[4], rotation[5], 0,
+        rotation[6], rotation[7], rotation[8], 0,
+        0, 0, 0, 1
+      );
+      ellipsoidMesh.quaternion.setFromRotationMatrix(principal);
+      ellipsoidMesh.scale.set(
+        Math.max(semiAxes[0], 1e-4),
+        Math.max(semiAxes[1], 1e-4),
+        Math.max(semiAxes[2], 1e-4)
+      );
+      group.add(ellipsoidMesh);
 
       const sphereSize = Math.max(0.005, this.deps.getBoundsRadius() * 0.01);
       const comMarker = new THREE.Mesh(

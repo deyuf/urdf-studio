@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import path from 'node:path';
-import { promises as fs } from 'node:fs';
+import { promises as fs, appendFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import './core/io.node';
 import { discoverPackages } from './core/packageMap';
@@ -17,6 +17,22 @@ let outputChannel: vscode.OutputChannel;
 
 export function log(message: string): void {
   outputChannel?.appendLine(`[${new Date().toISOString()}] ${message}`);
+}
+
+// Integration-test hook: when URDF_STUDIO_TEST_LOG points at a file, append
+// one line per webview message sent/received so the @vscode/test-electron
+// suite can observe the host↔renderer handshake (ready → loadRobot →
+// geometryLoaded) from outside the webview. No-op in normal use.
+const testLogFile = process.env.URDF_STUDIO_TEST_LOG;
+function testLog(line: string): void {
+  if (!testLogFile) {
+    return;
+  }
+  try {
+    appendFileSync(testLogFile, `${line}\n`);
+  } catch {
+    // never let test instrumentation break the extension
+  }
 }
 
 interface WebviewPackageMap {
@@ -110,6 +126,11 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
     });
 
     webviewPanel.webview.onDidReceiveMessage(async message => {
+      testLog(`recv:${String(message?.type)}${message?.type === '__rendererError' ? `:${String(message.detail)}` : ''}`);
+      if (message?.type === '__rendererError') {
+        log(`Renderer error: ${String(message.detail)}`);
+        return;
+      }
       switch (message?.type) {
         case 'ready':
           await this.loadIntoWebview(preview);
@@ -148,6 +169,16 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
           break;
         case 'requestRevealRange':
           await this.revealRangeForLink(document.uri, message.line, message.link);
+          break;
+        case 'previewEdit':
+          if (typeof message.text === 'string') {
+            await this.loadIntoWebview(preview, message.text);
+          }
+          break;
+        case 'requestSaveSource':
+          if (typeof message.text === 'string') {
+            await this.saveSource(document.uri, message.text);
+          }
           break;
         case 'geometryLoaded':
           void vscode.window.setStatusBarMessage(
@@ -194,23 +225,39 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
     return undefined;
   }
 
-  private async loadIntoWebview(preview: ActivePreview): Promise<void> {
+  private async loadIntoWebview(preview: ActivePreview, overrideUrdf?: string): Promise<void> {
     try {
-      await this.doLoadIntoWebview(preview);
+      await this.doLoadIntoWebview(preview, overrideUrdf);
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       log(`Failed to load preview: ${msg}`);
+      testLog(`error:${msg}`);
       this.updateDiagnostics(preview.document.uri, [{ severity: 'error', message: msg, code: 'preview.loadFailed', file: preview.document.uri.fsPath }]);
     }
   }
 
-  private async doLoadIntoWebview(preview: ActivePreview): Promise<void> {
+  private async doLoadIntoWebview(preview: ActivePreview, overrideUrdf?: string): Promise<void> {
     const config = vscode.workspace.getConfiguration('urdfStudio');
     const packageRoots = this.packageRoots(config);
     const packages = await discoverPackages(packageRoots);
 
-    log(`Loading: ${preview.document.uri.fsPath}`);
-    const rendered = await renderRobotDocument(preview.document.uri.fsPath, packages, preview.xacroArgs);
+    // `overrideUrdf` is a live edit echoed back from the Source pane: it is an
+    // already-expanded URDF, so skip xacro expansion and analyze it directly.
+    // The on-disk watcher is left untouched (the edit hasn't been saved yet).
+    let rendered: Awaited<ReturnType<typeof renderRobotDocument>>;
+    if (overrideUrdf !== undefined) {
+      rendered = {
+        sourcePath: preview.document.uri.fsPath,
+        format: 'urdf',
+        urdf: overrideUrdf,
+        xacroArgs: [],
+        includedFiles: [],
+        diagnostics: []
+      };
+    } else {
+      log(`Loading: ${preview.document.uri.fsPath}`);
+      rendered = await renderRobotDocument(preview.document.uri.fsPath, packages, preview.xacroArgs);
+    }
     const metadata = analyzeUrdf(rendered.urdf, preview.document.uri.fsPath, packages);
     const semanticFiles = this.semanticFiles(config);
     const semantic = await loadSemanticMetadata(semanticFiles, packages);
@@ -220,7 +267,9 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
     preview.metadata = metadata;
     preview.semanticSourceFile = semantic.sourceFile;
 
-    this.refreshWatcher(preview, [preview.document.uri.fsPath, ...rendered.includedFiles]);
+    if (overrideUrdf === undefined) {
+      this.refreshWatcher(preview, [preview.document.uri.fsPath, ...rendered.includedFiles]);
+    }
 
     const savedState = preview.pendingState ?? this.getPreviewState(preview.document.uri);
     preview.pendingState = undefined;
@@ -246,6 +295,7 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
       savedState,
       bookmarks: this.getBookmarks(preview.document.uri)
     });
+    testLog('sent:loadRobot');
   }
 
   private refreshWatcher(preview: ActivePreview, filePaths: string[]): void {
@@ -316,6 +366,31 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
 </head>
 <body>
   <div id="app"></div>
+  <script nonce="${nonce}">
+    // Crash reporter: surface renderer startup failures (script load errors,
+    // uncaught exceptions, unhandled rejections) to the extension's output
+    // channel instead of dying silently behind a "Waiting for robot..." HUD.
+    // acquireVsCodeApi() may only be called once per session, so wrap it and
+    // hand the same instance to the renderer module.
+    (function () {
+      var api = acquireVsCodeApi();
+      window.acquireVsCodeApi = function () { return api; };
+      function report(detail) {
+        try { api.postMessage({ type: '__rendererError', detail: String(detail) }); } catch (e) { /* ignore */ }
+      }
+      window.addEventListener('error', function (event) {
+        if (event.target && event.target !== window && (event.target.src || event.target.href)) {
+          report('resource failed: ' + (event.target.src || event.target.href));
+        } else {
+          report((event.message || 'error') + ' @ ' + (event.filename || '?') + ':' + (event.lineno || 0) + (event.error && event.error.stack ? '\\n' + event.error.stack : ''));
+        }
+      }, true);
+      window.addEventListener('unhandledrejection', function (event) {
+        var reason = event.reason;
+        report('unhandledrejection: ' + (reason && reason.stack ? reason.stack : String(reason)));
+      });
+    })();
+  </script>
   <script nonce="${nonce}" type="module" src="${rendererUri}"></script>
 </body>
 </html>`;
@@ -537,6 +612,18 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
     } catch (error) {
       log(`saveReport failed: ${String(error)}`);
       void vscode.window.showErrorMessage(`URDF Studio: could not write PDF (${error instanceof Error ? error.message : String(error)}).`);
+    }
+  }
+
+  private async saveSource(uri: vscode.Uri, text: string): Promise<void> {
+    try {
+      await vscode.workspace.fs.writeFile(uri, Buffer.from(text, 'utf8'));
+      void vscode.window.setStatusBarMessage(`URDF Studio: saved ${vscode.workspace.asRelativePath(uri)}.`, 2500);
+      // The file watcher will observe the write and reload the preview from the
+      // canonical on-disk content (re-expanding xacro if applicable).
+    } catch (error) {
+      log(`saveSource failed: ${String(error)}`);
+      void vscode.window.showErrorMessage(`URDF Studio: could not save source (${error instanceof Error ? error.message : String(error)}).`);
     }
   }
 

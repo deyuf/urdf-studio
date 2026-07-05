@@ -85,6 +85,28 @@ const vscode: VsCodeApi = typeof apiHost.acquireVsCodeApi === 'function'
   ? apiHost.acquireVsCodeApi()
   : { postMessage: () => undefined, setState: () => undefined, getState: () => undefined };
 
+// Accept messages from same-origin senders only.
+//
+// Empirically verified against real VS Code (see test/integration): the
+// extension's messages arrive with event.source set to a FOREIGN WindowProxy
+// (neither `window` nor `window.parent` — the webview content is a top-level
+// frame with parent === self) but with event.origin equal to the webview's
+// own origin (`vscode-webview://<uuid>`), because the relaying frame is
+// same-origin with the content. Source-identity checks therefore break the
+// extension (loadRobot silently dropped → "Waiting for robot..." forever);
+// the origin is the reliable invariant.
+//
+//   - VS Code webview: origin === our own vscode-webview://<uuid>  → accept.
+//   - Standalone web app: the host posts on our own window with our origin
+//     as the explicit target                                        → accept.
+//   - Test harness: synthetic MessageEvents carry an empty origin; only
+//     same-origin scripts can dispatch events at all                → accept.
+//   - Cross-origin embedder / window.open opener: postMessage always stamps
+//     the SENDER's origin, which cannot equal ours                  → reject.
+function isTrustedMessageEvent(event: MessageEvent): boolean {
+  return !event.origin || event.origin === window.location.origin;
+}
+
 const meshCache = new Map<string, Promise<Object3D | null>>();
 let scene: THREE.Scene;
 let camera: THREE.PerspectiveCamera;
@@ -102,6 +124,9 @@ let linkNames = new Set<string>();
 let dirty = true;
 let hasRenderedOnce = false;
 let robotReady = false;
+// Bumped on every loadRobot so a slow asset load from a superseded robot
+// cannot reveal / fit / post counts against the newer one.
+let loadGeneration = 0;
 let currentViewportWidth = 0;
 let currentViewportHeight = 0;
 let mimicGraph: MimicGraph = { followers: new Map() };
@@ -119,6 +144,10 @@ let labelsMode: LabelsMode = 'off';
 let measurement: Measurement | undefined;
 let inertia: InertiaVisualisation | undefined;
 let selfCollision: SelfCollision | undefined;
+// Sticky user intent for the self-collision overlay. Survives reloads so the
+// highlight comes back after a file edit or a render-mode switch, and lets us
+// re-enable once collision geometry has finished streaming in.
+let selfCollisionRequested = false;
 
 let reachability: Reachability | undefined;
 
@@ -159,6 +188,7 @@ document.getElementById('app')!.innerHTML = `
       </select>
     </label>
     <label title="Show inertia ellipsoids and centers of mass"><input id="inertia-toggle" type="checkbox"> Inertia</label>
+    <label title="Highlight links whose collision geometry intersects"><input id="selfcollision-toggle" type="checkbox"> Self-collision</label>
     <label>
       <select id="labels-mode" title="3D labels for joints and links">
         <option value="off">Labels: off</option>
@@ -172,6 +202,7 @@ document.getElementById('app')!.innerHTML = `
     <div class="viewport-wrap">
       <canvas id="viewport"></canvas>
       <div id="hud" class="hud">Waiting for robot...</div>
+      <div id="collide-hud" class="hud collide-hud"></div>
     </div>
     <aside class="side">
       <div class="tabs">
@@ -192,11 +223,38 @@ document.getElementById('app')!.innerHTML = `
   </div>
 </div>`;
 
-initThree();
-bindChrome();
+try {
+  initThree();
+  bindChrome();
+} catch (error) {
+  // Startup failures (e.g. WebGL context creation) previously died silently
+  // behind a perpetual "Waiting for robot..." HUD. Show the error and report
+  // it to the host log instead.
+  const detail = error instanceof Error ? error.message : String(error);
+  const hud = document.getElementById('hud');
+  if (hud) {
+    hud.textContent = `Renderer failed to start: ${detail}`;
+  }
+  vscode.postMessage({ type: '__rendererError', detail: `startup failed: ${detail}` });
+  throw error;
+}
 vscode.postMessage({ type: 'ready' });
 
 window.addEventListener('message', event => {
+  // Only accept messages from our own host. In the VS Code webview and the web
+  // build alike the host posts from the same window/origin; rejecting anything
+  // else stops an embedding/opener page from injecting loadRobot (with
+  // attacker-controlled asset URLs) or otherwise driving the renderer.
+  if (!isTrustedMessageEvent(event)) {
+    // Surface the rejection to the host's log: a silently dropped host
+    // message is exactly the failure mode that froze the preview at
+    // "Waiting for robot..." — never let it be invisible again.
+    vscode.postMessage({
+      type: '__rendererError',
+      detail: `rejected cross-origin message type=${String((event.data as { type?: string } | null)?.type)} origin=${event.origin}`
+    });
+    return;
+  }
   const message = event.data;
   if (!message?.type) {
     return;
@@ -324,6 +382,9 @@ function bindChrome(): void {
   qs<HTMLInputElement>('#inertia-toggle').addEventListener('change', event => {
     applyInertiaVisibility((event.target as HTMLInputElement).checked);
   });
+  qs<HTMLInputElement>('#selfcollision-toggle').addEventListener('change', event => {
+    void setSelfCollisionEnabled((event.target as HTMLInputElement).checked);
+  });
   qs<HTMLSelectElement>('#labels-mode').addEventListener('change', event => {
     labelsMode = (event.target as HTMLSelectElement).value as LabelsMode;
     labelsOverlay?.setMode(labelsMode);
@@ -368,6 +429,7 @@ function bindChrome(): void {
 }
 
 async function loadRobot(data: LoadRobotMessage, forceCollisionGeometry = false): Promise<void> {
+  const myGeneration = ++loadGeneration;
   currentData = data;
   bookmarks = data.bookmarks ?? [];
   renderMode = data.renderSettings.renderMode;
@@ -391,9 +453,17 @@ async function loadRobot(data: LoadRobotMessage, forceCollisionGeometry = false)
     robot = undefined;
   }
   if (selectedBox) {
-    scene.remove(selectedBox);
-    selectedBox = undefined;
+    disposeBoxHelper();
   }
+  // Each robot gets a fresh mesh cache. The cache exists to dedupe identical
+  // meshes referenced by multiple links within ONE load; carrying it across
+  // loads risks serving geometry that was disposed with the previous robot,
+  // and lets memory grow unboundedly when many models are opened in a session.
+  clearMeshCache();
+
+  // Reset toolbar toggles whose state lives on the (now discarded) materials
+  // and joints, so the controls reflect the freshly loaded robot.
+  syncToolbarToggles();
 
   applyUpAxis(data.renderSettings.upAxis);
   renderSummary(data);
@@ -409,6 +479,8 @@ async function loadRobot(data: LoadRobotMessage, forceCollisionGeometry = false)
   const hasExternalMeshesToLoad = data.metadata.meshes.some(mesh => mesh.exists && (mesh.kind === 'visual' || shouldLoadCollision));
   let lastProgressUpdate = 0;
   let revealed = false;
+  let parseComplete = false;
+  let pendingMeshes = 0;
   const revealRobot = () => {
     if (revealed) {
       return;
@@ -421,6 +493,13 @@ async function loadRobot(data: LoadRobotMessage, forceCollisionGeometry = false)
       applyFramesMode();
       buildCollisionGeometryIndex();
       buildLabels();
+      // Re-apply the sticky self-collision overlay once the BVH index is ready.
+      if (selfCollisionRequested) {
+        const ctx = currentCollisionContext();
+        if (ctx) {
+          ensureSelfCollision().setEnabled(ctx, true);
+        }
+      }
     }
     robotReady = true;
     renderer.domElement.style.opacity = '1';
@@ -436,6 +515,19 @@ async function loadRobot(data: LoadRobotMessage, forceCollisionGeometry = false)
       movableJointCount: data.metadata.counts.movableJoints
     });
   };
+  // Reveal once parsing is done AND every mesh load has settled. We count the
+  // loads ourselves instead of relying on LoadingManager.onLoad: cached meshes
+  // never call manager.itemStart, so onLoad would never fire on a reload where
+  // all meshes are cache hits, leaving the robot permanently hidden.
+  const maybeReveal = () => {
+    if (myGeneration !== loadGeneration) {
+      return; // A newer load superseded this one.
+    }
+    if (!parseComplete || pendingMeshes > 0) {
+      return;
+    }
+    revealRobot();
+  };
 
   const manager = new LoadingManager();
   manager.onProgress = (_url: string, loaded: number, total: number) => {
@@ -446,7 +538,6 @@ async function loadRobot(data: LoadRobotMessage, forceCollisionGeometry = false)
     }
   };
   manager.onError = (url: string) => setStatus(`Mesh failed: ${url}`);
-  manager.onLoad = revealRobot;
 
   // Host-supplied URL rewriter (used by the web build to resolve
   // urdf-studio-vfs:// URLs to blob: URLs). VS Code build leaves it unset.
@@ -476,7 +567,19 @@ async function loadRobot(data: LoadRobotMessage, forceCollisionGeometry = false)
   loader.workingPath = data.sourceBaseUri;
   loader.parseVisual = true;
   loader.parseCollision = shouldLoadCollision;
-  loader.loadMeshCb = loadMeshWithCache;
+  // Track in-flight mesh loads so we can reveal the robot once they all settle,
+  // independent of whether they were served from cache or the network.
+  loader.loadMeshCb = (path: string, mgr: LoadingManager, onComplete: (object: Object3D, error?: Error) => void) => {
+    pendingMeshes += 1;
+    loadMeshWithCache(path, mgr, (object: Object3D, error?: Error) => {
+      try {
+        onComplete(object, error);
+      } finally {
+        pendingMeshes -= 1;
+        maybeReveal();
+      }
+    });
+  };
 
   try {
     const parsedRobot = loader.parse(data.urdf) as URDFRobot;
@@ -507,11 +610,13 @@ async function loadRobot(data: LoadRobotMessage, forceCollisionGeometry = false)
     if (data.savedState?.pose) {
       applyPose(data.savedState.pose);
     }
-    if (!hasExternalMeshesToLoad) {
-      revealRobot();
-    }
+    parseComplete = true;
+    // If there are no external meshes (primitives only) this reveals
+    // synchronously; otherwise the pending-mesh callbacks drive the reveal.
+    maybeReveal();
     dirty = true;
   } catch (error) {
+    parseComplete = true;
     setStatus(`Could not parse URDF: ${String(error)}`);
   }
 }
@@ -575,6 +680,13 @@ function cloneObject(object: Object3D): Object3D {
   clone.traverse((child: Object3D) => {
     const mesh = child as THREE.Mesh;
     if (mesh.isMesh) {
+      // Clone geometry as well as materials so each scene instance fully owns
+      // its GPU resources. THREE's clone(true) otherwise SHARES the geometry
+      // with the cached original — disposing the scene robot on reload would
+      // then dispose the cache's geometry and corrupt the next cache hit.
+      if (mesh.geometry) {
+        mesh.geometry = mesh.geometry.clone();
+      }
       if (Array.isArray(mesh.material)) {
         mesh.material = mesh.material.map((material: THREE.Material) => material.clone());
       } else {
@@ -583,6 +695,16 @@ function cloneObject(object: Object3D): Object3D {
     }
   });
   return clone;
+}
+
+// Dispose every cached original mesh and empty the cache.
+function clearMeshCache(): void {
+  for (const entry of meshCache.values()) {
+    void entry.then(object => {
+      object?.traverse((child: Object3D) => disposeObject(child));
+    }).catch(() => { /* a load that already rejected has nothing to dispose */ });
+  }
+  meshCache.clear();
 }
 
 function renderSummary(data: LoadRobotMessage): void {
@@ -970,12 +1092,19 @@ function selectFromPointer(event: MouseEvent): void {
   selectLink(hit ? findOwningLink(hit.object) : undefined);
 }
 
+function disposeBoxHelper(): void {
+  if (!selectedBox) {
+    return;
+  }
+  scene.remove(selectedBox);
+  selectedBox.geometry.dispose();
+  (selectedBox.material as THREE.Material).dispose();
+  selectedBox = undefined;
+}
+
 function selectLink(linkName: string | undefined): void {
   selectedLink = linkName;
-  if (selectedBox) {
-    scene.remove(selectedBox);
-    selectedBox = undefined;
-  }
+  disposeBoxHelper();
   if (linkName && robot?.links?.[linkName]) {
     // urdf-loader keys robot.visual by <visual name="..."> attribute, which is
     // optional and frequently omitted (e.g. Franka FR3 has none). Find the
@@ -1077,7 +1206,10 @@ function applyCameraSnapshot(snapshot: CameraSnapshot): void {
 function applyUpAxis(axis: '+X' | '+Y' | '+Z'): void {
   if (axis === '+X') {
     camera.up.set(1, 0, 0);
-    grid.rotation.set(0, Math.PI / 2, 0);
+    // GridHelper lies in the XZ plane (normal +Y). Rotating about Y keeps that
+    // normal on +Y (a vertical wall); rotating about Z swings the normal onto
+    // +X so the grid is the ground plane for an X-up world.
+    grid.rotation.set(0, 0, Math.PI / 2);
   } else if (axis === '+Y') {
     camera.up.set(0, 1, 0);
     grid.rotation.set(0, 0, 0);
@@ -1091,12 +1223,13 @@ function applyUpAxis(axis: '+X' | '+Y' | '+Z'): void {
 function switchTab(name: string): void {
   qsa('.tab').forEach(tab => tab.classList.toggle('active', (tab as HTMLElement).dataset.tab === name));
   qsa('.panel').forEach(panel => panel.classList.toggle('active', panel.id === `panel-${name}`));
-  if (name === 'source') {
-    // The active line was marked while the panel was hidden, so scrollIntoView
-    // was a no-op then. Re-scroll now that the panel has layout.
-    const active = document.querySelector<HTMLDivElement>('#panel-source .source-line.active');
-    if (active) {
-      active.scrollIntoView({ block: 'center' });
+  if (name === 'source' && sourcePane) {
+    // The active line was marked while the panel was hidden, so CodeMirror's
+    // scrollIntoView was a no-op then. Re-issue it now that the panel has
+    // layout (next frame, once the display toggle has applied).
+    const line = sourcePane.activeLine();
+    if (line !== undefined) {
+      requestAnimationFrame(() => sourcePane?.setActiveLine(line));
     }
   }
 }
@@ -1376,6 +1509,53 @@ function scheduleSelfCollisionCheck(): void {
     return;
   }
   ensureSelfCollision().schedule(ctx);
+}
+
+// Turn the live self-collision overlay on/off. Enabling it needs collision
+// geometry: if only visual meshes are loaded we stream the colliders in first
+// (without changing the visible render mode) and re-enable from revealRobot
+// once the BVH index has been rebuilt.
+async function setSelfCollisionEnabled(enabled: boolean): Promise<void> {
+  selfCollisionRequested = enabled;
+  syncSelfCollisionToggle();
+  if (!enabled) {
+    ensureSelfCollision().setEnabled(undefined, false);
+    dirty = true;
+    return;
+  }
+  if (!currentData) {
+    return;
+  }
+  if (!collisionGeometryLoaded) {
+    setStatus('Loading collision geometry for self-collision check...');
+    await reloadWithCollisionGeometry();
+    return; // revealRobot re-enables once geometry + index are ready.
+  }
+  const ctx = currentCollisionContext();
+  ensureSelfCollision().setEnabled(ctx, true);
+  dirty = true;
+}
+
+function syncSelfCollisionToggle(): void {
+  const toggle = document.querySelector<HTMLInputElement>('#selfcollision-toggle');
+  if (toggle) {
+    toggle.checked = selfCollisionRequested;
+  }
+}
+
+// Re-sync toolbar toggles whose effect lives on the robot's materials/joints
+// after a reload. Freshly parsed materials are not wireframed and movable
+// joints honour their limits, so the checkboxes must reflect that default.
+function syncToolbarToggles(): void {
+  const wireframe = document.querySelector<HTMLInputElement>('#wireframe');
+  if (wireframe) {
+    wireframe.checked = false;
+  }
+  const ignoreLimits = document.querySelector<HTMLInputElement>('#ignore-limits');
+  if (ignoreLimits) {
+    ignoreLimits.checked = false;
+  }
+  syncSelfCollisionToggle();
 }
 
 function collectCollidingLinks(): { pairs: Array<[string, string]>; links: Set<string> } {
@@ -1828,21 +2008,43 @@ async function analyzeCollisionPairs(): Promise<void> {
     }
   }
 
-  for (let s = 0; s < samples; s += 1) {
-    for (let j = 0; j < movable.length; j += 1) {
-      const [min, max] = ranges[j];
-      const value = min + Math.random() * (max - min);
-      robot.setJointValue(movable[j], value);
+  // Joints without a <limit> default to a [0,0] clamp in urdf-loader, which
+  // would pin them at 0 for every sample and report false "never colliding"
+  // pairs. Bypass limits across the sweep (restored in finally) so the sampled
+  // range from jointRange() actually takes effect.
+  const priorIgnoreLimits = new Map<string, boolean>();
+  for (const name of movable) {
+    const joint = robot.joints?.[name];
+    if (joint) {
+      priorIgnoreLimits.set(name, joint.ignoreLimits);
+      joint.ignoreLimits = true;
     }
-    applyMimicValuesAfterSample(robot, currentData.metadata);
-    robot.updateMatrixWorld(true);
-    const result = collectCollidingLinks();
-    for (const [a, b] of result.pairs) {
-      colliding.add(canonicalPairPure(a, b));
+  }
+
+  try {
+    for (let s = 0; s < samples; s += 1) {
+      for (let j = 0; j < movable.length; j += 1) {
+        const [min, max] = ranges[j];
+        const value = min + Math.random() * (max - min);
+        robot.setJointValue(movable[j], value);
+      }
+      applyMimicValuesAfterSample(robot, currentData.metadata);
+      robot.updateMatrixWorld(true);
+      const result = collectCollidingLinks();
+      for (const [a, b] of result.pairs) {
+        colliding.add(canonicalPairPure(a, b));
+      }
+      if (s % 50 === 0 && s > 0) {
+        qs('#srdf-status').textContent = `Sampling ${s}/${samples}…`;
+        await new Promise<void>(resolve => setTimeout(resolve, 0));
+      }
     }
-    if (s % 50 === 0 && s > 0) {
-      qs('#srdf-status').textContent = `Sampling ${s}/${samples}…`;
-      await new Promise<void>(resolve => setTimeout(resolve, 0));
+  } finally {
+    for (const [name, value] of priorIgnoreLimits) {
+      const joint = robot.joints?.[name];
+      if (joint) {
+        joint.ignoreLimits = value;
+      }
     }
   }
 

@@ -225,6 +225,7 @@ const ruleP006EffortVelocityZero: LintRule = ({ metadata, sourcePath, urdf }) =>
     }
     if (joint.type === 'continuous') {
       // continuous joints are checked by P-005, skip here
+      continue;
     }
     if (near(joint.limit.effort, 0)) {
       out.push({

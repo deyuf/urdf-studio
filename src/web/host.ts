@@ -73,10 +73,21 @@ export class WebHost {
   private readonly pendingRendererQueue: RendererMessage[] = [];
   private listeners: HostListeners = {};
   private readonly urlMap = new Map<string, string>();
+  // Serialise loads so two rapid openDocument/reload calls cannot interleave
+  // their blob-URL generation and the shared urlMap. Superseded loads are
+  // skipped via the token rather than run to completion.
+  private loadToken = 0;
+  private loadChain: Promise<void> = Promise.resolve();
 
   constructor() {
     this.installRendererShim();
     window.addEventListener('message', event => {
+      // Renderer→host messages arrive through the acquireVsCodeApi shim, not
+      // window.postMessage; only accept window messages from our own origin so
+      // a cross-origin frame cannot drive host actions (e.g. trigger downloads).
+      if (event.source !== window && event.origin !== window.location.origin) {
+        return;
+      }
       this.handleRendererMessage(event.data as RendererInbound);
     });
   }
@@ -109,7 +120,21 @@ export class WebHost {
     return this.active !== undefined;
   }
 
-  private async loadCurrent(): Promise<void> {
+  // Queue a load behind any in-flight one. The latest enqueued load wins;
+  // intermediate ones are skipped once superseded.
+  private loadCurrent(overrideUrdf?: string): Promise<void> {
+    const token = ++this.loadToken;
+    const run = this.loadChain.then(() => {
+      if (token !== this.loadToken) {
+        return; // A newer load superseded this one.
+      }
+      return this.doLoadCurrent(overrideUrdf);
+    });
+    this.loadChain = run.catch(() => undefined);
+    return run;
+  }
+
+  private async doLoadCurrent(overrideUrdf?: string): Promise<void> {
     if (!this.active) {
       return;
     }
@@ -124,13 +149,20 @@ export class WebHost {
       const packageRoots = await this.computePackageRoots(vfs, settings.packageRoots);
       const packages = await discoverPackages(packageRoots);
 
-      // Pre-warm yaml cache so xacro's sync load_yaml works in the browser.
-      // Scoped to the document's directory + the standard ROS subtrees of
-      // every discovered package — far cheaper than slurping the whole VFS
-      // on workspaces with many unrelated YAMLs.
-      await this.preWarmYamlCache(docPath, vfs, packages);
-
-      const rendered = await renderRobotDocument(docPath, packages, this.active.xacroArgs);
+      // `overrideUrdf` is a live edit from the Source pane: it is already an
+      // expanded URDF, so we skip xacro expansion (and its yaml pre-warm) and
+      // analyze the supplied text directly.
+      let rendered: Awaited<ReturnType<typeof renderRobotDocument>>;
+      if (overrideUrdf !== undefined) {
+        rendered = { sourcePath: docPath, format: 'urdf', urdf: overrideUrdf, xacroArgs: [], includedFiles: [], diagnostics: [] };
+      } else {
+        // Pre-warm yaml cache so xacro's sync load_yaml works in the browser.
+        // Scoped to the document's directory + the standard ROS subtrees of
+        // every discovered package — far cheaper than slurping the whole VFS
+        // on workspaces with many unrelated YAMLs.
+        await this.preWarmYamlCache(docPath, vfs, packages);
+        rendered = await renderRobotDocument(docPath, packages, this.active.xacroArgs);
+      }
       const metadata = analyzeUrdf(rendered.urdf, docPath, packages);
       const semantic = await loadSemanticMetadata(settings.semanticFiles, packages);
       const diagnostics: StudioDiagnostic[] = [
@@ -258,7 +290,7 @@ export class WebHost {
       case 'ready':
         this.rendererReady = true;
         while (this.pendingRendererQueue.length > 0) {
-          window.postMessage(this.pendingRendererQueue.shift()!, '*');
+          window.postMessage(this.pendingRendererQueue.shift()!, window.location.origin);
         }
         break;
       case 'reloadWithXacroArgs':
@@ -309,6 +341,16 @@ export class WebHost {
       case 'requestRevealRange':
         // Browser shell has its own Source tab; no separate editor to reveal.
         break;
+      case 'previewEdit':
+        if (this.active && typeof message.text === 'string') {
+          await this.loadCurrent(message.text);
+        }
+        break;
+      case 'requestSaveSource':
+        if (this.active && typeof message.text === 'string') {
+          this.downloadSource(message.text);
+        }
+        break;
       case 'requestWriteDisableCollisions':
         await this.handleWriteDisableCollisions(message.entries ?? []);
         break;
@@ -342,7 +384,9 @@ export class WebHost {
       this.pendingRendererQueue.push(message);
       return;
     }
-    window.postMessage(message, '*');
+    // Target our own origin so the renderer's origin check accepts it and the
+    // message can't be observed by a cross-origin frame.
+    window.postMessage(message, window.location.origin);
   }
 
   private setStatus(status: HostStatus): void {
@@ -441,6 +485,15 @@ export class WebHost {
     const name = filename || `${posixPath.basename(this.active.path)}-bom.csv`;
     triggerDownload(new Blob([csv], { type: 'text/csv' }), name);
     this.setStatus({ type: 'info', message: `BOM downloaded: ${name}` });
+  }
+
+  private downloadSource(text: string): void {
+    if (!this.active) {
+      return;
+    }
+    const name = posixPath.basename(this.active.path) || 'robot.urdf';
+    triggerDownload(new Blob([text], { type: 'application/xml' }), name);
+    this.setStatus({ type: 'info', message: `Source downloaded: ${name}` });
   }
 
   private downloadReport(base64: string, filename?: string): void {
