@@ -240,6 +240,8 @@ Both targets expose the same five settings.
 | Extra package roots | `[]` | Extra `package.xml` scan roots. |
 | Semantic files | `[]` | SRDF / YAML semantic files. |
 
+**Workspace:** Camera presets and geometry layers sit inside the viewport; **Display** contains grids, frames, labels, and diagnostic overlays. Drag the inspector divider to resize it, or focus it and use the arrow keys. Joint controls pair full-width sliders with numeric values and units. Checks are grouped into collapsible sections with source links. **Export** collects PNG, pose JSON, parts CSV, and inspection PDF exports.
+
 **Colors:** **Classic colors** in the preview toolbar switches between the original palette and the new Studio palette in both the browser and VS Code. The choice is remembered independently of the light/dark theme.
 
 **Web:** ⚙ button in the topbar → JSON in `localStorage`.

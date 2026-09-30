@@ -61,6 +61,7 @@ test('renderer loads a robot, switches modes, and moves a joint', async ({ page 
     await expect(page.locator('[data-joint-slider="joint1"]')).toBeVisible({ timeout: 15_000 });
     await page.locator('[data-joint-slider="joint1"]').fill('0.5');
     await page.locator('#render-mode').selectOption('both');
+    if (await page.locator('#display-menu').getAttribute('open') === null) await page.locator('#display-menu summary').click();
     await page.locator('#wireframe').check();
     const dataUrl = await page.locator('canvas').evaluate((canvas: HTMLCanvasElement) => canvas.toDataURL('image/png'));
     expect(dataUrl.length).toBeGreaterThan(1000);

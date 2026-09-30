@@ -30,6 +30,57 @@ test.describe('renderer feature integrations', () => {
     await expect.poll(color).toBe('rgb(23, 28, 27)');
   });
 
+  test('inspector resize supports keys, dragging, and reload persistence', async ({ page }) => {
+    await loadGripperFixture(page);
+    const side = page.locator('.side');
+    const separator = page.getByRole('separator', { name: 'Resize inspector' });
+    const initial = (await side.boundingBox())!.width;
+    const canvasWidth = (await page.locator('#viewport').boundingBox())!.width;
+    await separator.focus();
+    await page.keyboard.press('ArrowLeft');
+    await expect.poll(async () => (await side.boundingBox())!.width).toBeCloseTo(initial + 24, 0);
+    await expect.poll(async () => (await page.locator('#viewport').boundingBox())!.width).toBeCloseTo(canvasWidth - 24, 0);
+    const handle = (await separator.boundingBox())!;
+    await page.mouse.move(handle.x + handle.width - 2, handle.y + 120);
+    await page.mouse.down();
+    await page.mouse.move(handle.x + handle.width - 62, handle.y + 120, { steps: 8 });
+    await page.mouse.up();
+    await expect.poll(async () => (await side.boundingBox())!.width).toBeCloseTo(initial + 84, 0);
+    await page.reload();
+    await expect.poll(async () => (await side.boundingBox())!.width).toBeCloseTo(initial + 84, 0);
+    await expect(separator).toHaveAttribute('aria-valuenow', String(Math.round(initial + 84)));
+  });
+
+  test('Export menu is keyboard reachable, exports pose, and restores focus', async ({ page }) => {
+    await loadGripperFixture(page);
+    const summary = page.locator('#export-menu summary');
+    await summary.focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('button', { name: 'Joint pose · JSON' })).toBeVisible();
+    await page.getByRole('button', { name: 'Joint pose · JSON' }).click();
+    const result = await page.evaluate(() => (window as any).__messages.find((message: any) => message.type === 'exportPoseResult'));
+    expect(result.pose).toMatchObject({ left_finger: expect.any(Number) });
+    expect(result.camera.position).toHaveLength(3);
+    await expect(summary).toBeFocused();
+    await expect(page.locator('#export-menu')).not.toHaveAttribute('open', '');
+    await summary.click();
+    await page.keyboard.press('Escape');
+    await expect(summary).toBeFocused();
+    await expect(page.locator('#export-menu')).not.toHaveAttribute('open', '');
+  });
+
+  test('Checks groups can be collapsed and expanded from the keyboard', async ({ page }) => {
+    await loadGripperFixture(page);
+    await page.locator('.tab[data-tab="checks"]').click();
+    const group = page.locator('details.checks-group').first();
+    await expect(group.locator('.checks-group-item').first()).toBeVisible();
+    await group.locator('summary').focus();
+    await page.keyboard.press('Enter');
+    await expect(group.locator('.checks-group-item').first()).toBeHidden();
+    await page.keyboard.press('Enter');
+    await expect(group.locator('.check-message').first()).toBeVisible();
+  });
+
   test.afterAll(async () => {
     await server.close();
   });
@@ -177,8 +228,10 @@ test.describe('renderer feature integrations', () => {
     await loadGripperFixture(page);
 
     expect(await page.evaluate(() => (window as any).__urdfStudio?.inertiaVisible)).toBe(false);
+    if (await page.locator('#display-menu').getAttribute('open') === null) await page.locator('#display-menu summary').click();
     await page.locator('#inertia-toggle').check();
     expect(await page.evaluate(() => (window as any).__urdfStudio?.inertiaVisible)).toBe(true);
+    if (await page.locator('#display-menu').getAttribute('open') === null) await page.locator('#display-menu summary').click();
     await page.locator('#inertia-toggle').uncheck();
     expect(await page.evaluate(() => (window as any).__urdfStudio?.inertiaVisible)).toBe(false);
   });
@@ -188,9 +241,11 @@ test.describe('renderer feature integrations', () => {
 
     expect(await page.evaluate(() => (window as any).__urdfStudio?.visibleLinkAxes)).toBe(0);
 
+    if (await page.locator('#display-menu').getAttribute('open') === null) await page.locator('#display-menu summary').click();
     await page.locator('#frames-mode').selectOption('all');
     expect(await page.evaluate(() => (window as any).__urdfStudio?.visibleLinkAxes)).toBe(3);
 
+    if (await page.locator('#display-menu').getAttribute('open') === null) await page.locator('#display-menu summary').click();
     await page.locator('#frames-mode').selectOption('off');
     expect(await page.evaluate(() => (window as any).__urdfStudio?.visibleLinkAxes)).toBe(0);
   });
@@ -227,12 +282,13 @@ test.describe('renderer feature integrations', () => {
     expect(await page.locator('[data-joint-number="left_finger"]').inputValue()).toBe('0.030');
   });
 
-  test('subtoolbar hosts frames/inertia controls outside the main toolbar', async ({ page }) => {
+  test('Display menu keeps overlays on the viewport and pose actions in the header', async ({ page }) => {
     await loadGripperFixture(page);
     // View toggles live in the subtoolbar so the main toolbar can never
     // clip them when the bookmark/save group occupies the right edge.
-    await expect(page.locator('.subtoolbar #frames-mode')).toBeVisible();
-    await expect(page.locator('.subtoolbar #inertia-toggle')).toBeAttached();
+    await page.locator('#display-menu summary').click();
+    await expect(page.locator('.viewport-tools #frames-mode')).toBeVisible();
+    await expect(page.locator('.viewport-tools #inertia-toggle')).toBeAttached();
     // Self-collision live toggle has been disabled in the UI.
     await expect(page.locator('#self-collision-toggle')).toHaveCount(0);
     // Save Pose button is still on the right edge of the main toolbar.

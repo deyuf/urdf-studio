@@ -147,6 +147,7 @@ test.describe('Phase A features', () => {
 
   test('Labels mode "joints" shows only joint labels', async ({ page }) => {
     await loadFixture(page);
+    if (await page.locator('#display-menu').getAttribute('open') === null) await page.locator('#display-menu summary').click();
     await page.locator('#labels-mode').selectOption('joints');
     await page.waitForFunction(() => (window as any).__urdfStudio?.labelsMode === 'joints');
     const state = await page.evaluate(() => (window as any).__urdfStudio);
@@ -156,6 +157,7 @@ test.describe('Phase A features', () => {
 
   test('Labels mode "links" shows only link labels', async ({ page }) => {
     await loadFixture(page);
+    if (await page.locator('#display-menu').getAttribute('open') === null) await page.locator('#display-menu summary').click();
     await page.locator('#labels-mode').selectOption('links');
     await page.waitForFunction(() => (window as any).__urdfStudio?.labelsMode === 'links');
     const state = await page.evaluate(() => (window as any).__urdfStudio);
@@ -165,12 +167,14 @@ test.describe('Phase A features', () => {
 
   test('Labels mode "off" hides everything; "both" shows everything', async ({ page }) => {
     await loadFixture(page);
+    if (await page.locator('#display-menu').getAttribute('open') === null) await page.locator('#display-menu summary').click();
     await page.locator('#labels-mode').selectOption('both');
     await page.waitForFunction(() => (window as any).__urdfStudio?.labelsMode === 'both');
     let state = await page.evaluate(() => (window as any).__urdfStudio);
     expect(state.visibleJointLabels).toBeGreaterThan(0);
     expect(state.visibleLinkLabels).toBeGreaterThan(0);
 
+    if (await page.locator('#display-menu').getAttribute('open') === null) await page.locator('#display-menu summary').click();
     await page.locator('#labels-mode').selectOption('off');
     await page.waitForFunction(() => (window as any).__urdfStudio?.labelsMode === 'off');
     state = await page.evaluate(() => (window as any).__urdfStudio);
@@ -180,12 +184,14 @@ test.describe('Phase A features', () => {
 
   test('Reloading a robot rebuilds labels without leaking previous entries', async ({ page }) => {
     await loadFixture(page);
+    if (await page.locator('#display-menu').getAttribute('open') === null) await page.locator('#display-menu summary').click();
     await page.locator('#labels-mode').selectOption('both');
     const before = await page.evaluate(() => (window as any).__urdfStudio?.totalLabels ?? 0);
     expect(before).toBeGreaterThan(0);
 
     // Reload with the same fixture — labels should rebuild, not stack.
     await loadFixture(page);
+    if (await page.locator('#display-menu').getAttribute('open') === null) await page.locator('#display-menu summary').click();
     await page.locator('#labels-mode').selectOption('both');
     const after = await page.evaluate(() => (window as any).__urdfStudio?.totalLabels ?? 0);
     expect(after).toBe(before);
