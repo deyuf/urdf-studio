@@ -94,6 +94,8 @@ Full docs: **<https://urdf.deyuf.org/docs/>**.
 
 <img src="media/screenshots-web/01-hero.png" alt="Franka FR3 loaded in URDF Studio with joint sliders, link tree, and a 3D viewport">
 
+<img src="media/screenshots-web/06-joints-light.png" alt="URDF Studio in light mode: Franka FR3 with joint controls and collapsible xacro parameters">
+
 The browser app loads a real ROS package off the local disk. Xacro is
 expanded client-side, every `package://` URI is resolved to a blob URL
 by the host, and meshes stream in via Three.js's `LoadingManager`.
@@ -125,7 +127,7 @@ xacro on a small screen without losing the live model preview.
 
 ### Checks panel with health score and grouped rules
 
-<img src="media/screenshots-web/04-checks-health.png" alt="Checks panel showing a 100/100 health score for a clean URDF">
+<img src="media/screenshots-web/04-checks-health.png" alt="Checks panel showing the Franka FR3 health score and grouped missing-inertia warnings">
 
 Every diagnostic surfaces here, grouped by rule code (`R-xxx`
 structural, `P-xxx` physics, `A-xxx` assets, `S-xxx` style/xacro). A
@@ -298,6 +300,24 @@ npx playwright test        # 19 renderer + web shell specs
 
 # Real-world smoke
 FRANKA_DIR=/tmp/franka_description node scripts/test-franka.mjs
+```
+
+Regenerate the PNG icon from its SVG master:
+
+```bash
+node scripts/build-icon.mjs
+# Set CHROMIUM_PATH=/usr/bin/chromium to use an installed browser.
+```
+
+Refresh the README screenshots and animation (requires `ffmpeg` and a full
+Franka mesh directory; the checked-in xacro fixture pins the model definition):
+
+```bash
+cp -a test/fixtures/franka_description /tmp/urdf-readme-franka
+cp -a /path/to/franka_description/meshes /tmp/urdf-readme-franka/meshes
+npm run web:build
+FRANKA_DIR=/tmp/urdf-readme-franka node scripts/capture-screenshots.mjs
+# Set CHROMIUM_PATH=/usr/bin/chromium to use an installed browser.
 ```
 
 Production builds:

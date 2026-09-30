@@ -11,6 +11,7 @@
 //
 // Run order:
 //   npm run web:build
+//   Optional: CHROMIUM_PATH=/usr/bin/chromium to use a system browser
 //   FRANKA_DIR=test/fixtures/franka_description \
 //     node scripts/capture-screenshots.mjs
 //
@@ -19,7 +20,7 @@
 // regenerating, or set FRANKA_DIR to a full checkout elsewhere.
 
 import { chromium } from 'playwright';
-import { createReadStream, existsSync, statSync, mkdirSync, readdirSync, unlinkSync, renameSync, rmSync } from 'node:fs';
+import { createReadStream, existsSync, statSync, mkdirSync, readdirSync, writeFileSync, rmSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
@@ -43,12 +44,25 @@ if (!existsSync(path.join(FRANKA_DIR, 'package.xml'))) {
   process.exit(1);
 }
 
-// Clean prior outputs so the screenshot set is exactly what this script
-// produces — no orphan leftovers from older runs.
-for (const file of readdirSync(OUT_DIR)) {
-  if (/\.(png|gif|webm)$/.test(file)) unlinkSync(path.join(OUT_DIR, file));
-}
 const TMP_VIDEO_DIR = path.join(ROOT, 'tmp', 'screenshots-recording');
+const recordings = new WeakMap();
+
+// Capture only the loaded app, at a fixed cadence. System ffmpeg encodes the
+// frames, so a screenshot refresh does not require Playwright's video binary.
+async function recordFrame(page, copies = 1) {
+  const recording = recordings.get(page);
+  if (!recording) return;
+  const png = await page.screenshot();
+  for (let i = 0; i < copies; i++) {
+    const name = `frame-${String(recording.count++).padStart(5, '0')}.png`;
+    writeFileSync(path.join(TMP_VIDEO_DIR, name), png);
+  }
+}
+
+async function holdFrame(page, milliseconds) {
+  await page.waitForTimeout(milliseconds);
+  await recordFrame(page, Math.max(1, Math.round(milliseconds / 100)));
+}
 rmSync(TMP_VIDEO_DIR, { recursive: true, force: true });
 mkdirSync(TMP_VIDEO_DIR, { recursive: true });
 
@@ -110,7 +124,8 @@ async function waitForRobotStable(page, jointName = 'fr3_joint1') {
     if (!status) return true;
     return status.hidden || (status.getAttribute('data-kind') ?? '') !== 'progress';
   }, null, { timeout: 60_000, polling: 200 });
-  await page.waitForTimeout(2000);
+  await page.waitForFunction(() => !document.querySelector('#hud')?.textContent?.includes('Loading meshes'), null, { timeout: 60_000 });
+  await page.waitForTimeout(500);
 }
 
 function tween(from, to, t) { return from + (to - from) * t; }
@@ -130,6 +145,7 @@ async function animateBetween(page, from, to, steps, perStepMs) {
       }
     }, pose);
     await page.waitForTimeout(perStepMs);
+    await recordFrame(page);
   }
 }
 
@@ -143,13 +159,15 @@ async function snap(page, name) {
 async function captureHero(serverUrl, browser) {
   const ctx = await browser.newContext({
     viewport: { width: 1280, height: 800 },
-    colorScheme: 'dark',
-    recordVideo: { dir: TMP_VIDEO_DIR, size: { width: 1280, height: 800 } }
+    colorScheme: 'dark'
   });
   const page = await ctx.newPage();
   await openShell(page, serverUrl);
   await pickXacroFile(page, FRANKA_DIR, 'fr3.urdf.xacro');
   await waitForRobotStable(page);
+
+  recordings.set(page, { count: 0 });
+  await recordFrame(page);
 
   // -- act 1: pose ----------------------------------------------------------
   let current = { fr3_joint2: 0, fr3_joint4: 0, fr3_joint6: 0 };
@@ -162,26 +180,32 @@ async function captureHero(serverUrl, browser) {
   for (const pose of POSES) {
     await animateBetween(page, current, pose, 18, 30);
     current = pose;
-    await page.waitForTimeout(250);
+    await holdFrame(page, 250);
   }
+  await page.locator('#fit').click();
+  await holdFrame(page, 500);
+  await snap(page, '01-hero.png');
   // -- act 2: Source tab ----------------------------------------------------
   await page.locator('.tab[data-tab="source"]').click();
   await page.locator('#panel-source .cm-editor').waitFor({ timeout: 5000 });
-  await page.waitForTimeout(1400);
+  await holdFrame(page, 1400);
   // -- act 3: Checks tab ----------------------------------------------------
   await page.locator('.tab[data-tab="checks"]').click();
-  await page.waitForTimeout(1400);
+  await holdFrame(page, 1400);
   // -- act 4: back to Joints + last move -----------------------------------
   await page.locator('.tab[data-tab="joints"]').click();
-  await page.waitForTimeout(400);
+  await holdFrame(page, 400);
   await animateBetween(page, current, POSES[1], 20, 35);
-  await page.waitForTimeout(500);
+  await holdFrame(page, 500);
 
   await ctx.close();
 
-  const webm = readdirSync(TMP_VIDEO_DIR).find(f => f.endsWith('.webm'));
-  if (!webm) throw new Error('No webm produced');
-  const webmPath = path.join(TMP_VIDEO_DIR, webm);
+  const webmPath = path.join(OUT_DIR, '01-hero.webm');
+  await ffmpeg([
+    '-framerate', '10', '-i', path.join(TMP_VIDEO_DIR, 'frame-%05d.png'),
+    '-c:v', 'libvpx-vp9', '-crf', '32', '-b:v', '0', '-pix_fmt', 'yuv420p',
+    webmPath
+  ]);
   const gifPath = path.join(OUT_DIR, '01-hero.gif');
   const palettePath = path.join(TMP_VIDEO_DIR, 'palette.png');
   const FPS = 10;
@@ -197,16 +221,7 @@ async function captureHero(serverUrl, browser) {
     '-lavfi', `fps=${FPS},scale=${WIDTH}:-1:flags=lanczos [x]; [x][1:v] paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle`,
     gifPath
   ]);
-  const posterPath = path.join(OUT_DIR, '01-hero.png');
-  await ffmpeg([
-    '-ss', '4.0',
-    '-i', webmPath,
-    '-frames:v', '1',
-    '-update', '1',
-    '-vf', 'scale=1280:-1',
-    posterPath
-  ]);
-  renameSync(webmPath, path.join(OUT_DIR, '01-hero.webm'));
+
 }
 
 // =============================================================================
@@ -230,6 +245,7 @@ async function captureStatic(serverUrl, browser) {
     { fr3_joint2: 0.6, fr3_joint4: -1.3, fr3_joint6: 1.6 },
     12, 30
   );
+  await page.locator('#fit').click();
   await page.waitForTimeout(400);
 
   // -- 02 editor split ------------------------------------------------------
@@ -259,6 +275,12 @@ async function captureStatic(serverUrl, browser) {
   await page.waitForSelector('#panel-checks .health-score', { timeout: 5000 });
   await page.waitForTimeout(300);
   await snap(page, '04-checks-health.png');
+
+  // Show the same model in the warm light palette, with no staging markup.
+  await page.locator('.tab[data-tab="joints"]').click();
+  await page.locator('[data-theme="light"].theme-switcher-btn').click();
+  await page.waitForTimeout(500);
+  await snap(page, '06-joints-light.png');
 
   await ctx.close();
 }
@@ -296,7 +318,10 @@ async function captureDiagnostics(serverUrl, browser) {
 
 // ---- main ------------------------------------------------------------------
 const server = await startStaticServer(DIST_WEB);
-const browser = await chromium.launch();
+const browser = await chromium.launch({
+  ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}),
+  args: ['--force-color-profile=srgb']
+});
 try {
   await captureHero(server.url, browser);
   await captureStatic(server.url, browser);

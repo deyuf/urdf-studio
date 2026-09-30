@@ -311,6 +311,35 @@ function initThree(): void {
   grid = new THREE.GridHelper(5, 20, 0x5c5c5c, 0x333333);
   grid.rotation.x = Math.PI / 2;
   scene.add(grid);
+  // Web chrome exposes drawing colors through CSS. Keep the renderer in sync
+  // with both explicit theme changes and the system preference; VS Code keeps
+  // its existing drawing palette when these web-only tokens are absent.
+  const syncDrawingTheme = (): void => {
+    const style = getComputedStyle(document.documentElement);
+    const background = style.getPropertyValue('--us-viewport-bg').trim();
+    if (!background) return;
+    // Resolve light-dark() to an actual color through the computed property.
+    const probe = document.createElement('span');
+    probe.style.color = background;
+    document.body.appendChild(probe);
+    scene.background = new THREE.Color(getComputedStyle(probe).color);
+    probe.style.color = 'var(--us-grid-major)';
+    const major = new THREE.Color(getComputedStyle(probe).color);
+    probe.style.color = 'var(--us-grid-minor)';
+    const minor = new THREE.Color(getComputedStyle(probe).color);
+    probe.remove();
+    const palette = new THREE.GridHelper(5, 20, major, minor);
+    grid.geometry.setAttribute('color', palette.geometry.getAttribute('color').clone());
+    palette.geometry.dispose();
+    const materials = Array.isArray(palette.material) ? palette.material : [palette.material];
+    materials.forEach(material => material.dispose());
+    dirty = true;
+  };
+  syncDrawingTheme();
+  new MutationObserver(syncDrawingTheme).observe(document.documentElement, {
+    attributes: true, attributeFilter: ['data-theme']
+  });
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', syncDrawingTheme);
   axes = new THREE.AxesHelper(0.75);
   scene.add(axes);
 
@@ -531,6 +560,8 @@ async function loadRobot(data: LoadRobotMessage, forceCollisionGeometry = false)
 
   const manager = new LoadingManager();
   manager.onProgress = (_url: string, loaded: number, total: number) => {
+    // A late LoadingManager callback must not overwrite the ready HUD.
+    if (revealed || myGeneration !== loadGeneration) return;
     const now = performance.now();
     if (now - lastProgressUpdate > 120 || loaded === total) {
       lastProgressUpdate = now;
@@ -732,8 +763,11 @@ function renderXacroArgs(data: LoadRobotMessage): void {
     host.replaceChildren();
     return;
   }
+  const wasOpen = host.querySelector<HTMLDetailsElement>('details')?.open ?? false;
   setInnerHtml(host, html`
-    <div class="xacro-args">
+    <details class="xacro-settings">
+      <summary>Xacro parameters <span class="parameter-count">${data.xacroArgs.length}</span></summary>
+      <div class="xacro-args">
       ${data.xacroArgs.map(arg => html`
         <label>
           <span>${arg.name}</span>
@@ -741,8 +775,10 @@ function renderXacroArgs(data: LoadRobotMessage): void {
         </label>
       `)}
       <button id="apply-xacro" class="primary">Reload xacro</button>
-    </div>
+      </div>
+    </details>
   `);
+  host.querySelector<HTMLDetailsElement>('details')!.open = wasOpen;
   qs('#apply-xacro').addEventListener('click', () => {
     const args: Record<string, string> = {};
     qsa<HTMLInputElement>('[data-xacro-arg]').forEach(input => {

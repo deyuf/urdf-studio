@@ -190,6 +190,21 @@ test.describe('Franka FR3 (web shell, full xacro pipeline)', () => {
     // Full xacro expansion of the real franka_description takes a moment.
     await expect(page.locator('[data-joint-slider="fr3_joint1"]')).toBeVisible({ timeout: 30_000 });
 
+    if (await page.locator('dialog.onboarding').isVisible()) {
+      await page.locator('[data-action="skip"]').click();
+    }
+
+    // Model parameters stay reachable without pushing the joint controls
+    // below the fold. Native details supports both keyboard and pointer use.
+    const parameters = page.locator('.xacro-settings');
+    await expect(parameters).not.toHaveAttribute('open', '');
+    await expect(parameters.locator('[data-xacro-arg]').first()).toBeHidden();
+    await parameters.locator('summary').focus();
+    await page.keyboard.press('Enter');
+    await expect(parameters.locator('[data-xacro-arg]').first()).toBeVisible();
+    await parameters.locator('summary').click();
+    await expect(parameters.locator('[data-xacro-arg]').first()).toBeHidden();
+
     // The fixture ships no mesh binaries, so meshes report as missing — but
     // the robot must still REVEAL (the HUD must leave "Waiting for robot...",
     // and the viewport must become visible). This pins the pending-mesh

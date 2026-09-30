@@ -43,14 +43,6 @@ test.describe('web shell', () => {
         return;
       }
       const text = message.text();
-      // Font CDN load failures are expected in offline test environments and
-      // are cosmetic-only (we fall back to system fonts). The browser logs
-      // a generic message without the URL, but the only outbound request the
-      // page makes is the Google Fonts stylesheet — so any net::ERR_* is from
-      // that and safe to ignore here.
-      if (/fonts\.(googleapis|gstatic)\.com/.test(text) || /net::ERR_/.test(text)) {
-        return;
-      }
       consoleErrors.push(text);
     });
 
@@ -155,10 +147,27 @@ test.describe('web shell', () => {
   });
 
   test('theme switcher persists across reloads and flips data-theme', async ({ page }) => {
+    const viewportPixel = () => page.locator('#viewport').evaluate((source: HTMLCanvasElement) => {
+      const sample = document.createElement('canvas');
+      sample.width = sample.height = 1;
+      const context = sample.getContext('2d')!;
+      context.drawImage(source, 0, 0, 1, 1, 0, 0, 1, 1);
+      return Array.from(context.getImageData(0, 0, 1, 1).data).slice(0, 3);
+    });
     await page.goto(server.url);
     if (await page.locator('dialog.onboarding').isVisible()) {
       await page.locator('[data-action="skip"]').click();
     }
+
+    // A loaded model is required: the renderer deliberately leaves its
+    // canvas blank until geometry is ready.
+    await page.setInputFiles('#file-input', FIXTURE_DIR);
+    await expect(page.locator('#file-select')).toBeEnabled();
+    const fixture = await page.locator('#file-select option').evaluateAll(options =>
+      options.map(option => (option as HTMLOptionElement).value).find(value => /(^|\/)model\.xacro$/.test(value)) ?? ''
+    );
+    await page.locator('#file-select').selectOption(fixture);
+    await expect(page.locator('[data-joint-slider="fixture_joint"]')).toBeVisible();
 
     // System default — no data-theme override needed; light-dark() follows OS.
     const initial = await page.evaluate(() => document.documentElement.getAttribute('data-theme'));
@@ -172,12 +181,20 @@ test.describe('web shell', () => {
       () => page.evaluate(() => document.documentElement.getAttribute('data-theme'))
     ).toBe('dark');
 
+    // The WebGL drawing surface follows the selected chrome theme too.
+    await expect.poll(viewportPixel).toEqual([25, 31, 27]);
+
     // Choice persists via localStorage.
     expect(await page.evaluate(() => localStorage.getItem('urdf-studio:theme:v1'))).toBe('dark');
 
     // Reload — dark sticks.
     await page.reload();
     expect(await page.evaluate(() => document.documentElement.getAttribute('data-theme'))).toBe('dark');
+
+    await page.setInputFiles('#file-input', FIXTURE_DIR);
+    await expect(page.locator('#file-select')).toBeEnabled();
+    await page.locator('#file-select').selectOption(fixture);
+    await expect(page.locator('[data-joint-slider="fixture_joint"]')).toBeVisible();
 
     // Flip to light.
     if (await page.locator('dialog.onboarding').isVisible()) {
@@ -187,6 +204,7 @@ test.describe('web shell', () => {
     await expect.poll(
       () => page.evaluate(() => document.documentElement.getAttribute('data-theme'))
     ).toBe('light');
+    await expect.poll(viewportPixel).toEqual([232, 236, 228]);
   });
 
   test('shows a helpful empty state before any folder is loaded', async ({ page }) => {

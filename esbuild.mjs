@@ -49,7 +49,7 @@ async function copyWebAssets() {
   // Open Graph / Twitter Card preview image. Reuses an existing screenshot
   // so the social/search-result card shows the actual app rather than a
   // bare favicon.
-  await copyFile('media/screenshots-web/02-fr3-light.png', 'dist-web/og-image.png')
+  await copyFile('media/screenshots-web/01-hero.png', 'dist-web/og-image.png')
     .catch(() => undefined);
 }
 
