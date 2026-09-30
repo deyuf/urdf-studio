@@ -1,0 +1,166 @@
+/* Shared color selection. VS Code supplies its own chrome in Classic mode. */
+:root[data-host='vscode'] { --us-viewport-bg: #181818; --us-grid-major: #5c5c5c; --us-grid-minor: #333333; }
+:root[data-host='web'],
+:root[data-host='vscode'][data-palette='studio'] {
+  /* `color-scheme` lights up the CSS `light-dark()` function — without
+     this, `light-dark()` falls back to its `light` argument. The
+     theme-toggle button below switches this between `light` and `dark`
+     to override prefers-color-scheme on demand. */
+
+
+  /* Palette — one declaration per token using light-dark() instead of a
+     duplicated @media (prefers-color-scheme: dark) block. */
+  --us-bg:             light-dark(#f7f7f2, #171c1b);
+  --us-bg-elevated:    light-dark(#eeefe9, #1d2321);
+  --us-bg-subtle:      light-dark(#e5e8df, #29312d);
+  --us-surface:        light-dark(#fafaf6, #202724);
+  --us-fg:             light-dark(#252e29, #e5e9e0);
+  --us-fg-muted:       light-dark(#616d64, #a9b4ab);
+  --us-fg-faint:       light-dark(#727e74, #919c94);
+  --us-border:         light-dark(#dce1d6, #343e37);
+  --us-border-strong:  light-dark(#c4cdc0, #56645b);
+  --us-accent:         light-dark(#365c48, #abcbb2);
+  --us-accent-hover:   light-dark(#294a39, #bfdac4);
+  --us-accent-soft:    light-dark(rgba(54, 92, 72, 0.08), rgba(171, 203, 178, 0.12));
+  --us-accent-soft-hover: light-dark(rgba(54, 92, 72, 0.14), rgba(171, 203, 178, 0.2));
+  --us-on-accent:      light-dark(#ffffff, #172b20);
+  --us-success:        light-dark(#386447, #9bc5a1);
+  --us-warning:        light-dark(#8b641c, #dec17d);
+  --us-danger:         light-dark(#b13f36, #edaaa0);
+  --us-shadow-sm: light-dark(
+    0 1px 2px rgba(60, 64, 67, 0.08), 0 1px 3px 1px rgba(60, 64, 67, 0.05),
+    0 1px 2px rgba(0, 0, 0, 0.3),     0 1px 3px 1px rgba(0, 0, 0, 0.15)
+  );
+  --us-shadow-md: light-dark(
+    0 1px 3px rgba(60, 64, 67, 0.1),  0 4px 8px 3px rgba(60, 64, 67, 0.05),
+    0 1px 3px rgba(0, 0, 0, 0.4),     0 4px 8px 3px rgba(0, 0, 0, 0.15)
+  );
+  --us-shadow-lg: light-dark(
+    0 2px 6px rgba(60, 64, 67, 0.1),  0 8px 24px 4px rgba(60, 64, 67, 0.1),
+    0 2px 6px rgba(0, 0, 0, 0.4),     0 8px 24px 4px rgba(0, 0, 0, 0.3)
+  );
+
+  /* Spacing scale (8px grid). */
+  --us-space-1: 4px;
+  --us-space-2: 8px;
+  --us-space-3: 12px;
+  --us-space-4: 16px;
+  --us-space-5: 24px;
+  --us-space-6: 32px;
+  --us-space-8: 48px;
+
+  /* Radii. */
+  --us-radius-sm: 4px;
+  --us-radius-md: 6px;
+  --us-radius-lg: 12px;
+  --us-radius-pill: 6px;
+
+  /* Typography. */
+  --us-font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --us-font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* Drawing surface and syntax colors are deliberately distinct from chrome. */
+  --us-viewport-bg: light-dark(#e8ece4, #191f1b);
+  --us-grid-major: light-dark(#a7b3a6, #4b584d);
+  --us-grid-minor: light-dark(#cbd4c5, #303b32);
+  --vscode-descriptionForeground: var(--us-fg-muted);
+  --vscode-symbolIcon-classForeground: light-dark(#34624d, #91bda3);
+  --vscode-symbolIcon-keywordForeground: light-dark(#425e7b, #a1b9d0);
+  --vscode-symbolIcon-eventForeground: light-dark(#745978, #c4a9c5);
+  --vscode-symbolIcon-propertyForeground: light-dark(#5c6354, #bdc6af);
+  --vscode-symbolIcon-stringForeground: light-dark(#875a37, #d8b28e);
+  --vscode-symbolIcon-numberForeground: light-dark(#506b37, #b8cd98);
+  --vscode-symbolIcon-commentForeground: var(--us-fg-muted);
+
+  /* ---- Renderer compatibility shims. The renderer's HTML uses
+         var(--vscode-*) names; we alias them to our tokens. ---- */
+  --vscode-font-family: var(--us-font-sans);
+  --vscode-foreground: var(--us-fg);
+  --vscode-editor-background: var(--us-bg);
+  --vscode-editor-foreground: var(--us-fg);
+  --vscode-sideBar-background: var(--us-bg-elevated);
+  --vscode-panel-border: var(--us-border);
+  --vscode-input-background: var(--us-surface);
+  --vscode-input-foreground: var(--us-fg);
+  --vscode-input-border: var(--us-border-strong);
+  --vscode-button-background: var(--us-accent);
+  --vscode-button-foreground: var(--us-on-accent);
+  --vscode-button-hoverBackground: var(--us-accent-hover);
+  --vscode-toolbar-hoverBackground: var(--us-bg-subtle);
+  --vscode-list-activeSelectionBackground: var(--us-accent-soft);
+  --vscode-list-hoverBackground: var(--us-bg-subtle);
+  --vscode-textLink-foreground: var(--us-accent);
+  --vscode-editorWidget-background: var(--us-surface);
+  --vscode-errorForeground: var(--us-danger);
+  --vscode-editorWarning-foreground: var(--us-warning);
+  --vscode-editorInfo-foreground: var(--us-accent);
+}
+html[data-host='vscode'] { color-scheme: light dark; }
+html[data-host='vscode']:has(body.vscode-light) { color-scheme: light; }
+html[data-host='vscode']:has(body.vscode-dark) { color-scheme: dark; }
+:root[data-host='web'][data-palette='classic'] {
+  --us-bg:             light-dark(#ffffff, #131314);
+  --us-bg-elevated:    light-dark(#f8f9fa, #1e1f20);
+  --us-bg-subtle:      light-dark(#f1f3f4, #28292a);
+  --us-surface:        light-dark(#ffffff, #1e1f20);
+  --us-fg:             light-dark(#1f1f1f, #e3e3e3);
+  --us-fg-muted:       light-dark(#5f6368, #9aa0a6);
+  --us-fg-faint:       light-dark(#80868b, #80868b);
+  --us-border:         light-dark(#e8eaed, #3c4043);
+  --us-border-strong:  light-dark(#dadce0, #5f6368);
+  --us-accent:         light-dark(#1a73e8, #8ab4f8);
+  --us-accent-hover:   light-dark(#1967d2, #aecbfa);
+  --us-accent-soft:    light-dark(rgba(26, 115, 232, 0.08), rgba(138, 180, 248, 0.12));
+  --us-accent-soft-hover: light-dark(rgba(26, 115, 232, 0.14), rgba(138, 180, 248, 0.2));
+  --us-on-accent:      light-dark(#ffffff, #062e6f);
+  --us-success:        light-dark(#1e8e3e, #81c995);
+  --us-warning:        light-dark(#f29900, #fdd663);
+  --us-danger:         light-dark(#d93025, #f28b82);
+  --us-viewport-bg: #181818;
+  --us-grid-major: #5c5c5c;
+  --us-grid-minor: #333333;
+  --vscode-symbolIcon-classForeground: #4ec9b0;
+  --vscode-symbolIcon-keywordForeground: #569cd6;
+  --vscode-symbolIcon-eventForeground: #c586c0;
+  --vscode-symbolIcon-propertyForeground: #9cdcfe;
+  --vscode-symbolIcon-stringForeground: #ce9178;
+  --vscode-symbolIcon-numberForeground: #b5cea8;
+}
+#palette-toggle { margin-left: auto; }
+#app #palette-toggle[aria-pressed='true'] {
+  border-color: var(--vscode-button-background);
+  color: var(--vscode-textLink-foreground);
+}
+
+html[data-host='vscode'][data-palette='studio'] body {
+  --vscode-descriptionForeground: var(--us-fg-muted) !important;
+  --vscode-symbolIcon-classForeground: light-dark(#34624d, #91bda3) !important;
+  --vscode-symbolIcon-keywordForeground: light-dark(#425e7b, #a1b9d0) !important;
+  --vscode-symbolIcon-eventForeground: light-dark(#745978, #c4a9c5) !important;
+  --vscode-symbolIcon-propertyForeground: light-dark(#5c6354, #bdc6af) !important;
+  --vscode-symbolIcon-stringForeground: light-dark(#875a37, #d8b28e) !important;
+  --vscode-symbolIcon-numberForeground: light-dark(#506b37, #b8cd98) !important;
+  --vscode-symbolIcon-commentForeground: var(--us-fg-muted) !important;
+  /* ---- Renderer compatibility shims. The renderer's HTML uses
+         var(--vscode-*) names; we alias them to our tokens. ---- */
+  --vscode-font-family: var(--us-font-sans) !important;
+  --vscode-foreground: var(--us-fg) !important;
+  --vscode-editor-background: var(--us-bg) !important;
+  --vscode-editor-foreground: var(--us-fg) !important;
+  --vscode-sideBar-background: var(--us-bg-elevated) !important;
+  --vscode-panel-border: var(--us-border) !important;
+  --vscode-input-background: var(--us-surface) !important;
+  --vscode-input-foreground: var(--us-fg) !important;
+  --vscode-input-border: var(--us-border-strong) !important;
+  --vscode-button-background: var(--us-accent) !important;
+  --vscode-button-foreground: var(--us-on-accent) !important;
+  --vscode-button-hoverBackground: var(--us-accent-hover) !important;
+  --vscode-toolbar-hoverBackground: var(--us-bg-subtle) !important;
+  --vscode-list-activeSelectionBackground: var(--us-accent-soft) !important;
+  --vscode-list-hoverBackground: var(--us-bg-subtle) !important;
+  --vscode-textLink-foreground: var(--us-accent) !important;
+  --vscode-editorWidget-background: var(--us-surface) !important;
+  --vscode-errorForeground: var(--us-danger) !important;
+  --vscode-editorWarning-foreground: var(--us-warning) !important;
+  --vscode-editorInfo-foreground: var(--us-accent) !important;
+}

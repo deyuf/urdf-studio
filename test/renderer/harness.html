@@ -1,23 +1,25 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-host="vscode">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="../../dist/media/styles.css">
   <link rel="stylesheet" href="../../dist/media/editor.css">
+  <link rel="stylesheet" href="../../dist/media/palette.css">
   <title>URDF Studio Renderer Harness</title>
 </head>
 <body>
   <div id="app"></div>
   <script>
     window.__messages = [];
-    window.acquireVsCodeApi = () => ({
+    const vscodeApi = {
       postMessage(message) {
         window.__messages.push(message);
       },
       setState() {},
       getState() { return undefined; }
-    });
+    };
+    window.acquireVsCodeApi = () => vscodeApi;
   </script>
   <script type="module" src="../../dist/renderer.js"></script>
 </body>

@@ -10,6 +10,26 @@ test.describe('renderer feature integrations', () => {
     server = await startStaticServer(path.resolve(__dirname, '..', '..'));
   });
 
+  test('palette switch restores VS Code host colors and saves webview state', async ({ page }) => {
+    await page.goto(`${server.url}/test/renderer/harness.html`);
+    await page.waitForSelector('#palette-toggle');
+    await page.evaluate(() => {
+      document.body.className = 'vscode-dark';
+      document.body.style.setProperty('--vscode-editor-background', '#123456');
+      const api = (window as any).acquireVsCodeApi() as { getState(): unknown; setState(state: unknown): void };
+      (window as any).__paletteState = { existing: 'preserved' };
+      api.getState = () => (window as any).__paletteState;
+      api.setState = state => { (window as any).__paletteState = state; };
+    });
+    const color = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+    await expect.poll(color).toBe('rgb(23, 28, 27)');
+    await page.getByRole('button', { name: 'Classic colors', exact: true }).click();
+    await expect.poll(color).toBe('rgb(18, 52, 86)');
+    expect(await page.evaluate(() => (window as any).__paletteState)).toEqual({ existing: 'preserved', palette: 'classic' });
+    await page.getByRole('button', { name: 'Classic colors', exact: true }).click();
+    await expect.poll(color).toBe('rgb(23, 28, 27)');
+  });
+
   test.afterAll(async () => {
     await server.close();
   });

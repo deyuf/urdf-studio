@@ -343,6 +343,7 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
     const nonce = createNonce();
     const rendererUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'renderer.js'));
     const stylesUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'media', 'styles.css'));
+    const paletteUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'media', 'palette.css'));
     const editorStylesUri = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'media', 'editor.css'));
     const csp = [
       "default-src 'none'",
@@ -355,13 +356,14 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
     ].join('; ');
 
     return `<!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-host="vscode">
 <head>
   <meta charset="UTF-8">
   <meta http-equiv="Content-Security-Policy" content="${csp}">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link nonce="${nonce}" rel="stylesheet" href="${stylesUri}">
   <link nonce="${nonce}" rel="stylesheet" href="${editorStylesUri}">
+  <link nonce="${nonce}" rel="stylesheet" href="${paletteUri}">
   <title>URDF Studio</title>
 </head>
 <body>

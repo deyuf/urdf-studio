@@ -18,6 +18,7 @@ const common = {
 async function copyMedia(includeTestWorker = false) {
   await mkdir('dist/media', { recursive: true });
   await copyFile('media/styles.css', 'dist/media/styles.css');
+  await copyFile('media/palette.css', 'dist/media/palette.css');
   await copyFile('src/editor/editor.css', 'dist/media/editor.css');
   // Copy the web theme into dist/media as well. The extension webview
   // doesn't load it (VS Code provides --vscode-* colors directly), but
@@ -41,6 +42,7 @@ async function copyWebAssets() {
   await mkdir('dist-web', { recursive: true });
   await copyFile('public/index.html', 'dist-web/index.html');
   await copyFile('media/styles.css', 'dist-web/styles.css');
+  await copyFile('media/palette.css', 'dist-web/palette.css');
   await copyFile('src/editor/editor.css', 'dist-web/editor.css');
   await copyFile('src/web/ui/web.css', 'dist-web/web.css');
   await copyFile('media/icon.png', 'dist-web/icon.png');

@@ -240,6 +240,8 @@ Both targets expose the same five settings.
 | Extra package roots | `[]` | Extra `package.xml` scan roots. |
 | Semantic files | `[]` | SRDF / YAML semantic files. |
 
+**Colors:** **Classic colors** in the preview toolbar switches between the original palette and the new Studio palette in both the browser and VS Code. The choice is remembered independently of the light/dark theme.
+
 **Web:** ⚙ button in the topbar → JSON in `localStorage`.
 **VS Code:** `urdfStudio.*` keys in `settings.json`.
 

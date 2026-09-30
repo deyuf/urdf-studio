@@ -205,6 +205,22 @@ test.describe('web shell', () => {
       () => page.evaluate(() => document.documentElement.getAttribute('data-theme'))
     ).toBe('light');
     await expect.poll(viewportPixel).toEqual([232, 236, 228]);
+
+    // Palette selection is independent of light/dark mode and persists.
+    const palette = page.getByRole('button', { name: 'Classic colors', exact: true });
+    await palette.click();
+    await expect(palette).toHaveAttribute('aria-pressed', 'true');
+    await expect.poll(viewportPixel).toEqual([24, 24, 24]);
+    expect(await page.locator('html').getAttribute('data-theme')).toBe('light');
+    await page.reload();
+    await expect(palette).toHaveAttribute('aria-pressed', 'true');
+    await page.setInputFiles('#file-input', FIXTURE_DIR);
+    await expect(page.locator('#file-select')).toBeEnabled();
+    await page.locator('#file-select').selectOption(fixture);
+    await expect(page.locator('[data-joint-slider="fixture_joint"]')).toBeVisible();
+    await palette.click();
+    await expect(palette).toHaveAttribute('aria-pressed', 'false');
+    await expect.poll(viewportPixel).toEqual([232, 236, 228]);
   });
 
   test('shows a helpful empty state before any folder is loaded', async ({ page }) => {

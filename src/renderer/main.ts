@@ -197,6 +197,7 @@ document.getElementById('app')!.innerHTML = `
         <option value="both">Labels: both</option>
       </select>
     </label>
+    <button id="palette-toggle" type="button" aria-pressed="false" title="Use the original color palette">Classic colors</button>
   </div>
   <div class="workspace" id="workspace">
     <div class="viewport-wrap">
@@ -223,7 +224,20 @@ document.getElementById('app')!.innerHTML = `
   </div>
 </div>`;
 
+function applyPalette(classic: boolean): void {
+  document.documentElement.dataset.palette = classic ? 'classic' : 'studio';
+  const button = qs<HTMLButtonElement>('#palette-toggle');
+  button.setAttribute('aria-pressed', String(classic));
+  button.title = classic ? 'Use the new Studio color palette' : 'Use the original color palette';
+}
+
 try {
+  let classic = false;
+  try {
+    const state = vscode.getState() as { palette?: string } | undefined;
+    classic = (state?.palette ?? localStorage.getItem('urdf-studio:palette:v1')) === 'classic';
+  } catch { /* Storage can be unavailable in a webview or private mode. */ }
+  applyPalette(classic);
   initThree();
   bindChrome();
 } catch (error) {
@@ -337,7 +351,10 @@ function initThree(): void {
   };
   syncDrawingTheme();
   new MutationObserver(syncDrawingTheme).observe(document.documentElement, {
-    attributes: true, attributeFilter: ['data-theme']
+    attributes: true, attributeFilter: ['data-theme', 'data-palette']
+  });
+  new MutationObserver(syncDrawingTheme).observe(document.body, {
+    attributes: true, attributeFilter: ['class']
   });
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', syncDrawingTheme);
   axes = new THREE.AxesHelper(0.75);
@@ -367,6 +384,14 @@ function initThree(): void {
 }
 
 function bindChrome(): void {
+  qs('#palette-toggle').addEventListener('click', () => {
+    const classic = document.documentElement.dataset.palette !== 'classic';
+    applyPalette(classic);
+    const palette = classic ? 'classic' : 'studio';
+    try { localStorage.setItem('urdf-studio:palette:v1', palette); } catch { /* optional */ }
+    const previous = vscode.getState();
+    vscode.setState({ ...(previous && typeof previous === 'object' ? previous : {}), palette });
+  });
   qs('#fit').addEventListener('click', () => fitCamera('iso'));
   qsa<HTMLButtonElement>('[data-view]').forEach(button => button.addEventListener('click', () => fitCamera(button.dataset.view as CameraView)));
   qs<HTMLSelectElement>('#render-mode').addEventListener('change', event => {

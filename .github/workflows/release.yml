@@ -5,7 +5,7 @@ name: Release pipeline
 #   test (always)
 #     ├──▶ deploy-web          (main only, needs test)
 #     ├──▶ publish             (main only, needs test, skips if version unchanged)
-#     ├──▶ publish-prerelease  (develop push only, needs test)
+#     ├──▶ publish-prerelease  (develop/design/quiet-studio push, needs test)
 #     ├──▶ preview-web         (non-main push, needs test)
 #     └──▶ deploy-docs         (main only, needs deploy-web + publish)
 #
@@ -362,7 +362,7 @@ jobs:
 
   # =================================================================
   # publish-prerelease — VS Code Marketplace PRE-RELEASE publish.
-  # Runs on every push to develop (after tests pass). The version is
+  # Runs on pushes to develop or design/quiet-studio after tests pass. The version is
   # derived, not committed: stable releases use an even minor (0.4.x on
   # main); pre-releases bump to the next odd minor and use the GitHub run
   # number as the patch (0.5.<run_number>), which is strictly increasing
@@ -372,7 +372,9 @@ jobs:
   publish-prerelease:
     name: Publish pre-release to VS Code Marketplace
     needs: test
-    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
+    if: >-
+      github.event_name == 'push'
+      && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/design/quiet-studio')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
