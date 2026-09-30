@@ -81,7 +81,14 @@ export class AppShell {
           <a id="docs-link" class="ghost-link" href="./docs/" title="Open documentation" target="_blank" rel="noopener">Docs</a>
           <div id="theme-mount" class="theme-mount"></div>
           <button id="help-btn" class="ghost icon-btn" aria-label="Show onboarding tour" title="Show the onboarding tour">${icon('help', { size: 18 })}</button>
-          <button id="settings-btn" class="ghost icon-btn" aria-label="Settings" title="Settings">${icon('settings', { size: 18 })}</button>
+          <details id="settings-menu" class="workbench-menu settings-menu">
+            <summary id="settings-btn" class="ghost icon-btn" aria-label="Settings" title="Settings">${icon('settings', { size: 18 })}</summary>
+            <div class="menu-content settings-options">
+              <span class="menu-heading">Appearance</span>
+              <div id="palette-settings-mount"></div>
+              <button id="model-settings-btn" type="button">Model settings…</button>
+            </div>
+          </details>
         </div>
       </div>
       <div id="topbar-status" class="topbar-status" hidden></div>
@@ -129,7 +136,7 @@ export class AppShell {
     const fileBtn = document.getElementById('open-files') as HTMLButtonElement;
     const fileInput = document.getElementById('file-input') as HTMLInputElement;
     const fileSelect = document.getElementById('file-select') as HTMLSelectElement;
-    const settingsBtn = document.getElementById('settings-btn') as HTMLButtonElement;
+    const settingsBtn = document.getElementById('model-settings-btn') as HTMLButtonElement;
     const helpBtn = document.getElementById('help-btn') as HTMLButtonElement;
 
     if (!window.showDirectoryPicker) {
@@ -151,7 +158,10 @@ export class AppShell {
         void this.host.openDocument(fileSelect.value);
       }
     });
-    settingsBtn.addEventListener('click', () => this.openSettings());
+    settingsBtn.addEventListener('click', () => {
+      (document.getElementById('settings-menu') as HTMLDetailsElement).open = false;
+      this.openSettings();
+    });
     helpBtn.addEventListener('click', () => this.onboarding.open());
 
     const themeMount = document.getElementById('theme-mount') as HTMLElement;

@@ -182,3 +182,43 @@
   #app .viewport-tools { left: 10px; right: 10px; top: 10px; gap: 4px; }
   #app .viewport-tools button { padding: 0 7px; }
 }
+
+/* Settings stays in the host chrome on the web, and the preview on VS Code. */
+.settings-menu { position: relative; }
+.settings-menu > summary { list-style: none; cursor: pointer; }
+.settings-menu > summary::-webkit-details-marker { display: none; }
+#app .settings-menu > summary::after { content: none; }
+#app .settings-menu > summary { height: 32px; padding: 0 8px; }
+.settings-menu .settings-options {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  left: auto;
+  width: 218px;
+  padding: 8px;
+  display: grid;
+  gap: 6px;
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 6px;
+  box-shadow: 0 6px 20px #00000018;
+  z-index: 30;
+}
+.settings-options .menu-heading { padding: 5px 8px; font-size: 11px; color: var(--vscode-descriptionForeground); }
+.settings-options button, #app .settings-options button {
+  display: block;
+  width: 100%;
+  min-height: 34px;
+  padding: 7px 8px;
+  border: 0;
+  text-align: left;
+  font-size: 12px;
+  background: transparent;
+  color: var(--vscode-foreground);
+}
+.settings-options button:hover, #app .settings-options button:hover { background: var(--vscode-toolbar-hoverBackground); }
+.palette-check { display: none; float: right; }
+[aria-pressed='true'] .palette-check { display: inline; }
+#topbar { z-index: 20; }
+#settings-menu { margin: 0; border: 0; background: transparent; }
+#settings-btn { padding: 0; }

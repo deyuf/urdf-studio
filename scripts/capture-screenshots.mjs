@@ -316,6 +316,26 @@ async function captureDiagnostics(serverUrl, browser) {
   await ctx.close();
 }
 
+// Native 2K CSS viewport, distinct from the Retina laptop captures above.
+async function capture2K(serverUrl, browser) {
+  const ctx = await browser.newContext({ viewport: { width: 2560, height: 1440 }, deviceScaleFactor: 1, colorScheme: 'dark' });
+  const page = await ctx.newPage();
+  await openShell(page, serverUrl);
+  await pickXacroFile(page, FRANKA_DIR, 'fr3.urdf.xacro');
+  await waitForRobotStable(page);
+  await animateBetween(page, { fr3_joint2: 0, fr3_joint4: 0, fr3_joint6: 0 }, { fr3_joint2: 0.6, fr3_joint4: -1.3, fr3_joint6: 1.6 }, 12, 30);
+  await page.locator('#fit').click();
+  await page.waitForTimeout(400);
+  await snap(page, '07-workspace-2k.png');
+  await page.locator('#settings-btn').click();
+  await snap(page, '08-settings-2k.png');
+  await page.keyboard.press('Escape');
+  await page.locator('[data-theme="light"].theme-switcher-btn').click();
+  await page.waitForTimeout(400);
+  await snap(page, '09-workspace-2k-light.png');
+  await ctx.close();
+}
+
 // ---- main ------------------------------------------------------------------
 const server = await startStaticServer(DIST_WEB);
 const browser = await chromium.launch({
@@ -326,6 +346,7 @@ try {
   await captureHero(server.url, browser);
   await captureStatic(server.url, browser);
   await captureDiagnostics(server.url, browser);
+  await capture2K(server.url, browser);
   console.log(`Saved:\n  ${readdirSync(OUT_DIR).filter(f => /\.(png|gif|webm)$/.test(f)).sort().join('\n  ')}`);
 } finally {
   await browser.close();

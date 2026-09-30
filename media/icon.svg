@@ -1,6 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none">
   <title>URDF Studio — articulated robot arm</title>
   <rect width="256" height="256" rx="48" fill="#243c30"/>
+  <g transform="translate(15 -2)">
   <g stroke="#f1f2e8" stroke-width="18" stroke-linecap="round" stroke-linejoin="round">
     <path d="M62 202h62M93 199v-51l66-56-41-37"/>
     <path d="M118 55l-23 16M95 71l-15-16m15 16 7 20" stroke-width="10"/>
@@ -12,5 +13,6 @@
   <g fill="#b2cbaa">
     <circle cx="93" cy="148" r="5"/>
     <circle cx="159" cy="92" r="5"/>
+  </g>
   </g>
 </svg>

@@ -87,7 +87,8 @@ test.describe('UI polish (harness)', () => {
     for (const vp of [
       { width: 1024, height: 640 },
       { width: 1280, height: 800 },
-      { width: 1920, height: 1080 }
+      { width: 1920, height: 1080 },
+      { width: 2560, height: 1440 }
     ]) {
       await page.setViewportSize(vp);
       await loadGripperFixture(page);

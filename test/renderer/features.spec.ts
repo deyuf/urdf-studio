@@ -12,6 +12,7 @@ test.describe('renderer feature integrations', () => {
 
   test('palette switch restores VS Code host colors and saves webview state', async ({ page }) => {
     await page.goto(`${server.url}/test/renderer/harness.html`);
+    await page.locator('#preview-settings-menu summary').click();
     await page.waitForSelector('#palette-toggle');
     await page.evaluate(() => {
       document.body.className = 'vscode-dark';

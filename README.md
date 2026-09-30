@@ -96,6 +96,16 @@ Full docs: **<https://urdf.deyuf.org/docs/>**.
 
 <img src="media/screenshots-web/06-joints-light.png" alt="URDF Studio in light mode: Franka FR3 with joint controls and collapsible xacro parameters">
 
+On a 2K display (2560 × 1440), the inspector stays at a readable width while the viewport takes the remaining space. Layout regression checks also cover 150% display scaling.
+
+<details>
+<summary>2K workspace and settings menu</summary>
+
+<img src="media/screenshots-web/07-workspace-2k.png" alt="URDF Studio on a native 2560 by 1440 viewport">
+<img src="media/screenshots-web/08-settings-2k.png" alt="Classic colors inside the settings gear menu on a 2K display">
+
+</details>
+
 The browser app loads a real ROS package off the local disk. Xacro is
 expanded client-side, every `package://` URI is resolved to a blob URL
 by the host, and meshes stream in via Three.js's `LoadingManager`.
@@ -242,7 +252,7 @@ Both targets expose the same five settings.
 
 **Workspace:** Camera presets and geometry layers sit inside the viewport; **Display** contains grids, frames, labels, and diagnostic overlays. Drag the inspector divider to resize it, or focus it and use the arrow keys. Joint controls pair full-width sliders with numeric values and units. Checks are grouped into collapsible sections with source links. **Export** collects PNG, pose JSON, parts CSV, and inspection PDF exports.
 
-**Colors:** **Classic colors** in the preview toolbar switches between the original palette and the new Studio palette in both the browser and VS Code. The choice is remembered independently of the light/dark theme.
+**Colors:** **Classic colors** in the Settings (gear) menu switches between the original palette and the new Studio palette in both the browser and VS Code. The choice is remembered independently of the light/dark theme.
 
 **Web:** ⚙ button in the topbar → JSON in `localStorage`.
 **VS Code:** `urdfStudio.*` keys in `settings.json`.

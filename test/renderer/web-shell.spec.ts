@@ -126,6 +126,7 @@ test.describe('web shell', () => {
 
     // Open settings via the gear button.
     await page.locator('#settings-btn').click();
+    await page.locator('#model-settings-btn').click();
     const dialog = page.locator('dialog#settings-dialog');
     await expect(dialog).toBeVisible();
 
@@ -135,6 +136,7 @@ test.describe('web shell', () => {
 
     // Re-open, then click Save — also closes, also persists.
     await page.locator('#settings-btn').click();
+    await page.locator('#model-settings-btn').click();
     await expect(dialog).toBeVisible();
     await dialog.locator('select[name="upAxis"]').selectOption('+Y');
     await dialog.locator('button[value="save"]').click();
@@ -207,12 +209,14 @@ test.describe('web shell', () => {
     await expect.poll(viewportPixel).toEqual([232, 236, 228]);
 
     // Palette selection is independent of light/dark mode and persists.
+    await page.locator('#settings-btn').click();
     const palette = page.getByRole('button', { name: 'Classic colors', exact: true });
     await palette.click();
     await expect(palette).toHaveAttribute('aria-pressed', 'true');
     await expect.poll(viewportPixel).toEqual([24, 24, 24]);
     expect(await page.locator('html').getAttribute('data-theme')).toBe('light');
     await page.reload();
+    await page.locator('#settings-btn').click();
     await expect(palette).toHaveAttribute('aria-pressed', 'true');
     await page.setInputFiles('#file-input', FIXTURE_DIR);
     await expect(page.locator('#file-select')).toBeEnabled();
@@ -222,6 +226,68 @@ test.describe('web shell', () => {
     await expect(palette).toHaveAttribute('aria-pressed', 'false');
     await expect.poll(viewportPixel).toEqual([232, 236, 228]);
   });
+
+  for (const display of [
+    { name: '2K native', width: 2560, height: 1440, scale: 1 },
+    { name: '2K at 150% scaling', width: 1707, height: 960, scale: 1.5 }
+  ]) {
+    test.describe(display.name, () => {
+      test.use({ viewport: { width: display.width, height: display.height }, deviceScaleFactor: display.scale });
+      test('workbench, settings, and source layouts fit the display', async ({ page }) => {
+        await page.goto(server.url);
+        if (await page.locator('dialog.onboarding').isVisible()) await page.locator('[data-action="skip"]').click();
+        await page.setInputFiles('#file-input', FIXTURE_DIR);
+        await expect(page.locator('#file-select')).toBeEnabled();
+        const fixture = await page.locator('#file-select option').evaluateAll(options =>
+          options.map(option => (option as HTMLOptionElement).value).find(value => /(^|\/)model\.xacro$/.test(value)) ?? ''
+        );
+        await page.locator('#file-select').selectOption(fixture);
+        await expect(page.locator('[data-joint-slider="fixture_joint"]')).toBeVisible();
+        const panel = (await page.locator('.side').boundingBox())!;
+        expect(panel.width).toBeCloseTo(440, 0);
+        const canvas = (await page.locator('#viewport').boundingBox())!;
+        expect(canvas.x + canvas.width).toBeCloseTo(panel.x, 0);
+        expect(canvas.height).toBeGreaterThan(display.height - 180);
+        const overflow = await page.locator('.tabs .tab, .topbar-actions > *, .toolbar-group-end > *').evaluateAll(elements =>
+          elements.filter(element => element.getBoundingClientRect().width > 0).map(element => ({
+            text: element.textContent?.trim(),
+            client: element.clientWidth,
+            scroll: element.scrollWidth,
+            right: element.getBoundingClientRect().right
+          }))
+        );
+        for (const item of overflow) {
+          expect(item.scroll, `${item.text} should fit`).toBeLessThanOrEqual(item.client + 1);
+          expect(item.right).toBeLessThanOrEqual(display.width);
+        }
+        await expect(page.locator('.toolbar #palette-toggle')).toHaveCount(0);
+        await page.locator('#settings-btn').focus();
+        await page.keyboard.press('Enter');
+        await expect(page.locator('#settings-menu #palette-toggle')).toBeVisible();
+        await page.locator('#palette-toggle').click();
+        await expect(page.locator('#palette-toggle')).toHaveAttribute('aria-pressed', 'true');
+        const menu = (await page.locator('.settings-options').boundingBox())!;
+        expect(menu.x).toBeGreaterThanOrEqual(0);
+        expect(menu.x + menu.width).toBeLessThanOrEqual(display.width);
+        await page.keyboard.press('Escape');
+        await expect(page.locator('#settings-menu')).not.toHaveAttribute('open', '');
+        await expect(page.locator('#settings-btn')).toBeFocused();
+        await page.locator('.tab[data-tab="source"]').click();
+        await expect(page.locator('#panel-source .cm-editor')).toBeVisible();
+        await page.evaluate(() => document.querySelector('#panel-source')!.dispatchEvent(
+          new CustomEvent('urdf-studio:request-fullscreen-toggle', { bubbles: true })
+        ));
+        await expect(page.locator('#workspace')).toHaveClass(/layout-source-fullscreen/);
+        expect((await page.locator('.side').boundingBox())!.width).toBeCloseTo(display.width, 0);
+        await page.evaluate(() => document.querySelector('#panel-source')!.dispatchEvent(
+          new CustomEvent('urdf-studio:request-fullscreen-toggle', { bubbles: true })
+        ));
+        await expect(page.locator('#workspace')).not.toHaveClass(/layout-source-fullscreen/);
+        expect((await page.locator('.side').boundingBox())!.width).toBeCloseTo(panel.width, 0);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(display.width);
+      });
+    });
+  }
 
   test('shows a helpful empty state before any folder is loaded', async ({ page }) => {
     await page.goto(server.url);

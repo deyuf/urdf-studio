@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { icon } from '../web/ui/icons';
 import { LoadingManager, Object3D } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
@@ -159,7 +160,13 @@ document.getElementById('app')!.innerHTML = `
       <select id="bookmark-select" title="Apply a saved bookmark"><option value="">Bookmarks</option></select>
       <button id="bookmark-save" title="Save current pose as a named bookmark">Save As</button>
       <button id="save-pose" class="primary">Save Pose</button>
-      <button id="palette-toggle" type="button" aria-pressed="false" title="Use the original color palette">Classic colors</button>
+      <details id="preview-settings-menu" class="workbench-menu settings-menu">
+        <summary aria-label="Settings" title="Settings">${icon('settings', { size: 18 })}</summary>
+        <div class="menu-content settings-options">
+          <span class="menu-heading">Appearance</span>
+          <button id="palette-toggle" type="button" aria-pressed="false" title="Use the original color palette">Classic colors<span class="palette-check" aria-hidden="true">✓</span></button>
+        </div>
+      </details>
       <details id="export-menu" class="workbench-menu"><summary>Export</summary>
         <div class="menu-content export-options">
           <button data-export="png">Viewport image · PNG</button>
@@ -455,6 +462,11 @@ function bindInspectorResize(): void {
 
 function bindChrome(): void {
   bindInspectorResize();
+  const paletteMount = document.getElementById('palette-settings-mount');
+  if (paletteMount) {
+    paletteMount.append(qs('#palette-toggle'));
+    qs('#preview-settings-menu').remove();
+  }
   qsa<HTMLButtonElement>('[data-export]').forEach(button => {
     button.addEventListener('click', () => {
       qs<HTMLDetailsElement>('#export-menu').open = false;
