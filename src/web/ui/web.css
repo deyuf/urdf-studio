@@ -1306,3 +1306,11 @@ dialog#settings-dialog[open]::backdrop {
     flex: 1;
   }
 }
+.site-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  padding: 6px 16px;
+  font-size: 12px;
+}
+.site-links a { color: var(--vscode-textLink-foreground, #1a73e8); }
