@@ -1,6 +1,6 @@
+import { startStaticServer } from './helpers';
 import { expect, test } from '@playwright/test';
-import { createReadStream, existsSync, statSync } from 'node:fs';
-import { createServer, type Server } from 'node:http';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
@@ -141,11 +141,7 @@ test.describe('web shell', () => {
     await dialog.locator('select[name="upAxis"]').selectOption('+Y');
     await dialog.locator('button[value="save"]').click();
     await expect(dialog).toBeHidden();
-    // close handler runs on the dialog "close" event which fires asynchronously
-    // after submit. Give it a moment before reading localStorage.
-    await page.waitForTimeout(50);
-    const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('urdf-studio:settings:v1') || '{}'));
-    expect(saved.upAxis).toBe('+Y');
+    await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('urdf-studio:settings:v1') || '{}').upAxis)).toBe('+Y');
   });
 
   test('theme switcher persists across reloads and flips data-theme', async ({ page }) => {
@@ -378,7 +374,7 @@ test.describe('web shell', () => {
     // First load — should mint a blob URL for box.stl.
     await page.locator('#file-select').selectOption(targetValue);
     await expect(page.locator('[data-joint-slider="hinge"]')).toBeVisible({ timeout: 15_000 });
-    await page.waitForTimeout(500);
+    await expect.poll(() => page.evaluate(() => (window as any).__blobTracker.created)).toBeGreaterThanOrEqual(1);
     const afterFirst = await page.evaluate(() => (window as unknown as { __blobTracker: { live(): number } }).__blobTracker.live());
 
     // Alternate between two URDFs four times. Each switch generates one fresh
@@ -386,10 +382,13 @@ test.describe('web shell', () => {
     // (1 mesh per load), not grow linearly.
     for (let i = 0; i < 4; i++) {
       const next = i % 2 === 0 ? altTargetValue : targetValue;
+      const createdBefore = await page.evaluate(() => (window as any).__blobTracker.created);
+      const revokedBefore = await page.evaluate(() => (window as any).__blobTracker.revoked);
       await page.locator('#file-select').selectOption('');
       await page.locator('#file-select').selectOption(next);
       await expect(page.locator('[data-joint-slider="hinge"]')).toBeVisible({ timeout: 15_000 });
-      await page.waitForTimeout(500);
+      await expect.poll(() => page.evaluate(() => (window as any).__blobTracker.created)).toBeGreaterThan(createdBefore);
+      await expect.poll(() => page.evaluate(() => (window as any).__blobTracker.revoked)).toBeGreaterThan(revokedBefore);
     }
     const afterMany = await page.evaluate(() => {
       const tracker = (window as unknown as { __blobTracker: { live(): number; created: number; revoked: number } }).__blobTracker;
@@ -479,43 +478,3 @@ test.describe('web shell', () => {
     expect(csvDownload!.name).toMatch(/\.csv$/);
   });
 });
-
-async function startStaticServer(root: string): Promise<{ url: string; close(): Promise<void> }> {
-  const server: Server = createServer((request, response) => {
-    const requestUrl = new URL(request.url ?? '/', 'http://127.0.0.1');
-    let pathname = decodeURIComponent(requestUrl.pathname);
-    if (pathname === '/' || pathname === '') {
-      pathname = '/index.html';
-    }
-    const filePath = path.resolve(root, `.${pathname}`);
-    if (!filePath.startsWith(root) || !existsSync(filePath) || statSync(filePath).isDirectory()) {
-      response.writeHead(404);
-      response.end('not found');
-      return;
-    }
-    response.writeHead(200, { 'content-type': contentType(filePath) });
-    createReadStream(filePath).pipe(response);
-  });
-  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
-  const address = server.address();
-  if (!address || typeof address === 'string') {
-    throw new Error('Could not start static server');
-  }
-  return {
-    url: `http://127.0.0.1:${address.port}`,
-    close: () => new Promise<void>(resolve => server.close(() => resolve()))
-  };
-}
-
-function contentType(filePath: string): string {
-  if (filePath.endsWith('.js')) {
-    return 'text/javascript';
-  }
-  if (filePath.endsWith('.css')) {
-    return 'text/css';
-  }
-  if (filePath.endsWith('.json')) {
-    return 'application/json';
-  }
-  return 'text/html';
-}

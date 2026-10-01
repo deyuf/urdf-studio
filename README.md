@@ -309,8 +309,9 @@ npm run web:dev            # http://127.0.0.1:5173 with HMR
 npm run docs:watch         # rebuild dist-web/docs on every .md change
 
 # Tests
-npm run test:unit          # 24 node:test cases on src/core
-npx playwright test        # 19 renderer + web shell specs
+npm run test:unit          # core, editor, renderer logic, and browser storage
+npm run test:renderer      # builds both targets, then runs browser tests
+npm run test:vscode        # real VS Code integration (Linux: use xvfb-run)
 
 # Real-world smoke
 FRANKA_DIR=/tmp/franka_description node scripts/test-franka.mjs

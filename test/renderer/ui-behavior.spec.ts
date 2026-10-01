@@ -1,6 +1,6 @@
+import { startStaticServer } from './helpers';
 import { expect, test } from '@playwright/test';
-import { createReadStream, existsSync } from 'node:fs';
-import { createServer, type Server } from 'node:http';
+
 import path from 'node:path';
 
 // Use a viewport narrow enough that the toolbar would otherwise clip the
@@ -119,8 +119,7 @@ test.describe('renderer UI behaviors', () => {
     for (let i = 0; i < 6; i += 1) {
       await page.mouse.wheel(0, 120);
     }
-    // Allow OrbitControls damping + rAF to settle.
-    await page.waitForTimeout(400);
+    await expect.poll(() => canvas.evaluate((node: HTMLCanvasElement) => node.toDataURL('image/png'))).not.toBe(before);
 
     const scrollAfter = await page.evaluate(() => ({ x: window.scrollX, y: window.scrollY }));
     const after = await canvas.evaluate((node: HTMLCanvasElement) => node.toDataURL('image/png'));
@@ -146,7 +145,7 @@ test.describe('renderer UI behaviors', () => {
     for (let i = 0; i < 6; i += 1) {
       await page.mouse.wheel(0, 120);
     }
-    await page.waitForTimeout(400);
+    await expect.poll(() => canvas.evaluate((node: HTMLCanvasElement) => node.toDataURL('image/png'))).not.toBe(before);
 
     const after = await canvas.evaluate((node: HTMLCanvasElement) => node.toDataURL('image/png'));
     const scrollAfter = await page.evaluate(() => ({ x: window.scrollX, y: window.scrollY }));
@@ -168,19 +167,19 @@ test.describe('renderer UI behaviors', () => {
     }));
 
     await page.locator('.tab[data-tab="joints"]').click();
-    await page.waitForTimeout(150);
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
     const jointsSize = await sizeOn();
 
     await page.locator('.tab[data-tab="inspector"]').click();
-    await page.waitForTimeout(150);
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
     const inspectorSize = await sizeOn();
 
     await page.locator('.tab[data-tab="links"]').click();
-    await page.waitForTimeout(150);
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
     const linksSize = await sizeOn();
 
     await page.locator('.tab[data-tab="checks"]').click();
-    await page.waitForTimeout(150);
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
     const checksSize = await sizeOn();
 
     // CSS size of the canvas (i.e. the viewport area) must be identical
@@ -193,32 +192,3 @@ test.describe('renderer UI behaviors', () => {
     expect(checksSize.height).toBe(jointsSize.height);
   });
 });
-
-async function startStaticServer(root: string): Promise<{ url: string; close(): Promise<void> }> {
-  const server: Server = createServer((request, response) => {
-    const requestUrl = new URL(request.url ?? '/', 'http://127.0.0.1');
-    const filePath = path.resolve(root, `.${decodeURIComponent(requestUrl.pathname)}`);
-    if (!filePath.startsWith(root) || !existsSync(filePath)) {
-      response.writeHead(404);
-      response.end('not found');
-      return;
-    }
-    response.writeHead(200, { 'content-type': contentType(filePath) });
-    createReadStream(filePath).pipe(response);
-  });
-  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
-  const address = server.address();
-  if (!address || typeof address === 'string') {
-    throw new Error('Could not start renderer test server.');
-  }
-  return {
-    url: `http://127.0.0.1:${address.port}`,
-    close: () => new Promise<void>(resolve => server.close(() => resolve()))
-  };
-}
-
-function contentType(filePath: string): string {
-  if (filePath.endsWith('.js')) return 'text/javascript';
-  if (filePath.endsWith('.css')) return 'text/css';
-  return 'text/html';
-}

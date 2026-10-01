@@ -1,8 +1,8 @@
 // Playwright e2e tests for the 3D viewport screenshot feature.
 
+import { startStaticServer } from './helpers';
 import { expect, test } from '@playwright/test';
-import { createReadStream, existsSync, readFileSync } from 'node:fs';
-import { createServer, type Server } from 'node:http';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 const FRANKA_FIXTURE = path.resolve(__dirname, '..', 'fixtures', 'franka_primitives.urdf');
@@ -60,14 +60,19 @@ test.describe('viewport screenshot (Tools panel)', () => {
       await page.locator('#screenshot-download').click();
       const file2 = await (await dl2).path();
 
-      // Both files exist; file2 should be considerably larger than file1.
       expect(file1).toBeTruthy();
       expect(file2).toBeTruthy();
-      const size1 = require('node:fs').statSync(file1!).size;
-      const size2 = require('node:fs').statSync(file2!).size;
-      expect(size2).toBeGreaterThan(size1);
-      // Sanity: 1× capture file should at minimum match the canvas pixel grid.
-      expect(canvasDims.w).toBeGreaterThan(0);
+      // PNG IHDR stores the actual pixel dimensions independently of compression.
+      const dimensions = (file: string) => {
+        const bytes = readFileSync(file);
+        expect(bytes.subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+        expect(bytes.toString('ascii', 12, 16)).toBe('IHDR');
+        return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
+      };
+      const one = dimensions(file1!);
+      const two = dimensions(file2!);
+      expect(one).toEqual({ width: canvasDims.w, height: canvasDims.h });
+      expect(two).toEqual({ width: one.width * 2, height: one.height * 2 });
     } finally {
       await server.close();
     }
@@ -116,24 +121,4 @@ function extractJoints(urdf: string): Record<string, unknown> {
     out[m[1]] = { name: m[1], type: m[2], axis: [0, 0, 1], limit: {}, line: 0 };
   }
   return out;
-}
-
-async function startStaticServer(root: string): Promise<{ url: string; close(): Promise<void> }> {
-  const server: Server = createServer((request, response) => {
-    const requestUrl = new URL(request.url ?? '/', 'http://127.0.0.1');
-    const filePath = path.resolve(root, `.${decodeURIComponent(requestUrl.pathname)}`);
-    if (!filePath.startsWith(root) || !existsSync(filePath)) { response.writeHead(404); response.end('not found'); return; }
-    response.writeHead(200, { 'content-type': contentType(filePath) });
-    createReadStream(filePath).pipe(response);
-  });
-  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
-  const addr = server.address();
-  if (!addr || typeof addr === 'string') throw new Error('server failed');
-  return { url: `http://127.0.0.1:${addr.port}`, close: () => new Promise<void>(resolve => server.close(() => resolve())) };
-}
-
-function contentType(filePath: string): string {
-  if (filePath.endsWith('.js')) return 'text/javascript';
-  if (filePath.endsWith('.css')) return 'text/css';
-  return 'text/html';
 }

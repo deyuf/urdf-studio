@@ -102,11 +102,12 @@ jobs:
         # process never paints and the handshake never starts.
         run: xvfb-run -a --server-args="-screen 0 1280x1024x24" node test/integration/run.cjs
 
-      - name: Upload Playwright report on failure
-        if: failure()
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
+          if-no-files-found: ignore
           path: |
             playwright-report
             test-results

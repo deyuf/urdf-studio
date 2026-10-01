@@ -18,8 +18,8 @@ const FIXTURE_ROOT = path.resolve(process.cwd(), 'test', 'fixtures');
 const FRANKA_ROOT = path.join(FIXTURE_ROOT, 'franka_description');
 
 if (!existsSync(FRANKA_ROOT)) {
-  test('franka_description fixture missing — skipping', () => {
-    assert.ok(true);
+  test('franka_description fixture must exist', () => {
+    assert.fail(`Required fixture missing: ${FRANKA_ROOT}`);
   });
 } else {
   // Multi-arm composite robots that expand a Python list-style argument
@@ -39,6 +39,9 @@ if (!existsSync(FRANKA_ROOT)) {
       return statSync(dir).isDirectory()
         && existsSync(path.join(dir, `${name}.urdf.xacro`));
     });
+  for (const id of MULTI_ARM_SKIP) {
+    test(`franka ${id}: multi-arm list arguments are not supported by xacro-parser`, { skip: 'Upstream xacro-parser limitation' }, () => {});
+  }
   const variants = allVariants.filter(name => !MULTI_ARM_SKIP.has(name));
 
   test('franka_description: fixture is complete (package.xml + at least one robot)', () => {
