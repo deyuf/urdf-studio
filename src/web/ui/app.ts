@@ -84,11 +84,6 @@ export class AppShell {
           <button id="settings-btn" class="ghost icon-btn" aria-label="Settings" title="Settings">${icon('settings', { size: 18 })}</button>
         </div>
       </div>
-      <nav class="site-links" aria-label="Deyu Fu websites">
-        <a href="https://me.deyuf.org/">Personal site</a>
-        <a href="https://urdf.deyuf.org/" aria-current="page">URDF Studio</a>
-        <a href="https://historyofrobotics.deyuf.org/">History of Robotics</a>
-      </nav>
       <div id="topbar-status" class="topbar-status" hidden></div>
       <input id="file-input" type="file" webkitdirectory multiple hidden>
       <dialog id="settings-dialog">

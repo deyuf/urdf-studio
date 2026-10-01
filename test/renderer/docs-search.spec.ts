@@ -43,14 +43,33 @@ test('documentation search works from the overview and nested pages', async ({ p
   await expect(page.locator('#docs-search')).not.toBeVisible();
 });
 
-test('cross-site links wrap on mobile and the social image is deployed', async ({ page, request }) => {
+test('project links stay in a collapsed footer on mobile and the social image is deployed', async ({ page, request }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${url}/docs/`);
-  await expect(page.locator('.site-links a[href="https://me.deyuf.org/"]')).toBeVisible();
-  await expect(page.locator('.site-links a[href="https://historyofrobotics.deyuf.org/"]')).toBeVisible();
+  await expect(page.locator('.project-links')).not.toBeVisible();
+  await page.locator('.project-switcher summary').click();
+  await expect(page.locator('footer a[href="https://me.deyuf.org/"]')).toBeVisible();
+  await expect(page.locator('footer a[href="https://historyofrobotics.deyuf.org/"]')).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   const response = await request.get(`${url}/og-image.png`);
   expect(response.status()).toBe(200);
   expect(response.headers()['content-type']).toBe('image/png');
   expect((await response.body()).length).toBeGreaterThan(1000);
+});
+
+test('the app keeps project links outside its toolbar and viewport', async ({ page }) => {
+  await page.goto(url);
+  if (await page.locator('dialog.onboarding').isVisible()) {
+    await page.locator('[data-action="skip"]').click();
+  }
+  await expect(page.locator('#topbar .project-switcher')).toHaveCount(0);
+  await expect(page.locator('.project-links')).not.toBeVisible();
+  await page.locator('.project-switcher summary').focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('footer a[href="https://me.deyuf.org/"]')).toBeVisible();
+  const viewport = await page.locator('canvas#viewport').boundingBox();
+  const footer = await page.locator('.project-footer').boundingBox();
+  expect(viewport).not.toBeNull();
+  expect(footer).not.toBeNull();
+  expect(viewport!.y + viewport!.height).toBeLessThanOrEqual(footer!.y + 1);
 });

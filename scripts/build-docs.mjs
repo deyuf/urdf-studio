@@ -398,6 +398,7 @@ function layout({ title, description, canonical, sidebar, toc, body, pager, dept
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
   <link rel="stylesheet" href="${cssHref}">
+  <link rel="stylesheet" href="${upPrefix}project-links.css">
   <script src="${upPrefix}search.js" defer></script>
   <script type="application/ld+json">${articleJsonLd}</script>
 </head>
@@ -413,11 +414,6 @@ function layout({ title, description, canonical, sidebar, toc, body, pager, dept
       <a href="${ghHref}">GitHub</a>
     </nav>
   </header>
-  <nav class="site-links" aria-label="Deyu Fu websites">
-    <a href="https://me.deyuf.org/">Personal site</a>
-    <a href="https://urdf.deyuf.org/">URDF Studio</a>
-    <a href="https://historyofrobotics.deyuf.org/">History of Robotics</a>
-  </nav>
   <dialog id="docs-search" aria-labelledby="docs-search-title">
     <form method="dialog"><button aria-label="Close search">Close</button></form>
     <h2 id="docs-search-title">Search documentation</h2>
@@ -440,6 +436,15 @@ function layout({ title, description, canonical, sidebar, toc, body, pager, dept
       ${toc}
     </aside>
   </div>
+  <footer class="project-footer">
+    <details class="project-switcher">
+      <summary>By Deyu Fu <span aria-hidden="true">⌃</span></summary>
+      <nav class="project-links" aria-label="Other projects by Deyu Fu">
+        <a href="https://me.deyuf.org/"><span class="project-link-title">Deyu Fu <span aria-hidden="true">↗</span></span><span class="project-link-description">Robotics, research &amp; selected work</span></a>
+        <a href="https://historyofrobotics.deyuf.org/"><span class="project-link-title">History of Robotics <span aria-hidden="true">↗</span></span><span class="project-link-description">From ancient automata to embodied AI</span></a>
+      </nav>
+    </details>
+  </footer>
 </body>
 </html>
 `;
@@ -509,6 +514,7 @@ async function build() {
   await writeSitemap(sitemapEntries);
   await writeFile(path.join(OUT, 'search-index.json'), JSON.stringify(searchEntries), 'utf8');
   await copyFile(path.join(SRC, 'search.js'), path.join(OUT, 'search.js'));
+  await copyFile(path.join(REPO, 'public', 'project-links.css'), path.join(OUT, 'project-links.css'));
 
   // Static assets.
   await copyFile(path.join(SRC, 'docs.css'), path.join(OUT, 'docs.css'));

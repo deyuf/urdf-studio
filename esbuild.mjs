@@ -40,6 +40,7 @@ async function copyMedia(includeTestWorker = false) {
 async function copyWebAssets() {
   await mkdir('dist-web', { recursive: true });
   await copyFile('public/index.html', 'dist-web/index.html');
+  await copyFile('public/project-links.css', 'dist-web/project-links.css');
   await copyFile('media/styles.css', 'dist-web/styles.css');
   await copyFile('src/editor/editor.css', 'dist-web/editor.css');
   await copyFile('src/web/ui/web.css', 'dist-web/web.css');
