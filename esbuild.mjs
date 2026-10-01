@@ -43,6 +43,7 @@ async function copyWebAssets() {
   await mkdir('dist-web', { recursive: true });
   await copyFile('public/index.html', 'dist-web/index.html');
   await copyFile('public/project-links.css', 'dist-web/project-links.css');
+  await copyFile('public/project-links.js', 'dist-web/project-links.js');
   await copyFile('media/styles.css', 'dist-web/styles.css');
   await copyFile('media/palette.css', 'dist-web/palette.css');
   await copyFile('media/workbench.css', 'dist-web/workbench.css');

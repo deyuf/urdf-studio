@@ -27,3 +27,9 @@
 
 /docs/search-index.json
   Cache-Control: public, max-age=0, must-revalidate
+
+/project-links.js
+  Cache-Control: public, max-age=0, must-revalidate
+
+/docs/project-links.js
+  Cache-Control: public, max-age=0, must-revalidate

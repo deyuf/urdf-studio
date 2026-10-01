@@ -57,3 +57,39 @@ test('the app keeps project links outside its toolbar and viewport', async ({ pa
   expect(footer).not.toBeNull();
   expect(viewport!.y + viewport!.height).toBeLessThanOrEqual(footer!.y + 1);
 });
+
+for (const host of ['/', '/docs/features/joints.html']) {
+  for (const width of [390, 2560]) {
+    test(`project footer supports dismissal and keyboard navigation on ${host} at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: width === 390 ? 844 : 1440 });
+      await page.goto(`${url}${host}`);
+      if (await page.locator('dialog.onboarding').isVisible()) {
+        await page.locator('[data-action="skip"]').click();
+      }
+      const trigger = page.locator('.project-switcher summary');
+      const menu = page.locator('.project-switcher');
+      await expect(trigger).toContainText('About & projects');
+      await trigger.focus();
+      await page.keyboard.press('Enter');
+      await page.keyboard.press('Tab');
+      await expect(page.locator('footer a').first()).toBeFocused();
+      const panel = (await page.locator('.project-links').boundingBox())!;
+      expect(panel.x).toBeGreaterThanOrEqual(0);
+      expect(panel.x + panel.width).toBeLessThanOrEqual(width);
+      expect(panel.y).toBeGreaterThanOrEqual(0);
+      await page.keyboard.press('Escape');
+      await expect(menu).not.toHaveAttribute('open', '');
+      await expect(trigger).toBeFocused();
+      await trigger.click();
+      await page.mouse.click(8, 8);
+      await expect(menu).not.toHaveAttribute('open', '');
+      await trigger.focus();
+      await page.keyboard.press('Enter');
+      await page.keyboard.press('Tab');
+      await page.keyboard.press('Tab');
+      await expect(page.locator('footer a').last()).toBeFocused();
+      await page.keyboard.press('Tab');
+      await expect(menu).not.toHaveAttribute('open', '');
+    });
+  }
+}
