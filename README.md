@@ -238,6 +238,18 @@ resolution, mesh blob URL allocation, Three.js render.
 
 ---
 
+## Releases
+
+Merges to `main` automatically select a stable version, run the complete test
+suite against the candidate VSIX, publish it to the Marketplace, and create a
+GitHub Release. No manual version bump is needed. `develop` and
+`design/quiet-studio` pushes publish beta builds after the same checks.
+
+Stable versions advance above any newer beta (for example, `0.5.x` beta →
+`0.6.0` stable), so users on the beta channel can upgrade. Failed runs reuse their
+release checkpoint when rerun. See [release automation](docs/development/releases.md)
+for version rules, artifacts, and recovery.
+
 ## Configuration
 
 Both targets expose the same five settings.

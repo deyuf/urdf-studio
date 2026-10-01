@@ -26,6 +26,7 @@
 
 'use strict';
 
+const { execFileSync } = require('node:child_process');
 const { runTests } = require('@vscode/test-electron');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -39,9 +40,18 @@ async function main() {
   const logFile = path.join(os.tmpdir(), `urdf-studio-it-${process.pid}-${Date.now()}.log`);
   // Fresh profile per run — see stability notes above. Lives outside
   // .vscode-test so CI caching of the downloaded build can never leak state.
+  const packageDir = process.env.URDF_STUDIO_VSIX ? fs.mkdtempSync(path.join(os.tmpdir(), 'urdf-studio-vsix-')) : null;
+  let extensionPath = repoRoot;
+  if (packageDir) {
+    execFileSync('unzip', ['-q', process.env.URDF_STUDIO_VSIX, '-d', packageDir]);
+    extensionPath = path.join(packageDir, 'extension');
+    const version = JSON.parse(fs.readFileSync(path.join(extensionPath, 'package.json'), 'utf8')).version;
+    if (version !== process.env.URDF_STUDIO_EXPECTED_VERSION) throw new Error('VSIX version differs from the tested release plan');
+    console.log(`Testing packaged VSIX ${version}`);
+  }
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'urdf-studio-vscode-ud-'));
 
-  if (!fs.existsSync(path.join(repoRoot, 'dist', 'extension.js'))) {
+  if (!fs.existsSync(path.join(extensionPath, 'dist', 'extension.js'))) {
     throw new Error('dist/extension.js missing — run `npm run compile` first.');
   }
 
@@ -58,7 +68,7 @@ async function main() {
   let runError;
   try {
     await runTests({
-      extensionDevelopmentPath: repoRoot,
+      extensionDevelopmentPath: extensionPath,
       extensionTestsPath: path.join(__dirname, 'suite.cjs'),
       launchArgs: [
         path.join(repoRoot, 'test', 'fixtures'),
@@ -97,6 +107,7 @@ async function main() {
   } finally {
     fs.rmSync(logFile, { force: true });
     fs.rmSync(userDataDir, { recursive: true, force: true });
+    if (packageDir) fs.rmSync(packageDir, { recursive: true, force: true });
   }
 }
 

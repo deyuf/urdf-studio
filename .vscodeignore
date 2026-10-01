@@ -29,3 +29,6 @@ media/**
 !media/icon.png
 
 playwright-report/
+
+tmp/**
+tmp-fr3/**
