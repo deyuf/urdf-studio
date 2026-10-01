@@ -42,6 +42,7 @@ async function copyMedia(includeTestWorker = false) {
 async function copyWebAssets() {
   await mkdir('dist-web', { recursive: true });
   await copyFile('public/index.html', 'dist-web/index.html');
+  await copyFile('public/project-links.css', 'dist-web/project-links.css');
   await copyFile('media/styles.css', 'dist-web/styles.css');
   await copyFile('media/palette.css', 'dist-web/palette.css');
   await copyFile('media/workbench.css', 'dist-web/workbench.css');
@@ -53,8 +54,7 @@ async function copyWebAssets() {
   // Open Graph / Twitter Card preview image. Reuses an existing screenshot
   // so the social/search-result card shows the actual app rather than a
   // bare favicon.
-  await copyFile('media/screenshots-web/01-hero.png', 'dist-web/og-image.png')
-    .catch(() => undefined);
+  await copyFile('media/screenshots-web/01-hero.png', 'dist-web/og-image.png');
 }
 
 // VS Code extension build (unchanged from prior shape).

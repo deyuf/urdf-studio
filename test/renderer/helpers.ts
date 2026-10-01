@@ -15,7 +15,7 @@ export async function startStaticServer(root: string): Promise<{ url: string; cl
     let filePath: string;
     try {
       const url = new URL(request.url ?? '/', 'http://127.0.0.1');
-      const pathname = decodeURIComponent(url.pathname === '/' ? '/index.html' : url.pathname);
+      const pathname = decodeURIComponent(url.pathname.endsWith('/') ? `${url.pathname}index.html` : url.pathname);
       filePath = path.resolve(base, `.${pathname}`);
       const relative = path.relative(base, filePath);
       if (relative.startsWith(`..${path.sep}`) || relative === '..' || path.isAbsolute(relative) || !statSync(filePath).isFile()) {

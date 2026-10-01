@@ -243,7 +243,9 @@ test.describe('web shell', () => {
         expect(panel.width).toBeCloseTo(440, 0);
         const canvas = (await page.locator('#viewport').boundingBox())!;
         expect(canvas.x + canvas.width).toBeCloseTo(panel.x, 0);
-        expect(canvas.height).toBeGreaterThan(display.height - 180);
+        const footer = (await page.locator('.project-footer').boundingBox())!;
+        expect(canvas.height).toBeGreaterThan(display.height - 180 - footer.height);
+        expect(canvas.y + canvas.height).toBeLessThanOrEqual(footer.y + 1);
         const overflow = await page.locator('.tabs .tab, .topbar-actions > *, .toolbar-group-end > *').evaluateAll(elements =>
           elements.filter(element => element.getBoundingClientRect().width > 0).map(element => ({
             text: element.textContent?.trim(),

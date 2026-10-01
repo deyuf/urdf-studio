@@ -21,3 +21,9 @@
 # safe to cache forever — a new deploy mints new filenames.
 /chunks/*
   Cache-Control: public, max-age=31536000, immutable
+
+/docs/search.js
+  Cache-Control: public, max-age=0, must-revalidate
+
+/docs/search-index.json
+  Cache-Control: public, max-age=0, must-revalidate

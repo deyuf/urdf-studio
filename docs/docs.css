@@ -563,3 +563,10 @@ a:hover {
     grid-template-columns: 1fr;
   }
 }
+.docs-header, .docs-nav-top { flex-wrap: wrap; gap: 8px; }
+#docs-search-open { padding: 6px 14px; border: 1px solid var(--us-border); border-radius: var(--us-radius-pill); background: var(--us-bg); color: var(--us-fg); font: inherit; cursor: pointer; }
+#docs-search { width: min(640px, calc(100vw - 32px)); max-height: 80vh; overflow: auto; border: 1px solid var(--us-border); border-radius: 12px; background: var(--us-bg); color: var(--us-fg); }
+#docs-search::backdrop { background: rgb(0 0 0 / 40%); }
+#docs-search input { width: 100%; padding: 10px; font: inherit; background: var(--us-bg); color: var(--us-fg); border: 1px solid var(--us-border); }
+#docs-search-results { padding-left: 20px; }
+#docs-search-results p { font-size: 14px; color: var(--us-fg-muted); }
