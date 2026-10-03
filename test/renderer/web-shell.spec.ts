@@ -1,6 +1,6 @@
+import { startStaticServer } from './helpers';
 import { expect, test } from '@playwright/test';
-import { createReadStream, existsSync, statSync } from 'node:fs';
-import { createServer, type Server } from 'node:http';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
@@ -43,14 +43,6 @@ test.describe('web shell', () => {
         return;
       }
       const text = message.text();
-      // Font CDN load failures are expected in offline test environments and
-      // are cosmetic-only (we fall back to system fonts). The browser logs
-      // a generic message without the URL, but the only outbound request the
-      // page makes is the Google Fonts stylesheet — so any net::ERR_* is from
-      // that and safe to ignore here.
-      if (/fonts\.(googleapis|gstatic)\.com/.test(text) || /net::ERR_/.test(text)) {
-        return;
-      }
       consoleErrors.push(text);
     });
 
@@ -134,6 +126,7 @@ test.describe('web shell', () => {
 
     // Open settings via the gear button.
     await page.locator('#settings-btn').click();
+    await page.locator('#model-settings-btn').click();
     const dialog = page.locator('dialog#settings-dialog');
     await expect(dialog).toBeVisible();
 
@@ -143,22 +136,36 @@ test.describe('web shell', () => {
 
     // Re-open, then click Save — also closes, also persists.
     await page.locator('#settings-btn').click();
+    await page.locator('#model-settings-btn').click();
     await expect(dialog).toBeVisible();
     await dialog.locator('select[name="upAxis"]').selectOption('+Y');
     await dialog.locator('button[value="save"]').click();
     await expect(dialog).toBeHidden();
-    // close handler runs on the dialog "close" event which fires asynchronously
-    // after submit. Give it a moment before reading localStorage.
-    await page.waitForTimeout(50);
-    const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('urdf-studio:settings:v1') || '{}'));
-    expect(saved.upAxis).toBe('+Y');
+    await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('urdf-studio:settings:v1') || '{}').upAxis)).toBe('+Y');
   });
 
   test('theme switcher persists across reloads and flips data-theme', async ({ page }) => {
+    const viewportPixel = () => page.locator('#viewport').evaluate((source: HTMLCanvasElement) => {
+      const sample = document.createElement('canvas');
+      sample.width = sample.height = 1;
+      const context = sample.getContext('2d')!;
+      context.drawImage(source, 0, 0, 1, 1, 0, 0, 1, 1);
+      return Array.from(context.getImageData(0, 0, 1, 1).data).slice(0, 3);
+    });
     await page.goto(server.url);
     if (await page.locator('dialog.onboarding').isVisible()) {
       await page.locator('[data-action="skip"]').click();
     }
+
+    // A loaded model is required: the renderer deliberately leaves its
+    // canvas blank until geometry is ready.
+    await page.setInputFiles('#file-input', FIXTURE_DIR);
+    await expect(page.locator('#file-select')).toBeEnabled();
+    const fixture = await page.locator('#file-select option').evaluateAll(options =>
+      options.map(option => (option as HTMLOptionElement).value).find(value => /(^|\/)model\.xacro$/.test(value)) ?? ''
+    );
+    await page.locator('#file-select').selectOption(fixture);
+    await expect(page.locator('[data-joint-slider="fixture_joint"]')).toBeVisible();
 
     // System default — no data-theme override needed; light-dark() follows OS.
     const initial = await page.evaluate(() => document.documentElement.getAttribute('data-theme'));
@@ -172,12 +179,20 @@ test.describe('web shell', () => {
       () => page.evaluate(() => document.documentElement.getAttribute('data-theme'))
     ).toBe('dark');
 
+    // The WebGL drawing surface follows the selected chrome theme too.
+    await expect.poll(viewportPixel).toEqual([25, 31, 27]);
+
     // Choice persists via localStorage.
     expect(await page.evaluate(() => localStorage.getItem('urdf-studio:theme:v1'))).toBe('dark');
 
     // Reload — dark sticks.
     await page.reload();
     expect(await page.evaluate(() => document.documentElement.getAttribute('data-theme'))).toBe('dark');
+
+    await page.setInputFiles('#file-input', FIXTURE_DIR);
+    await expect(page.locator('#file-select')).toBeEnabled();
+    await page.locator('#file-select').selectOption(fixture);
+    await expect(page.locator('[data-joint-slider="fixture_joint"]')).toBeVisible();
 
     // Flip to light.
     if (await page.locator('dialog.onboarding').isVisible()) {
@@ -187,7 +202,90 @@ test.describe('web shell', () => {
     await expect.poll(
       () => page.evaluate(() => document.documentElement.getAttribute('data-theme'))
     ).toBe('light');
+    await expect.poll(viewportPixel).toEqual([232, 236, 228]);
+
+    // Palette selection is independent of light/dark mode and persists.
+    await page.locator('#settings-btn').click();
+    const palette = page.getByRole('button', { name: 'Classic colors', exact: true });
+    await palette.click();
+    await expect(palette).toHaveAttribute('aria-pressed', 'true');
+    await expect.poll(viewportPixel).toEqual([24, 24, 24]);
+    expect(await page.locator('html').getAttribute('data-theme')).toBe('light');
+    await page.reload();
+    await page.locator('#settings-btn').click();
+    await expect(palette).toHaveAttribute('aria-pressed', 'true');
+    await page.setInputFiles('#file-input', FIXTURE_DIR);
+    await expect(page.locator('#file-select')).toBeEnabled();
+    await page.locator('#file-select').selectOption(fixture);
+    await expect(page.locator('[data-joint-slider="fixture_joint"]')).toBeVisible();
+    await palette.click();
+    await expect(palette).toHaveAttribute('aria-pressed', 'false');
+    await expect.poll(viewportPixel).toEqual([232, 236, 228]);
   });
+
+  for (const display of [
+    { name: '2K native', width: 2560, height: 1440, scale: 1 },
+    { name: '2K at 150% scaling', width: 1707, height: 960, scale: 1.5 }
+  ]) {
+    test.describe(display.name, () => {
+      test.use({ viewport: { width: display.width, height: display.height }, deviceScaleFactor: display.scale });
+      test('workbench, settings, and source layouts fit the display', async ({ page }) => {
+        await page.goto(server.url);
+        if (await page.locator('dialog.onboarding').isVisible()) await page.locator('[data-action="skip"]').click();
+        await page.setInputFiles('#file-input', FIXTURE_DIR);
+        await expect(page.locator('#file-select')).toBeEnabled();
+        const fixture = await page.locator('#file-select option').evaluateAll(options =>
+          options.map(option => (option as HTMLOptionElement).value).find(value => /(^|\/)model\.xacro$/.test(value)) ?? ''
+        );
+        await page.locator('#file-select').selectOption(fixture);
+        await expect(page.locator('[data-joint-slider="fixture_joint"]')).toBeVisible();
+        const panel = (await page.locator('.side').boundingBox())!;
+        expect(panel.width).toBeCloseTo(440, 0);
+        const canvas = (await page.locator('#viewport').boundingBox())!;
+        expect(canvas.x + canvas.width).toBeCloseTo(panel.x, 0);
+        const footer = (await page.locator('.project-footer').boundingBox())!;
+        expect(canvas.height).toBeGreaterThan(display.height - 180 - footer.height);
+        expect(canvas.y + canvas.height).toBeLessThanOrEqual(footer.y + 1);
+        const overflow = await page.locator('.tabs .tab, .topbar-actions > *, .toolbar-group-end > *').evaluateAll(elements =>
+          elements.filter(element => element.getBoundingClientRect().width > 0).map(element => ({
+            text: element.textContent?.trim(),
+            client: element.clientWidth,
+            scroll: element.scrollWidth,
+            right: element.getBoundingClientRect().right
+          }))
+        );
+        for (const item of overflow) {
+          expect(item.scroll, `${item.text} should fit`).toBeLessThanOrEqual(item.client + 1);
+          expect(item.right).toBeLessThanOrEqual(display.width);
+        }
+        await expect(page.locator('.toolbar #palette-toggle')).toHaveCount(0);
+        await page.locator('#settings-btn').focus();
+        await page.keyboard.press('Enter');
+        await expect(page.locator('#settings-menu #palette-toggle')).toBeVisible();
+        await page.locator('#palette-toggle').click();
+        await expect(page.locator('#palette-toggle')).toHaveAttribute('aria-pressed', 'true');
+        const menu = (await page.locator('.settings-options').boundingBox())!;
+        expect(menu.x).toBeGreaterThanOrEqual(0);
+        expect(menu.x + menu.width).toBeLessThanOrEqual(display.width);
+        await page.keyboard.press('Escape');
+        await expect(page.locator('#settings-menu')).not.toHaveAttribute('open', '');
+        await expect(page.locator('#settings-btn')).toBeFocused();
+        await page.locator('.tab[data-tab="source"]').click();
+        await expect(page.locator('#panel-source .cm-editor')).toBeVisible();
+        await page.evaluate(() => document.querySelector('#panel-source')!.dispatchEvent(
+          new CustomEvent('urdf-studio:request-fullscreen-toggle', { bubbles: true })
+        ));
+        await expect(page.locator('#workspace')).toHaveClass(/layout-source-fullscreen/);
+        expect((await page.locator('.side').boundingBox())!.width).toBeCloseTo(display.width, 0);
+        await page.evaluate(() => document.querySelector('#panel-source')!.dispatchEvent(
+          new CustomEvent('urdf-studio:request-fullscreen-toggle', { bubbles: true })
+        ));
+        await expect(page.locator('#workspace')).not.toHaveClass(/layout-source-fullscreen/);
+        expect((await page.locator('.side').boundingBox())!.width).toBeCloseTo(panel.width, 0);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(display.width);
+      });
+    });
+  }
 
   test('shows a helpful empty state before any folder is loaded', async ({ page }) => {
     await page.goto(server.url);
@@ -278,7 +376,7 @@ test.describe('web shell', () => {
     // First load — should mint a blob URL for box.stl.
     await page.locator('#file-select').selectOption(targetValue);
     await expect(page.locator('[data-joint-slider="hinge"]')).toBeVisible({ timeout: 15_000 });
-    await page.waitForTimeout(500);
+    await expect.poll(() => page.evaluate(() => (window as any).__blobTracker.created)).toBeGreaterThanOrEqual(1);
     const afterFirst = await page.evaluate(() => (window as unknown as { __blobTracker: { live(): number } }).__blobTracker.live());
 
     // Alternate between two URDFs four times. Each switch generates one fresh
@@ -286,10 +384,13 @@ test.describe('web shell', () => {
     // (1 mesh per load), not grow linearly.
     for (let i = 0; i < 4; i++) {
       const next = i % 2 === 0 ? altTargetValue : targetValue;
+      const createdBefore = await page.evaluate(() => (window as any).__blobTracker.created);
+      const revokedBefore = await page.evaluate(() => (window as any).__blobTracker.revoked);
       await page.locator('#file-select').selectOption('');
       await page.locator('#file-select').selectOption(next);
       await expect(page.locator('[data-joint-slider="hinge"]')).toBeVisible({ timeout: 15_000 });
-      await page.waitForTimeout(500);
+      await expect.poll(() => page.evaluate(() => (window as any).__blobTracker.created)).toBeGreaterThan(createdBefore);
+      await expect.poll(() => page.evaluate(() => (window as any).__blobTracker.revoked)).toBeGreaterThan(revokedBefore);
     }
     const afterMany = await page.evaluate(() => {
       const tracker = (window as unknown as { __blobTracker: { live(): number; created: number; revoked: number } }).__blobTracker;
@@ -379,43 +480,3 @@ test.describe('web shell', () => {
     expect(csvDownload!.name).toMatch(/\.csv$/);
   });
 });
-
-async function startStaticServer(root: string): Promise<{ url: string; close(): Promise<void> }> {
-  const server: Server = createServer((request, response) => {
-    const requestUrl = new URL(request.url ?? '/', 'http://127.0.0.1');
-    let pathname = decodeURIComponent(requestUrl.pathname);
-    if (pathname === '/' || pathname === '') {
-      pathname = '/index.html';
-    }
-    const filePath = path.resolve(root, `.${pathname}`);
-    if (!filePath.startsWith(root) || !existsSync(filePath) || statSync(filePath).isDirectory()) {
-      response.writeHead(404);
-      response.end('not found');
-      return;
-    }
-    response.writeHead(200, { 'content-type': contentType(filePath) });
-    createReadStream(filePath).pipe(response);
-  });
-  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
-  const address = server.address();
-  if (!address || typeof address === 'string') {
-    throw new Error('Could not start static server');
-  }
-  return {
-    url: `http://127.0.0.1:${address.port}`,
-    close: () => new Promise<void>(resolve => server.close(() => resolve()))
-  };
-}
-
-function contentType(filePath: string): string {
-  if (filePath.endsWith('.js')) {
-    return 'text/javascript';
-  }
-  if (filePath.endsWith('.css')) {
-    return 'text/css';
-  }
-  if (filePath.endsWith('.json')) {
-    return 'application/json';
-  }
-  return 'text/html';
-}

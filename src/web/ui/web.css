@@ -7,88 +7,6 @@
  * side panel inherits the new palette for free.
  * ==================================================================== */
 
-:root {
-  /* `color-scheme` lights up the CSS `light-dark()` function — without
-     this, `light-dark()` falls back to its `light` argument. The
-     theme-toggle button below switches this between `light` and `dark`
-     to override prefers-color-scheme on demand. */
-  color-scheme: light dark;
-
-  /* Palette — one declaration per token using light-dark() instead of a
-     duplicated @media (prefers-color-scheme: dark) block. */
-  --us-bg:             light-dark(#ffffff, #131314);
-  --us-bg-elevated:    light-dark(#f8f9fa, #1e1f20);
-  --us-bg-subtle:      light-dark(#f1f3f4, #28292a);
-  --us-surface:        light-dark(#ffffff, #1e1f20);
-  --us-fg:             light-dark(#1f1f1f, #e3e3e3);
-  --us-fg-muted:       light-dark(#5f6368, #9aa0a6);
-  --us-fg-faint:       light-dark(#80868b, #80868b);
-  --us-border:         light-dark(#e8eaed, #3c4043);
-  --us-border-strong:  light-dark(#dadce0, #5f6368);
-  --us-accent:         light-dark(#1a73e8, #8ab4f8);
-  --us-accent-hover:   light-dark(#1967d2, #aecbfa);
-  --us-accent-soft:    light-dark(rgba(26, 115, 232, 0.08), rgba(138, 180, 248, 0.12));
-  --us-accent-soft-hover: light-dark(rgba(26, 115, 232, 0.14), rgba(138, 180, 248, 0.2));
-  --us-on-accent:      light-dark(#ffffff, #062e6f);
-  --us-success:        light-dark(#1e8e3e, #81c995);
-  --us-warning:        light-dark(#f29900, #fdd663);
-  --us-danger:         light-dark(#d93025, #f28b82);
-  --us-shadow-sm: light-dark(
-    0 1px 2px rgba(60, 64, 67, 0.08), 0 1px 3px 1px rgba(60, 64, 67, 0.05),
-    0 1px 2px rgba(0, 0, 0, 0.3),     0 1px 3px 1px rgba(0, 0, 0, 0.15)
-  );
-  --us-shadow-md: light-dark(
-    0 1px 3px rgba(60, 64, 67, 0.1),  0 4px 8px 3px rgba(60, 64, 67, 0.05),
-    0 1px 3px rgba(0, 0, 0, 0.4),     0 4px 8px 3px rgba(0, 0, 0, 0.15)
-  );
-  --us-shadow-lg: light-dark(
-    0 2px 6px rgba(60, 64, 67, 0.1),  0 8px 24px 4px rgba(60, 64, 67, 0.1),
-    0 2px 6px rgba(0, 0, 0, 0.4),     0 8px 24px 4px rgba(0, 0, 0, 0.3)
-  );
-
-  /* Spacing scale (8px grid). */
-  --us-space-1: 4px;
-  --us-space-2: 8px;
-  --us-space-3: 12px;
-  --us-space-4: 16px;
-  --us-space-5: 24px;
-  --us-space-6: 32px;
-  --us-space-8: 48px;
-
-  /* Radii. */
-  --us-radius-sm: 6px;
-  --us-radius-md: 10px;
-  --us-radius-lg: 16px;
-  --us-radius-pill: 999px;
-
-  /* Typography. */
-  --us-font-sans: 'Google Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-  --us-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-
-  /* ---- Renderer compatibility shims. The renderer's HTML uses
-         var(--vscode-*) names; we alias them to our tokens. ---- */
-  --vscode-font-family: var(--us-font-sans);
-  --vscode-foreground: var(--us-fg);
-  --vscode-editor-background: var(--us-bg);
-  --vscode-editor-foreground: var(--us-fg);
-  --vscode-sideBar-background: var(--us-bg-elevated);
-  --vscode-panel-border: var(--us-border);
-  --vscode-input-background: var(--us-surface);
-  --vscode-input-foreground: var(--us-fg);
-  --vscode-input-border: var(--us-border-strong);
-  --vscode-button-background: var(--us-accent);
-  --vscode-button-foreground: var(--us-on-accent);
-  --vscode-button-hoverBackground: var(--us-accent-hover);
-  --vscode-toolbar-hoverBackground: var(--us-bg-subtle);
-  --vscode-list-activeSelectionBackground: var(--us-accent-soft);
-  --vscode-list-hoverBackground: var(--us-bg-subtle);
-  --vscode-textLink-foreground: var(--us-accent);
-  --vscode-editorWidget-background: var(--us-surface);
-  --vscode-errorForeground: var(--us-danger);
-  --vscode-editorWarning-foreground: var(--us-warning);
-  --vscode-editorInfo-foreground: var(--us-accent);
-}
-
 /* Theme override. The default `color-scheme: light dark` lets
    `light-dark()` follow the OS; pinning it forces either side. */
 :root[data-theme='light'] { color-scheme: light; }
@@ -138,28 +56,11 @@ body {
   grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
-/* Subtle radial gradient backdrop — visible behind the topbar's translucent
-   surface. Strong enough to give the page a sense of depth without competing
-   with the 3D viewport. */
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: -1;
-  --backdrop-1: light-dark(rgba(26, 115, 232, 0.08), rgba(138, 180, 248, 0.07));
-  --backdrop-2: light-dark(rgba(168, 67, 233, 0.05), rgba(197, 138, 248, 0.05));
-  background:
-    radial-gradient(1200px 600px at 8% -20%, var(--backdrop-1), transparent 60%),
-    radial-gradient(900px 500px at 100% 0%, var(--backdrop-2), transparent 60%);
-}
-
 /* ===== Topbar ===== */
 
 #topbar {
   position: relative;
-  background: color-mix(in srgb, var(--us-bg) 85%, transparent);
-  backdrop-filter: saturate(180%) blur(10px);
+  background: var(--us-surface);
   border-bottom: 1px solid var(--us-border);
   z-index: 5;
 }
@@ -181,8 +82,8 @@ body::before {
   gap: var(--us-space-2);
   font-family: var(--us-font-sans);
   font-weight: 600;
-  font-size: 18px;
-  letter-spacing: -0.01em;
+  font-size: 16px;
+  letter-spacing: -0.035em;
   color: var(--us-fg);
 }
 
@@ -206,8 +107,9 @@ body::before {
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--us-accent);
-  background: var(--us-accent-soft);
-  border-radius: var(--us-radius-pill);
+  background: transparent;
+  border-left: 1px solid var(--us-border-strong);
+  border-radius: 0;
 }
 
 .topbar-actions {
@@ -264,12 +166,12 @@ textarea {
   background: var(--us-accent);
   color: var(--us-on-accent);
   border-color: transparent;
-  box-shadow: 0 1px 2px rgba(26, 115, 232, 0.18), 0 1px 3px 1px rgba(26, 115, 232, 0.1);
+  box-shadow: none;
 }
 
 #topbar button.primary:hover {
   background: var(--us-accent-hover);
-  box-shadow: 0 2px 4px rgba(26, 115, 232, 0.25), 0 2px 6px 2px rgba(26, 115, 232, 0.12);
+  box-shadow: none;
 }
 
 #topbar button.primary:disabled {
@@ -375,11 +277,11 @@ button.icon-btn,
 #app .toolbar,
 #app .subtoolbar {
   border-bottom: 1px solid var(--us-border);
-  background: color-mix(in srgb, var(--us-bg-elevated) 60%, transparent);
+  background: var(--us-bg);
   /* Scale gutters with viewport so the toolbar doesn't look orphaned on
      ultra-wide screens, but stays compact on a laptop. */
-  padding: 10px clamp(var(--us-space-4), 2.5vw, var(--us-space-8));
-  gap: 12px;
+  padding: 8px clamp(var(--us-space-4), 2.5vw, var(--us-space-8));
+  gap: 10px;
 }
 
 #app .toolbar button,
@@ -389,8 +291,8 @@ button.icon-btn,
   height: 32px;
   padding: 0 12px;
   border-radius: var(--us-radius-sm);
-  border: 1px solid var(--us-border);
-  background: var(--us-surface);
+  border: 1px solid transparent;
+  background: transparent;
   color: var(--us-fg);
   font-weight: 500;
   cursor: pointer;
@@ -515,12 +417,13 @@ button.icon-btn,
   padding: 12px 14px;
   border-radius: var(--us-radius-md);
   background: var(--us-surface);
-  box-shadow: var(--us-shadow-sm);
-  text-align: center;
+  box-shadow: none;
+  text-align: left;
 }
 
 #app .metric b {
-  font-size: clamp(20px, 1.4vw, 26px);
+  font-size: clamp(22px, 1.4vw, 26px);
+  font-variant-numeric: tabular-nums;
   font-weight: 600;
   letter-spacing: -0.01em;
   color: var(--us-fg);
@@ -539,7 +442,7 @@ button.icon-btn,
   border-radius: var(--us-radius-md);
   border-color: var(--us-border);
   background: var(--us-surface);
-  box-shadow: var(--us-shadow-sm);
+  box-shadow: none;
 }
 
 #app details {
@@ -571,7 +474,7 @@ button.icon-btn,
    long fr3_joint_finger_X names. */
 #app .joint-row {
   grid-template-columns: minmax(0, 1fr) minmax(100px, 1.8fr) 78px;
-  font-size: clamp(12px, 0.9vw, 13.5px);
+  font-size: clamp(12px, 0.9vw, 13px);
   gap: 10px;
 }
 
@@ -655,14 +558,14 @@ button.icon-btn,
   backdrop-filter: blur(10px) saturate(180%);
   font-size: 12.5px;
   color: var(--us-fg-muted);
-  box-shadow: var(--us-shadow-sm);
+  box-shadow: none;
 }
 
 /* Link tree — the Links tab. Long link names (e.g.
    fr3_link0_accelerometer_top) will horizontally scroll within the panel
    rather than burst out the side. */
 #app .panel.tree {
-  font-size: clamp(12px, 0.9vw, 13.5px);
+  font-size: clamp(12px, 0.9vw, 13px);
   overflow-x: auto;
 }
 
@@ -729,14 +632,13 @@ button.icon-btn,
 }
 
 #app .hud {
-  background: color-mix(in srgb, var(--us-surface) 80%, transparent);
-  backdrop-filter: blur(6px);
+  background: var(--us-surface);
   border: 1px solid var(--us-border);
   border-radius: var(--us-radius-md);
   padding: 8px 14px;
   font-size: 12.5px;
   color: var(--us-fg-muted);
-  box-shadow: var(--us-shadow-sm);
+  box-shadow: none;
 }
 
 /* ===== Settings dialog ===== */
@@ -968,7 +870,7 @@ dialog.onboarding::backdrop {
   background: var(--us-accent);
   color: var(--us-on-accent);
   border-color: transparent;
-  box-shadow: 0 1px 2px rgba(26, 115, 232, 0.18), 0 1px 3px 1px rgba(26, 115, 232, 0.1);
+  box-shadow: none;
 }
 
 .onboarding-actions button.primary:hover {
@@ -1154,7 +1056,7 @@ dialog.onboarding::backdrop {
 .theme-switcher-btn[data-active='true'] {
   background: var(--us-surface) !important;
   color: var(--us-fg) !important;
-  box-shadow: var(--us-shadow-sm);
+  box-shadow: none;
   /* View Transitions: name the active pill so it tweens between
      segments when the user picks a new mode. */
   view-transition-name: theme-pill;
@@ -1306,3 +1208,68 @@ dialog#settings-dialog[open]::backdrop {
     flex: 1;
   }
 }
+
+/* Flat instrument surfaces: grouping comes from rules and alignment. */
+#app .metric {
+  border: 0;
+  border-left: 1px solid var(--us-border);
+  border-radius: 0;
+  background: transparent;
+}
+#app .metric:first-child { border-left: 0; }
+#app .summary {
+  padding: 4px 0 12px;
+  border-bottom: 1px solid var(--us-border);
+  gap: 0;
+}
+#app .xacro-args {
+  padding: 8px 0 16px;
+  border: 0;
+  border-bottom: 1px solid var(--us-border);
+  border-radius: 0;
+  background: transparent;
+  font-size: 12px;
+}
+#app .xacro-args label { gap: 12px; }
+#app .xacro-args input { font-size: 12px; }
+#app .joint-row { padding: 5px 0; }
+#app .joint-row .joint-name { font-family: var(--us-font-mono); font-size: 11px; }
+#app input[type='range'], #app input[type='checkbox'] { accent-color: var(--us-accent); }
+#app .toolbar .title { font-family: var(--us-font-mono); font-size: 12px; }
+#app .toolbar button.primary {
+  color: var(--us-accent);
+  background: var(--us-accent-soft);
+  border-color: transparent;
+}
+#app .toolbar button.primary:hover { background: var(--us-accent-soft-hover); }
+#app .subtoolbar { padding-top: 6px; padding-bottom: 6px; }
+#app .hud { font-family: var(--us-font-mono); font-size: 11px; border-radius: 4px; }
+#app .joint-filter { padding: 0; background: transparent; }
+#app .tab.active { color: var(--us-fg); font-weight: 600; }
+#topbar .brand-tag { color: var(--us-fg-muted); letter-spacing: 0.08em; }
+#topbar .topbar-status { font-family: var(--us-font-mono); font-size: 11px; }
+:where(button, a, select, input, textarea):focus-visible {
+  outline: 2px solid var(--us-accent);
+  outline-offset: 3px;
+}
+
+#app .xacro-settings { background: transparent; }
+#app .xacro-settings summary { display: flex; align-items: center; gap: 8px; }
+#app .xacro-settings summary::before {
+  content: '+';
+  font-family: var(--us-font-mono);
+  color: var(--us-fg-muted);
+}
+#app .xacro-settings[open] summary::before { content: '−'; }
+#app .parameter-count {
+  margin-left: auto;
+  font-size: 11px;
+  font-family: var(--us-font-mono);
+  color: var(--us-fg-muted);
+}
+#app .xacro-settings .xacro-args { margin: 0; padding: 8px 12px 12px; border-bottom: 0; }
+
+#app input[type='number'] { appearance: textfield; }
+#app input[type='number']::-webkit-inner-spin-button,
+#app input[type='number']::-webkit-outer-spin-button { appearance: none; margin: 0; }
+#app .collide-hud:empty { display: none; }

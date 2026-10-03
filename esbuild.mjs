@@ -18,6 +18,8 @@ const common = {
 async function copyMedia(includeTestWorker = false) {
   await mkdir('dist/media', { recursive: true });
   await copyFile('media/styles.css', 'dist/media/styles.css');
+  await copyFile('media/palette.css', 'dist/media/palette.css');
+  await copyFile('media/workbench.css', 'dist/media/workbench.css');
   await copyFile('src/editor/editor.css', 'dist/media/editor.css');
   // Copy the web theme into dist/media as well. The extension webview
   // doesn't load it (VS Code provides --vscode-* colors directly), but
@@ -41,7 +43,10 @@ async function copyWebAssets() {
   await mkdir('dist-web', { recursive: true });
   await copyFile('public/index.html', 'dist-web/index.html');
   await copyFile('public/project-links.css', 'dist-web/project-links.css');
+  await copyFile('public/project-links.js', 'dist-web/project-links.js');
   await copyFile('media/styles.css', 'dist-web/styles.css');
+  await copyFile('media/palette.css', 'dist-web/palette.css');
+  await copyFile('media/workbench.css', 'dist-web/workbench.css');
   await copyFile('src/editor/editor.css', 'dist-web/editor.css');
   await copyFile('src/web/ui/web.css', 'dist-web/web.css');
   await copyFile('media/icon.png', 'dist-web/icon.png');
@@ -50,7 +55,7 @@ async function copyWebAssets() {
   // Open Graph / Twitter Card preview image. Reuses an existing screenshot
   // so the social/search-result card shows the actual app rather than a
   // bare favicon.
-  await copyFile('media/screenshots-web/02-editor-split.png', 'dist-web/og-image.png');
+  await copyFile('media/screenshots-web/01-hero.png', 'dist-web/og-image.png');
 }
 
 // VS Code extension build (unchanged from prior shape).

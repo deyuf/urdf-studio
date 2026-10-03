@@ -8,9 +8,10 @@
 // message — loadRobot never arrives and the preview sits at
 // "Waiting for robot..." forever. These tests pin the accepted delivery paths.
 
-import { expect, test } from '@playwright/test';
-import { createReadStream, existsSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
+import { startStaticServer } from './helpers';
+import { expect, test } from '@playwright/test';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
@@ -190,6 +191,21 @@ test.describe('Franka FR3 (web shell, full xacro pipeline)', () => {
     // Full xacro expansion of the real franka_description takes a moment.
     await expect(page.locator('[data-joint-slider="fr3_joint1"]')).toBeVisible({ timeout: 30_000 });
 
+    if (await page.locator('dialog.onboarding').isVisible()) {
+      await page.locator('[data-action="skip"]').click();
+    }
+
+    // Model parameters stay reachable without pushing the joint controls
+    // below the fold. Native details supports both keyboard and pointer use.
+    const parameters = page.locator('.xacro-settings');
+    await expect(parameters).not.toHaveAttribute('open', '');
+    await expect(parameters.locator('[data-xacro-arg]').first()).toBeHidden();
+    await parameters.locator('summary').focus();
+    await page.keyboard.press('Enter');
+    await expect(parameters.locator('[data-xacro-arg]').first()).toBeVisible();
+    await parameters.locator('summary').click();
+    await expect(parameters.locator('[data-xacro-arg]').first()).toBeHidden();
+
     // The fixture ships no mesh binaries, so meshes report as missing — but
     // the robot must still REVEAL (the HUD must leave "Waiting for robot...",
     // and the viewport must become visible). This pins the pending-mesh
@@ -209,39 +225,3 @@ test.describe('Franka FR3 (web shell, full xacro pipeline)', () => {
     expect(hud).toContain('fr3');
   });
 });
-
-async function startStaticServer(root: string): Promise<{ url: string; close(): Promise<void> }> {
-  const server: Server = createServer((request, response) => {
-    const requestUrl = new URL(request.url ?? '/', 'http://127.0.0.1');
-    let filePath = path.resolve(root, `.${decodeURIComponent(requestUrl.pathname)}`);
-    if (requestUrl.pathname === '/' || requestUrl.pathname === '') {
-      filePath = path.join(root, 'index.html');
-    }
-    if (!filePath.startsWith(root) || !existsSync(filePath)) {
-      response.writeHead(404);
-      response.end('not found');
-      return;
-    }
-    response.writeHead(200, { 'content-type': contentType(filePath) });
-    createReadStream(filePath).pipe(response);
-  });
-  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
-  const address = server.address();
-  if (!address || typeof address === 'string') {
-    throw new Error('Could not start renderer test server.');
-  }
-  return {
-    url: `http://127.0.0.1:${address.port}`,
-    close: () => new Promise<void>(resolve => server.close(() => resolve()))
-  };
-}
-
-function contentType(filePath: string): string {
-  if (filePath.endsWith('.js')) {
-    return 'text/javascript';
-  }
-  if (filePath.endsWith('.css')) {
-    return 'text/css';
-  }
-  return 'text/html';
-}

@@ -1,32 +1,16 @@
 import { test, expect } from '@playwright/test';
-import { createServer, type Server } from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { startStaticServer } from './helpers';
 import path from 'node:path';
 
-let server: Server;
+let server: { url: string; close(): Promise<void> };
 let url: string;
-const root = path.resolve('dist-web');
 
 test.beforeAll(async () => {
-  server = createServer(async (request, response) => {
-    const pathname = new URL(request.url || '/', 'http://localhost').pathname;
-    const relative = decodeURIComponent(pathname).replace(/^\/+/, '');
-    const file = path.resolve(root, relative.endsWith('/') || !relative ? `${relative}index.html` : relative);
-    if (!file.startsWith(root + path.sep)) { response.writeHead(403).end(); return; }
-    try {
-      const content = await readFile(file);
-      const mime: Record<string, string> = { '.html': 'text/html', '.js': 'application/javascript', '.json': 'application/json', '.css': 'text/css', '.png': 'image/png' };
-      response.writeHead(200, { 'Content-Type': mime[path.extname(file)] || 'application/octet-stream' });
-      response.end(content);
-    } catch { response.writeHead(404).end(); }
-  });
-  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
-  const address = server.address();
-  if (!address || typeof address === 'string') throw new Error('Test server missing address');
-  url = `http://127.0.0.1:${address.port}`;
+  server = await startStaticServer(path.resolve('dist-web'));
+  url = server.url;
 });
 
-test.afterAll(async () => { if (server) await new Promise<void>(resolve => server.close(() => resolve())); });
+test.afterAll(async () => { await server?.close(); });
 
 test('documentation search works from the overview and nested pages', async ({ page }) => {
   await page.goto(`${url}/docs/`);
@@ -73,3 +57,39 @@ test('the app keeps project links outside its toolbar and viewport', async ({ pa
   expect(footer).not.toBeNull();
   expect(viewport!.y + viewport!.height).toBeLessThanOrEqual(footer!.y + 1);
 });
+
+for (const host of ['/', '/docs/features/joints.html']) {
+  for (const width of [390, 2560]) {
+    test(`project footer supports dismissal and keyboard navigation on ${host} at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: width === 390 ? 844 : 1440 });
+      await page.goto(`${url}${host}`);
+      if (await page.locator('dialog.onboarding').isVisible()) {
+        await page.locator('[data-action="skip"]').click();
+      }
+      const trigger = page.locator('.project-switcher summary');
+      const menu = page.locator('.project-switcher');
+      await expect(trigger).toContainText('About & projects');
+      await trigger.focus();
+      await page.keyboard.press('Enter');
+      await page.keyboard.press('Tab');
+      await expect(page.locator('footer a').first()).toBeFocused();
+      const panel = (await page.locator('.project-links').boundingBox())!;
+      expect(panel.x).toBeGreaterThanOrEqual(0);
+      expect(panel.x + panel.width).toBeLessThanOrEqual(width);
+      expect(panel.y).toBeGreaterThanOrEqual(0);
+      await page.keyboard.press('Escape');
+      await expect(menu).not.toHaveAttribute('open', '');
+      await expect(trigger).toBeFocused();
+      await trigger.click();
+      await page.mouse.click(8, 8);
+      await expect(menu).not.toHaveAttribute('open', '');
+      await trigger.focus();
+      await page.keyboard.press('Enter');
+      await page.keyboard.press('Tab');
+      await page.keyboard.press('Tab');
+      await expect(page.locator('footer a').last()).toBeFocused();
+      await page.keyboard.press('Tab');
+      await expect(menu).not.toHaveAttribute('open', '');
+    });
+  }
+}

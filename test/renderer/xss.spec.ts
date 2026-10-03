@@ -1,6 +1,6 @@
+import { startStaticServer } from './helpers';
 import { expect, test } from '@playwright/test';
-import { createReadStream, existsSync } from 'node:fs';
-import { createServer, type Server } from 'node:http';
+
 import path from 'node:path';
 
 // =============================================================================
@@ -140,32 +140,3 @@ test('renderer escapes URDF-supplied strings into all panels', async ({ page }) 
     await server.close();
   }
 });
-
-async function startStaticServer(root: string): Promise<{ url: string; close(): Promise<void> }> {
-  const server: Server = createServer((request, response) => {
-    const requestUrl = new URL(request.url ?? '/', 'http://127.0.0.1');
-    const filePath = path.resolve(root, `.${decodeURIComponent(requestUrl.pathname)}`);
-    if (!filePath.startsWith(root) || !existsSync(filePath)) {
-      response.writeHead(404);
-      response.end('not found');
-      return;
-    }
-    response.writeHead(200, { 'content-type': contentType(filePath) });
-    createReadStream(filePath).pipe(response);
-  });
-  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
-  const address = server.address();
-  if (!address || typeof address === 'string') {
-    throw new Error('Could not start renderer test server.');
-  }
-  return {
-    url: `http://127.0.0.1:${address.port}`,
-    close: () => new Promise<void>(resolve => server.close(() => resolve()))
-  };
-}
-
-function contentType(filePath: string): string {
-  if (filePath.endsWith('.js')) return 'text/javascript';
-  if (filePath.endsWith('.css')) return 'text/css';
-  return 'text/html';
-}

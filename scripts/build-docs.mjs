@@ -400,6 +400,7 @@ function layout({ title, description, canonical, sidebar, toc, body, pager, dept
   <link rel="stylesheet" href="${cssHref}">
   <link rel="stylesheet" href="${upPrefix}project-links.css">
   <script src="${upPrefix}search.js" defer></script>
+  <script src="${upPrefix}project-links.js" defer></script>
   <script type="application/ld+json">${articleJsonLd}</script>
 </head>
 <body>
@@ -438,10 +439,11 @@ function layout({ title, description, canonical, sidebar, toc, body, pager, dept
   </div>
   <footer class="project-footer">
     <details class="project-switcher">
-      <summary>By Deyu Fu <span aria-hidden="true">⌃</span></summary>
+      <summary>About &amp; projects <svg class="project-chevron" aria-hidden="true" width="14" height="14" viewBox="0 0 16 16"><path d="m4 10 4-4 4 4"/></svg></summary>
       <nav class="project-links" aria-label="Other projects by Deyu Fu">
-        <a href="https://me.deyuf.org/"><span class="project-link-title">Deyu Fu <span aria-hidden="true">↗</span></span><span class="project-link-description">Robotics, research &amp; selected work</span></a>
-        <a href="https://historyofrobotics.deyuf.org/"><span class="project-link-title">History of Robotics <span aria-hidden="true">↗</span></span><span class="project-link-description">From ancient automata to embodied AI</span></a>
+        <p class="project-links-heading">By Deyu Fu</p>
+        <a href="https://me.deyuf.org/"><span class="project-link-title">Deyu Fu <svg class="project-external" aria-hidden="true" width="14" height="14" viewBox="0 0 16 16"><path d="M4 12 12 4M5 4h7v7"/></svg></span><span class="project-link-description">Robotics, research &amp; selected work</span></a>
+        <a href="https://historyofrobotics.deyuf.org/"><span class="project-link-title">History of Robotics <svg class="project-external" aria-hidden="true" width="14" height="14" viewBox="0 0 16 16"><path d="M4 12 12 4M5 4h7v7"/></svg></span><span class="project-link-description">From ancient automata to embodied AI</span></a>
       </nav>
     </details>
   </footer>
@@ -515,6 +517,7 @@ async function build() {
   await writeFile(path.join(OUT, 'search-index.json'), JSON.stringify(searchEntries), 'utf8');
   await copyFile(path.join(SRC, 'search.js'), path.join(OUT, 'search.js'));
   await copyFile(path.join(REPO, 'public', 'project-links.css'), path.join(OUT, 'project-links.css'));
+  await copyFile(path.join(REPO, 'public', 'project-links.js'), path.join(OUT, 'project-links.js'));
 
   // Static assets.
   await copyFile(path.join(SRC, 'docs.css'), path.join(OUT, 'docs.css'));

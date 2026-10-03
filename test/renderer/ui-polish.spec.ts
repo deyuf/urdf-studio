@@ -1,6 +1,6 @@
+import { startStaticServer } from './helpers';
 import { expect, test, type Page } from '@playwright/test';
-import { createReadStream, existsSync, statSync } from 'node:fs';
-import { createServer, type Server } from 'node:http';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
@@ -87,7 +87,8 @@ test.describe('UI polish (harness)', () => {
     for (const vp of [
       { width: 1024, height: 640 },
       { width: 1280, height: 800 },
-      { width: 1920, height: 1080 }
+      { width: 1920, height: 1080 },
+      { width: 2560, height: 1440 }
     ]) {
       await page.setViewportSize(vp);
       await loadGripperFixture(page);
@@ -189,28 +190,3 @@ test.describe('UI polish (web shell)', () => {
     }
   });
 });
-
-async function startStaticServer(root: string): Promise<{ url: string; close(): Promise<void> }> {
-  const server: Server = createServer((req, res) => {
-    const url = new URL(req.url ?? '/', 'http://localhost');
-    let filePath = path.join(root, decodeURIComponent(url.pathname));
-    if (filePath.endsWith('/')) filePath = path.join(filePath, 'index.html');
-    if (!filePath.startsWith(root) || !existsSync(filePath) || statSync(filePath).isDirectory()) {
-      res.statusCode = 404;
-      res.end();
-      return;
-    }
-    res.statusCode = 200;
-    if (filePath.endsWith('.js')) res.setHeader('content-type', 'text/javascript');
-    else if (filePath.endsWith('.html')) res.setHeader('content-type', 'text/html');
-    else if (filePath.endsWith('.css')) res.setHeader('content-type', 'text/css');
-    createReadStream(filePath).pipe(res);
-  });
-  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
-  const address = server.address();
-  if (!address || typeof address === 'string') throw new Error('bind failed');
-  return {
-    url: `http://127.0.0.1:${address.port}`,
-    close: () => new Promise<void>(resolve => server.close(() => resolve()))
-  };
-}

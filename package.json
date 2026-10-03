@@ -131,7 +131,7 @@
     "compile": "npm run check-types && node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",
     "check-types": "tsc --noEmit",
-    "lint": "eslint src test",
+    "lint": "eslint src test scripts/release.cjs",
     "package": "npm run check-types && node esbuild.mjs --production",
     "vscode:prepublish": "npm run package",
     "test:unit": "node esbuild.mjs --tests && node --test dist/test/*.test.cjs",

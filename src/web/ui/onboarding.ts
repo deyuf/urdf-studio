@@ -13,8 +13,8 @@ interface Step {
 const STEPS: Step[] = [
   {
     title: 'Welcome to URDF Studio',
-    body: `Inspect, visualize, and play with ROS robot models — entirely in your browser.
-           Nothing is uploaded; the page reads files from your computer using the File System Access API.`,
+    body: `Inspect, pose, and refine robot models in your browser.
+           Open a local ROS package to get started. Your files stay on your computer.`,
     hint: 'Press Esc or click outside to close. You can re-open this from the ? button later.'
   },
   {
@@ -23,7 +23,7 @@ const STEPS: Step[] = [
            The app will scan for <code>package.xml</code>, <code>.urdf</code>, <code>.urdf.xacro</code>,
            <code>.xacro</code>, plus meshes (<code>.stl</code> / <code>.dae</code> / <code>.obj</code> /
            <code>.gltf</code> / <code>.glb</code>).`,
-    hint: 'On Safari / mobile, use Pick Files instead — webkitdirectory fallback.'
+    hint: 'If Open Folder is unavailable in your browser, use Pick Files.'
   },
   {
     title: '2 · Drive the robot',

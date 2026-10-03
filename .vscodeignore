@@ -27,3 +27,8 @@ media/**
 # files stay in the repo (those URLs resolve against the default branch);
 # they just no longer bloat the .vsix with a multi-MB hero gif.
 !media/icon.png
+
+playwright-report/
+
+tmp/**
+tmp-fr3/**

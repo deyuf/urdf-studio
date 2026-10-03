@@ -17,32 +17,41 @@
 //     CI cache of .vscode-test/) makes VS Code restore previous windows and
 //     editor layouts, which leaves the restored custom-editor webview in a
 //     state where it never boots.
-//   - On a brand-new profile VS Code initializes default profile extensions
-//     and RESTARTS the extension host shortly after startup; the test module
-//     can therefore execute twice, and the late instance may own a webview
-//     that never reloads. The hook file is treated as the source of truth:
-//     if ANY instance completed the handshake, the run passes.
+//   - Startup can restart the extension host. The suite may retry opening the
+//     initial webview, but a handshake alone never passes the runner: all
+//     persistence/reload assertions must complete and VS Code must exit cleanly.
 //
 // Usage:  npm run test:vscode          (CI wraps with
 //         xvfb-run -a --server-args="-screen 0 1280x1024x24")
 
 'use strict';
 
+const { execFileSync } = require('node:child_process');
 const { runTests } = require('@vscode/test-electron');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const net = require('node:net');
 
-const SUCCESS_MARKER = 'recv:geometryLoaded';
+const SUCCESS_MARKER = 'suite:complete';
 
 async function main() {
   const repoRoot = path.resolve(__dirname, '..', '..');
   const logFile = path.join(os.tmpdir(), `urdf-studio-it-${process.pid}-${Date.now()}.log`);
   // Fresh profile per run — see stability notes above. Lives outside
   // .vscode-test so CI caching of the downloaded build can never leak state.
+  const packageDir = process.env.URDF_STUDIO_VSIX ? fs.mkdtempSync(path.join(os.tmpdir(), 'urdf-studio-vsix-')) : null;
+  let extensionPath = repoRoot;
+  if (packageDir) {
+    execFileSync('unzip', ['-q', process.env.URDF_STUDIO_VSIX, '-d', packageDir]);
+    extensionPath = path.join(packageDir, 'extension');
+    const version = JSON.parse(fs.readFileSync(path.join(extensionPath, 'package.json'), 'utf8')).version;
+    if (version !== process.env.URDF_STUDIO_EXPECTED_VERSION) throw new Error('VSIX version differs from the tested release plan');
+    console.log(`Testing packaged VSIX ${version}`);
+  }
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'urdf-studio-vscode-ud-'));
 
-  if (!fs.existsSync(path.join(repoRoot, 'dist', 'extension.js'))) {
+  if (!fs.existsSync(path.join(extensionPath, 'dist', 'extension.js'))) {
     throw new Error('dist/extension.js missing — run `npm run compile` first.');
   }
 
@@ -50,15 +59,23 @@ async function main() {
   // violations, crashes) to stderr so CI logs show WHY a webview failed.
   process.env.ELECTRON_ENABLE_LOGGING = '1';
 
+  // CDP binds to loopback and exists only for the integration-test launch.
+  const listener = net.createServer();
+  await new Promise(resolve => listener.listen(0, '127.0.0.1', resolve));
+  const debugPort = listener.address().port;
+  await new Promise(resolve => listener.close(resolve));
+
   let runError;
   try {
     await runTests({
-      extensionDevelopmentPath: repoRoot,
+      extensionDevelopmentPath: extensionPath,
       extensionTestsPath: path.join(__dirname, 'suite.cjs'),
       launchArgs: [
         path.join(repoRoot, 'test', 'fixtures'),
         `--user-data-dir=${userDataDir}`,
         '--no-sandbox',
+        '--remote-debugging-address=127.0.0.1',
+        `--remote-debugging-port=${debugPort}`,
         // Software WebGL so the renderer can start without a GPU (CI/xvfb).
         '--use-angle=swiftshader',
         '--enable-unsafe-swiftshader',
@@ -67,24 +84,18 @@ async function main() {
         '--skip-release-notes',
         '--disable-extensions'
       ],
-      extensionTestsEnv: { URDF_STUDIO_TEST_LOG: logFile }
+      extensionTestsEnv: { URDF_STUDIO_TEST_LOG: logFile, URDF_STUDIO_CDP_PORT: String(debugPort) }
     });
   } catch (error) {
     runError = error;
   }
 
   const hookLog = fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf8') : '';
-  const handshakeCompleted = hookLog.includes(SUCCESS_MARKER);
+  const suiteCompleted = hookLog.split('\n').includes(SUCCESS_MARKER);
 
   try {
-    if (handshakeCompleted) {
-      if (runError) {
-        // A startup extension-host restart can run the suite twice; the late
-        // instance may fail after an earlier one already proved the feature.
-        console.warn('VS Code exit code was non-zero, but the handshake completed — treating as PASS.');
-        console.warn(String(runError));
-      }
-      console.log('--- handshake log ---\n' + hookLog.trim());
+    if (suiteCompleted && !runError && !hookLog.includes('recv:__rendererError')) {
+      console.log('--- integration log ---\n' + hookLog.trim());
       console.log('VS Code integration test PASSED.');
       return;
     }
@@ -92,10 +103,11 @@ async function main() {
     console.error('--- handshake log (%s) ---', logFile);
     console.error(hookLog.trim() || '(empty — renderer never sent ready)');
     dumpVsCodeLogs(userDataDir);
-    throw runError ?? new Error('Handshake never completed (no geometryLoaded in hook log).');
+    throw runError ?? new Error('Full integration suite did not complete cleanly.');
   } finally {
     fs.rmSync(logFile, { force: true });
     fs.rmSync(userDataDir, { recursive: true, force: true });
+    if (packageDir) fs.rmSync(packageDir, { recursive: true, force: true });
   }
 }
 

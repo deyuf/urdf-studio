@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-host="web">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -9,7 +9,7 @@
   <meta name="keywords" content="URDF viewer, online URDF viewer, browser URDF viewer, xacro viewer, ROS URDF viewer, urdf editor, urdf inspector, robot model viewer, three.js, robotics, kinematics, SRDF">
   <meta name="author" content="Deyu Fu">
   <link rel="author" href="https://me.deyuf.org/">
-  <meta name="theme-color" content="#1a73e8">
+  <meta name="theme-color" content="#365c48">
   <link rel="canonical" href="https://urdf.deyuf.org/">
 
   <!-- Open Graph -->
@@ -32,12 +32,11 @@
 
   <link rel="icon" type="image/png" href="./icon.png">
   <link rel="apple-touch-icon" href="./icon.png">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" media="all">
   <link rel="stylesheet" href="./styles.css">
   <link rel="stylesheet" href="./editor.css">
   <link rel="stylesheet" href="./web.css">
+  <link rel="stylesheet" href="./palette.css">
+  <link rel="stylesheet" href="./workbench.css">
   <link rel="stylesheet" href="./project-links.css">
 
   <script type="application/ld+json">
@@ -126,13 +125,15 @@
   </div>
   <footer class="project-footer">
     <details class="project-switcher">
-      <summary>By Deyu Fu <span aria-hidden="true">⌃</span></summary>
+      <summary>About &amp; projects <svg class="project-chevron" aria-hidden="true" width="14" height="14" viewBox="0 0 16 16"><path d="m4 10 4-4 4 4"/></svg></summary>
       <nav class="project-links" aria-label="Other projects by Deyu Fu">
-        <a href="https://me.deyuf.org/"><span class="project-link-title">Deyu Fu <span aria-hidden="true">↗</span></span><span class="project-link-description">Robotics, research &amp; selected work</span></a>
-        <a href="https://historyofrobotics.deyuf.org/"><span class="project-link-title">History of Robotics <span aria-hidden="true">↗</span></span><span class="project-link-description">From ancient automata to embodied AI</span></a>
+        <p class="project-links-heading">By Deyu Fu</p>
+        <a href="https://me.deyuf.org/"><span class="project-link-title">Deyu Fu <svg class="project-external" aria-hidden="true" width="14" height="14" viewBox="0 0 16 16"><path d="M4 12 12 4M5 4h7v7"/></svg></span><span class="project-link-description">Robotics, research &amp; selected work</span></a>
+        <a href="https://historyofrobotics.deyuf.org/"><span class="project-link-title">History of Robotics <svg class="project-external" aria-hidden="true" width="14" height="14" viewBox="0 0 16 16"><path d="M4 12 12 4M5 4h7v7"/></svg></span><span class="project-link-description">From ancient automata to embodied AI</span></a>
       </nav>
     </details>
   </footer>
+  <script src="./project-links.js" defer></script>
   <script type="module" src="./app.js"></script>
 </body>
 </html>

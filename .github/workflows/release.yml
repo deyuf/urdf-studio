@@ -1,29 +1,21 @@
 name: Release pipeline
 
-# Single workflow handling the full CI → deploy chain:
-#
-#   test (always)
-#     ├──▶ deploy-web          (main only, needs test)
-#     ├──▶ publish             (main only, needs test, skips if version unchanged)
-#     ├──▶ publish-prerelease  (develop push only, needs test)
-#     ├──▶ preview-web         (non-main push, needs test)
-#     └──▶ deploy-docs         (main only, needs deploy-web + publish)
-#
-# Marketplace channels:
-#   - main    → stable release  (even minor, e.g. 0.4.x), version-gated.
-#   - develop → pre-release      (odd minor, e.g. 0.5.<run_number>), every push.
-#
-# Branch previews of the WEB app live in preview-web.yml (manual dispatch only).
+# Branch pushes run the full test suite. main automatically publishes stable;
+# develop and design/quiet-studio publish beta. Tags never retrigger this workflow.
+# Both channels publish the exact VSIX tested in the real VS Code instance.
+# Annotated release tags preserve source/version checkpoints for safe reruns.
 
 on:
   push:
+    branches: ['**']
   pull_request:
   workflow_dispatch:
     inputs:
-      force_publish:
-        description: 'Publish to the Marketplace even if package.json version is unchanged'
-        type: boolean
-        default: false
+      bump:
+        description: 'Stable increment (auto: patch, or promote above the beta line)'
+        type: choice
+        options: [auto, minor, major]
+        default: auto
 
 # Cancel in-progress runs for the same PR; never cancel main runs (they ship).
 concurrency:
@@ -34,6 +26,43 @@ env:
   PAGES_PROJECT: urdf-studio
 
 jobs:
+  prepare:
+    name: Plan release version
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      channel: ${{ steps.plan.outputs.channel }}
+      version: ${{ steps.plan.outputs.version }}
+      tag: ${{ steps.plan.outputs.tag }}
+    env:
+      RELEASE_CHANNEL: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && 'stable' || github.event_name != 'pull_request' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/design/quiet-studio') && 'beta' || 'none' }}
+      RELEASE_BUMP: ${{ inputs.bump || 'auto' }}
+      RELEASE_PLAN_PATH: /tmp/urdf-release/release-plan.json
+      MARKETPLACE_PATH: /tmp/urdf-release-marketplace.json
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Read published Marketplace versions
+        if: env.RELEASE_CHANNEL != 'none'
+        run: npx --yes @vscode/vsce@^3.9.1 show deyuf.urdf-studio --json > "$MARKETPLACE_PATH"
+      - name: Plan or resume release
+        id: plan
+        run: |
+          mkdir -p /tmp/urdf-release
+          node scripts/release.cjs plan
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-plan
+          overwrite: true
+          path: ${{ env.RELEASE_PLAN_PATH }}
+          retention-days: 7
+
   # =================================================================
   # test — runs on every branch push and every PR.
   # Uploads the production web build as an artifact so the downstream
@@ -41,6 +70,7 @@ jobs:
   # =================================================================
   test:
     name: Test
+    needs: prepare
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -48,10 +78,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Record source dependency hash before versioning
+        id: lockfile
+        run: echo "hash=${{ hashFiles('package-lock.json') }}" >> "$GITHUB_OUTPUT"
+
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: npm
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-plan
+          path: ${{ runner.temp }}
+      - name: Apply planned version to both manifests
+        env:
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: npm version "$RELEASE_VERSION" --no-git-tag-version --allow-same-version
 
       - name: Install dependencies
         run: npm ci
@@ -70,20 +113,33 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('package-lock.json') }}
+          key: ${{ runner.os }}-playwright-${{ steps.lockfile.outputs.hash }}
 
       - name: Install Playwright Chromium
         if: steps.pw-cache.outputs.cache-hit != 'true'
         run: npx playwright install --with-deps chromium
 
-      - name: Build VS Code extension
-        run: npm run compile
+      - name: Build production VS Code extension
+        run: npm run package
 
       - name: Build web bundle (incl. docs)
         run: npm run web:build
 
       - name: Playwright (renderer + web shell)
         run: npx playwright test
+
+      - name: Package the candidate VSIX
+        env:
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+          RELEASE_CHANNEL: ${{ needs.prepare.outputs.channel }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/release"
+          args=()
+          if [ "$RELEASE_CHANNEL" = beta ]; then args+=(--pre-release); fi
+          npx --yes @vscode/vsce@^3.9.1 package "${args[@]}" \
+            --githubBranch "$GITHUB_SHA" --out "$RUNNER_TEMP/release/urdf-studio-$RELEASE_VERSION.vsix"
+          cp package.json package-lock.json "$RUNNER_TEMP/release/"
+          cp "$RUNNER_TEMP/release-plan.json" "$RUNNER_TEMP/release/"
 
       # Real VS Code integration test: opens the Franka FR3 xacro with the
       # custom editor inside an actual VS Code instance and asserts the full
@@ -94,22 +150,36 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .vscode-test
-          key: ${{ runner.os }}-vscode-test-${{ hashFiles('package-lock.json') }}
+          key: ${{ runner.os }}-vscode-test-${{ steps.lockfile.outputs.hash }}
 
-      - name: VS Code integration test (real webview, Franka FR3)
+      - name: VS Code integration test (tested VSIX, load/save/restore/reload)
+        env:
+          URDF_STUDIO_VSIX: ${{ runner.temp }}/release/urdf-studio-${{ needs.prepare.outputs.version }}.vsix
+          URDF_STUDIO_EXPECTED_VERSION: ${{ needs.prepare.outputs.version }}
         # Explicit screen args: the stock xvfb-run default (640x480) is too
         # small/shallow for Electron's compositor — the webview renderer
         # process never paints and the handshake never starts.
         run: xvfb-run -a --server-args="-screen 0 1280x1024x24" node test/integration/run.cjs
 
-      - name: Upload Playwright report on failure
-        if: failure()
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
+          overwrite: true
+          if-no-files-found: ignore
           path: |
             playwright-report
             test-results
+          retention-days: 7
+
+      - name: Upload tested release bundle
+        if: needs.prepare.outputs.channel != 'none'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-bundle
+          overwrite: true
+          path: ${{ runner.temp }}/release
           retention-days: 7
 
       # Hand the built web app to the deploy jobs. Only on main pushes /
@@ -119,6 +189,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: web-build
+          overwrite: true
           path: dist-web
           retention-days: 1
 
@@ -299,130 +370,75 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "This is a **preview** environment, not production. The main app at urdf.deyuf.org is only updated when changes land on \`main\`." >> "$GITHUB_STEP_SUMMARY"
 
-  # =================================================================
-  # publish — VS Code Marketplace publish + GitHub Release.
-  # Only on main, only after tests pass, only if package.json#version
-  # changed (or workflow_dispatch with force_publish=true).
-  # =================================================================
+  # The publication job has no build step: it uses the tested artifact.
+  # Both Marketplace channels share a lock; stale plans fail before publishing.
   publish:
-    name: Publish to VS Code Marketplace
-    needs: test
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    name: Publish tested ${{ needs.prepare.outputs.channel }} release
+    needs: [prepare, test]
+    if: needs.prepare.outputs.channel != 'none'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: write
+    concurrency:
+      group: marketplace-urdf-studio
+      cancel-in-progress: false
+    env:
+      RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+      RELEASE_CHANNEL: ${{ needs.prepare.outputs.channel }}
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+      RELEASE_ARTIFACT_DIR: /tmp/urdf-release
+      RELEASE_PLAN_PATH: /tmp/urdf-release/release-plan.json
+      MARKETPLACE_PATH: /tmp/urdf-release-marketplace.json
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 2
-
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: npm
-
-      - run: npm ci
-
-      - name: Detect version change
-        id: version
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-bundle
+          path: ${{ env.RELEASE_ARTIFACT_DIR }}
+      - name: Verify publishing credentials
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: test -n "$VSCE_PAT" || { echo '::error::VSCE_PAT is required'; exit 1; }
+      - name: Save immutable source and version checkpoint
+        run: node scripts/release.cjs checkpoint
+      - name: Refresh Marketplace state
+        run: npx --yes @vscode/vsce@^3.9.1 show deyuf.urdf-studio --json > "$MARKETPLACE_PATH"
+      - name: Check whether publication is still needed
+        id: verify
+        run: node scripts/release.cjs verify
+      - name: Publish the tested VSIX
+        if: steps.verify.outputs.should_publish == 'true'
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: |
-          current=$(node -p "require('./package.json').version")
-          previous=$(git show HEAD~1:package.json 2>/dev/null \
-            | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).version" 2>/dev/null || echo "")
-          force='${{ github.event.inputs.force_publish }}'
-          echo "current=$current"   >> "$GITHUB_OUTPUT"
-          echo "previous=$previous" >> "$GITHUB_OUTPUT"
-          if [ "$current" != "$previous" ] || [ "$force" = "true" ]; then
-            echo "should_publish=true" >> "$GITHUB_OUTPUT"
-            echo "Version $previous -> $current (force=$force) — will publish."
+          args=()
+          if [ "$RELEASE_CHANNEL" = beta ]; then args+=(--pre-release); fi
+          npx --yes @vscode/vsce@^3.9.1 publish "${args[@]}" \
+            --packagePath "$RELEASE_ARTIFACT_DIR/urdf-studio-$RELEASE_VERSION.vsix"
+      - name: Create or complete GitHub Release
+        if: env.RELEASE_CHANNEL == 'stable'
+        run: |
+          vsix="$RELEASE_ARTIFACT_DIR/urdf-studio-$RELEASE_VERSION.vsix"
+          if gh release view "$RELEASE_TAG" --json assets > "$RUNNER_TEMP/github-release.json"; then
+            if ! node -e 'const fs=require("fs"); const r=JSON.parse(fs.readFileSync(process.argv[1])); process.exit(r.assets.some(a=>a.name===process.argv[2])?0:1)' \
+              "$RUNNER_TEMP/github-release.json" "urdf-studio-$RELEASE_VERSION.vsix"; then
+              gh release upload "$RELEASE_TAG" "$vsix"
+            fi
           else
-            echo "should_publish=false" >> "$GITHUB_OUTPUT"
-            echo "Version unchanged at $current — skipping publish."
+            echo "Source commit: $GITHUB_SHA. This VSIX passed the full CI suite before publication." > "$RUNNER_TEMP/release-notes.md"
+            gh release create "$RELEASE_TAG" "$vsix" --verify-tag --title "$RELEASE_TAG" \
+              --generate-notes --notes-file "$RUNNER_TEMP/release-notes.md"
           fi
-
-      - name: Package .vsix
-        if: steps.version.outputs.should_publish == 'true'
-        run: npx --yes @vscode/vsce package --out urdf-studio-${{ steps.version.outputs.current }}.vsix
-
-      - name: Publish to Marketplace
-        if: steps.version.outputs.should_publish == 'true'
-        env:
-          VSCE_PAT: ${{ secrets.VSCE_PAT }}
-        run: npx --yes @vscode/vsce publish --packagePath urdf-studio-${{ steps.version.outputs.current }}.vsix
-
-      - name: Create GitHub Release
-        if: steps.version.outputs.should_publish == 'true'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ steps.version.outputs.current }}
-          name: v${{ steps.version.outputs.current }}
-          generate_release_notes: true
-          files: urdf-studio-${{ steps.version.outputs.current }}.vsix
-
-  # =================================================================
-  # publish-prerelease — VS Code Marketplace PRE-RELEASE publish.
-  # Runs on every push to develop (after tests pass). The version is
-  # derived, not committed: stable releases use an even minor (0.4.x on
-  # main); pre-releases bump to the next odd minor and use the GitHub run
-  # number as the patch (0.5.<run_number>), which is strictly increasing
-  # across runs so the Marketplace always accepts it. VS Code shows these
-  # only to users who opted into the pre-release channel.
-  # =================================================================
-  publish-prerelease:
-    name: Publish pre-release to VS Code Marketplace
-    needs: test
-    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: npm
-
-      - run: npm ci
-
-      - name: Verify VSCE_PAT is configured
-        env:
-          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+      - name: Summarize release
         run: |
-          if [ -z "$VSCE_PAT" ]; then
-            echo "::error::Missing required secret VSCE_PAT. Configure it under Settings → Secrets and variables → Actions (Azure DevOps PAT with Marketplace · Manage)."
-            exit 1
-          fi
-          echo "VSCE_PAT present (${#VSCE_PAT} chars)."
-
-      - name: Compute pre-release version
-        id: version
-        run: |
-          base=$(node -p "require('./package.json').version")
-          major=$(echo "$base" | cut -d. -f1)
-          minor=$(echo "$base" | cut -d. -f2)
-          # Pre-releases live on the next ODD minor (VS Code's recommended
-          # separation from even-minor stable releases). If the base minor is
-          # already odd, keep it.
-          if [ $(( minor % 2 )) -eq 0 ]; then
-            minor=$(( minor + 1 ))
-          fi
-          version="${major}.${minor}.${{ github.run_number }}"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "Base $base → pre-release $version"
-
-      - name: Set package version (not committed)
-        run: npm version "${{ steps.version.outputs.version }}" --no-git-tag-version --allow-same-version
-
-      # `vsce publish` runs the `vscode:prepublish` script (npm run package),
-      # which type-checks and builds the production bundle, then packages and
-      # publishes in one step — reading the version we just set above.
-      - name: Publish pre-release to Marketplace
-        env:
-          VSCE_PAT: ${{ secrets.VSCE_PAT }}
-        run: npx --yes @vscode/vsce@^3.9.1 publish --pre-release
+          echo "Released $RELEASE_CHANNEL **$RELEASE_VERSION** from $GITHUB_SHA ($RELEASE_TAG)." >> "$GITHUB_STEP_SUMMARY"
 
   # =================================================================
   # deploy-docs — GitHub Pages.

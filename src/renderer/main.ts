@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { icon } from '../web/ui/icons';
 import { LoadingManager, Object3D } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
@@ -155,56 +156,76 @@ document.getElementById('app')!.innerHTML = `
 <div class="shell">
   <div class="toolbar">
     <div id="title" class="title">URDF Studio</div>
-    <div class="toolbar-group">
-      <button id="fit">Fit</button>
-      <button data-view="front">Front</button>
-      <button data-view="right">Right</button>
-      <button data-view="top">Top</button>
-      <button data-view="iso">Iso</button>
-    </div>
-    <div class="toolbar-group">
-      <select id="render-mode" title="Geometry layer">
-        <option value="visual">Visual</option>
-        <option value="collision">Collision</option>
-        <option value="both">Both</option>
-      </select>
-      <label><input id="wireframe" type="checkbox"> Wire</label>
-      <label><input id="grid" type="checkbox" checked> Grid</label>
-      <label><input id="axes" type="checkbox" checked> Axes</label>
-    </div>
     <div class="toolbar-group toolbar-group-end">
-      <label><input id="ignore-limits" type="checkbox"> Ignore limits</label>
       <select id="bookmark-select" title="Apply a saved bookmark"><option value="">Bookmarks</option></select>
       <button id="bookmark-save" title="Save current pose as a named bookmark">Save As</button>
       <button id="save-pose" class="primary">Save Pose</button>
+      <details id="preview-settings-menu" class="workbench-menu settings-menu">
+        <summary aria-label="Settings" title="Settings">${icon('settings', { size: 18 })}</summary>
+        <div class="menu-content settings-options">
+          <span class="menu-heading">Appearance</span>
+          <button id="palette-toggle" type="button" aria-pressed="false" title="Use the original color palette">Classic colors<span class="palette-check" aria-hidden="true">✓</span></button>
+        </div>
+      </details>
+      <details id="export-menu" class="workbench-menu"><summary>Export</summary>
+        <div class="menu-content export-options">
+          <button data-export="png">Viewport image · PNG</button>
+          <button data-export="pose">Joint pose · JSON</button>
+          <button data-export="bom">Parts list · CSV</button>
+          <button data-export="pdf">Inspection report · PDF</button>
+        </div>
+      </details>
     </div>
-  </div>
-  <div class="subtoolbar">
-    <label>
-      <select id="frames-mode" title="Per-link TF axes">
-        <option value="off">Frames: off</option>
-        <option value="selected">Frames: selected</option>
-        <option value="all">Frames: all</option>
-      </select>
-    </label>
-    <label title="Show inertia ellipsoids and centers of mass"><input id="inertia-toggle" type="checkbox"> Inertia</label>
-    <label title="Highlight links whose collision geometry intersects"><input id="selfcollision-toggle" type="checkbox"> Self-collision</label>
-    <label>
-      <select id="labels-mode" title="3D labels for joints and links">
-        <option value="off">Labels: off</option>
-        <option value="joints">Labels: joints</option>
-        <option value="links">Labels: links</option>
-        <option value="both">Labels: both</option>
-      </select>
-    </label>
   </div>
   <div class="workspace" id="workspace">
     <div class="viewport-wrap">
+      <div class="viewport-tools" aria-label="Viewport controls">
+        <div class="toolbar-group">
+          <button id="fit">Fit</button>
+          <button data-view="front">Front</button>
+          <button data-view="right">Right</button>
+          <button data-view="top">Top</button>
+          <button data-view="iso">Iso</button>
+        </div>
+        <div class="toolbar-group">
+          <select id="render-mode" title="Geometry layer">
+            <option value="visual">Visual</option>
+            <option value="collision">Collision</option>
+            <option value="both">Both</option>
+          </select>
+        </div>
+        <details id="display-menu" class="workbench-menu">
+          <summary>Display</summary>
+          <div class="menu-content display-options">
+            <label><input id="wireframe" type="checkbox"> Wire</label>
+            <label><input id="grid" type="checkbox" checked> Grid</label>
+            <label><input id="axes" type="checkbox" checked> Axes</label>
+            <label>
+              <select id="frames-mode" title="Per-link TF axes">
+                <option value="off">Frames: off</option>
+                <option value="selected">Frames: selected</option>
+                <option value="all">Frames: all</option>
+              </select>
+            </label>
+            <label title="Show inertia ellipsoids and centers of mass"><input id="inertia-toggle" type="checkbox"> Inertia</label>
+            <label title="Highlight links whose collision geometry intersects"><input id="selfcollision-toggle" type="checkbox"> Self-collision</label>
+            <label>
+              <select id="labels-mode" title="3D labels for joints and links">
+                <option value="off">Labels: off</option>
+                <option value="joints">Labels: joints</option>
+                <option value="links">Labels: links</option>
+                <option value="both">Labels: both</option>
+              </select>
+            </label>
+          </div>
+        </details>
+      </div>
       <canvas id="viewport"></canvas>
       <div id="hud" class="hud">Waiting for robot...</div>
       <div id="collide-hud" class="hud collide-hud"></div>
     </div>
     <aside class="side">
+      <div id="panel-resize" role="separator" aria-label="Resize inspector" aria-orientation="vertical" tabindex="0"></div>
       <div class="tabs">
         <button class="tab active" data-tab="joints">Joints</button>
         <button class="tab" data-tab="inspector">Inspector</button>
@@ -213,7 +234,7 @@ document.getElementById('app')!.innerHTML = `
         <button class="tab" data-tab="source">Source</button>
         <button class="tab" data-tab="tools">Tools</button>
       </div>
-      <section id="panel-joints" class="panel active"></section>
+      <section id="panel-joints" class="panel active"><p class="panel-empty">Open a robot model to inspect and adjust its joints.</p></section>
       <section id="panel-inspector" class="panel"></section>
       <section id="panel-checks" class="panel"></section>
       <section id="panel-links" class="panel tree"></section>
@@ -223,7 +244,20 @@ document.getElementById('app')!.innerHTML = `
   </div>
 </div>`;
 
+function applyPalette(classic: boolean): void {
+  document.documentElement.dataset.palette = classic ? 'classic' : 'studio';
+  const button = qs<HTMLButtonElement>('#palette-toggle');
+  button.setAttribute('aria-pressed', String(classic));
+  button.title = classic ? 'Use the new Studio color palette' : 'Use the original color palette';
+}
+
 try {
+  let classic = false;
+  try {
+    const state = vscode.getState() as { palette?: string } | undefined;
+    classic = (state?.palette ?? localStorage.getItem('urdf-studio:palette:v1')) === 'classic';
+  } catch { /* Storage can be unavailable in a webview or private mode. */ }
+  applyPalette(classic);
   initThree();
   bindChrome();
 } catch (error) {
@@ -311,6 +345,38 @@ function initThree(): void {
   grid = new THREE.GridHelper(5, 20, 0x5c5c5c, 0x333333);
   grid.rotation.x = Math.PI / 2;
   scene.add(grid);
+  // Web chrome exposes drawing colors through CSS. Keep the renderer in sync
+  // with both explicit theme changes and the system preference; VS Code keeps
+  // its existing drawing palette when these web-only tokens are absent.
+  const syncDrawingTheme = (): void => {
+    const style = getComputedStyle(document.documentElement);
+    const background = style.getPropertyValue('--us-viewport-bg').trim();
+    if (!background) return;
+    // Resolve light-dark() to an actual color through the computed property.
+    const probe = document.createElement('span');
+    probe.style.color = background;
+    document.body.appendChild(probe);
+    scene.background = new THREE.Color(getComputedStyle(probe).color);
+    probe.style.color = 'var(--us-grid-major)';
+    const major = new THREE.Color(getComputedStyle(probe).color);
+    probe.style.color = 'var(--us-grid-minor)';
+    const minor = new THREE.Color(getComputedStyle(probe).color);
+    probe.remove();
+    const palette = new THREE.GridHelper(5, 20, major, minor);
+    grid.geometry.setAttribute('color', palette.geometry.getAttribute('color').clone());
+    palette.geometry.dispose();
+    const materials = Array.isArray(palette.material) ? palette.material : [palette.material];
+    materials.forEach(material => material.dispose());
+    dirty = true;
+  };
+  syncDrawingTheme();
+  new MutationObserver(syncDrawingTheme).observe(document.documentElement, {
+    attributes: true, attributeFilter: ['data-theme', 'data-palette']
+  });
+  new MutationObserver(syncDrawingTheme).observe(document.body, {
+    attributes: true, attributeFilter: ['class']
+  });
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', syncDrawingTheme);
   axes = new THREE.AxesHelper(0.75);
   scene.add(axes);
 
@@ -337,7 +403,98 @@ function initThree(): void {
   animate();
 }
 
+function bindInspectorResize(): void {
+  const workspace = qs<HTMLElement>('#workspace');
+  const side = qs<HTMLElement>('.side');
+  const handle = qs<HTMLElement>('#panel-resize');
+  const setWidth = (requested: number, save = false): void => {
+    const maximum = Math.min(760, Math.max(300, workspace.clientWidth - 280));
+    const width = Math.round(Math.min(maximum, Math.max(300, requested)));
+    workspace.style.setProperty('--panel-width', `${width}px`);
+    handle.setAttribute('aria-valuemin', '300');
+    handle.setAttribute('aria-valuemax', String(maximum));
+    handle.setAttribute('aria-valuenow', String(width));
+    if (save) {
+      try { localStorage.setItem('urdf-studio:panel-width:v1', String(width)); } catch { /* optional */ }
+      const state = vscode.getState();
+      vscode.setState({ ...(state && typeof state === 'object' ? state : {}), panelWidth: width });
+    }
+  };
+  try {
+    const state = vscode.getState() as { panelWidth?: number } | undefined;
+    const saved = Number(state?.panelWidth ?? localStorage.getItem('urdf-studio:panel-width:v1'));
+    if (Number.isFinite(saved) && saved >= 300) setWidth(saved);
+  } catch { /* optional */ }
+  handle.setAttribute('aria-valuenow', String(Math.round(side.getBoundingClientRect().width)));
+  handle.setAttribute('aria-valuemin', '300');
+  handle.setAttribute('aria-valuemax', '760');
+  let startX = 0;
+  let startWidth = 0;
+  handle.addEventListener('pointerdown', event => {
+    if (event.button !== 0) return;
+    startX = event.clientX;
+    startWidth = side.getBoundingClientRect().width;
+    handle.setPointerCapture(event.pointerId);
+    workspace.classList.add('resizing');
+    event.preventDefault();
+  });
+  handle.addEventListener('pointermove', event => {
+    if (handle.hasPointerCapture(event.pointerId)) setWidth(startWidth + startX - event.clientX);
+  });
+  const finish = (event: PointerEvent): void => {
+    if (!handle.hasPointerCapture(event.pointerId)) return;
+    handle.releasePointerCapture(event.pointerId);
+    workspace.classList.remove('resizing');
+    setWidth(side.getBoundingClientRect().width, true);
+  };
+  handle.addEventListener('pointerup', finish);
+  handle.addEventListener('pointercancel', finish);
+  handle.addEventListener('keydown', event => {
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+      event.preventDefault();
+      setWidth(side.getBoundingClientRect().width + (event.key === 'ArrowLeft' ? 24 : -24), true);
+    } else if (event.key === 'Home') { event.preventDefault(); setWidth(360, true); }
+  });
+  window.addEventListener('resize', () => {
+    if (workspace.style.getPropertyValue('--panel-width')) setWidth(Number.parseFloat(workspace.style.getPropertyValue('--panel-width')));
+  });
+}
+
 function bindChrome(): void {
+  bindInspectorResize();
+  const paletteMount = document.getElementById('palette-settings-mount');
+  if (paletteMount) {
+    paletteMount.append(qs('#palette-toggle'));
+    qs('#preview-settings-menu').remove();
+  }
+  qsa<HTMLButtonElement>('[data-export]').forEach(button => {
+    button.addEventListener('click', () => {
+      qs<HTMLDetailsElement>('#export-menu').open = false;
+      if (!currentData || !robot) return;
+      switch (button.dataset.export) {
+        case 'png': downloadViewportScreenshot(); break;
+        case 'pose': vscode.postMessage({ type: 'exportPoseResult', pose: getPose(), camera: getCameraSnapshot() }); break;
+        case 'bom': exportBom(); break;
+        case 'pdf': void exportPdfReport(); break;
+      }
+      qs<HTMLElement>('#export-menu summary').focus();
+    });
+  });
+  const menus = qsa<HTMLDetailsElement>('.workbench-menu');
+  document.addEventListener('pointerdown', event => {
+    menus.forEach(menu => { if (!menu.contains(event.target as Node)) menu.open = false; });
+  });
+  menus.forEach(menu => menu.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { menu.open = false; menu.querySelector<HTMLElement>('summary')?.focus(); }
+  }));
+  qs('#palette-toggle').addEventListener('click', () => {
+    const classic = document.documentElement.dataset.palette !== 'classic';
+    applyPalette(classic);
+    const palette = classic ? 'classic' : 'studio';
+    try { localStorage.setItem('urdf-studio:palette:v1', palette); } catch { /* optional */ }
+    const previous = vscode.getState();
+    vscode.setState({ ...(previous && typeof previous === 'object' ? previous : {}), palette });
+  });
   qs('#fit').addEventListener('click', () => fitCamera('iso'));
   qsa<HTMLButtonElement>('[data-view]').forEach(button => button.addEventListener('click', () => fitCamera(button.dataset.view as CameraView)));
   qs<HTMLSelectElement>('#render-mode').addEventListener('change', event => {
@@ -365,16 +522,6 @@ function bindChrome(): void {
   qs<HTMLInputElement>('#axes').addEventListener('change', event => {
     axes.visible = (event.target as HTMLInputElement).checked;
     dirty = true;
-  });
-  qs<HTMLInputElement>('#ignore-limits').addEventListener('change', event => {
-    const enabled = (event.target as HTMLInputElement).checked;
-    if (robot?.joints) {
-      for (const jointName of currentData?.metadata.movableJointNames ?? []) {
-        if (robot.joints[jointName]) {
-          robot.joints[jointName].ignoreLimits = enabled;
-        }
-      }
-    }
   });
   qs<HTMLSelectElement>('#frames-mode').addEventListener('change', event => {
     applyFramesMode((event.target as HTMLSelectElement).value as FramesMode);
@@ -531,6 +678,8 @@ async function loadRobot(data: LoadRobotMessage, forceCollisionGeometry = false)
 
   const manager = new LoadingManager();
   manager.onProgress = (_url: string, loaded: number, total: number) => {
+    // A late LoadingManager callback must not overwrite the ready HUD.
+    if (revealed || myGeneration !== loadGeneration) return;
     const now = performance.now();
     if (now - lastProgressUpdate > 120 || loaded === total) {
       lastProgressUpdate = now;
@@ -710,18 +859,30 @@ function clearMeshCache(): void {
 function renderSummary(data: LoadRobotMessage): void {
   const panel = qs('#panel-joints');
   setInnerHtml(panel, html`
+    <div class="panel-heading"><span>Robot overview</span><span class="muted">${data.metadata.robotName}</span></div>
     <div class="summary">
       <div class="metric"><b>${data.metadata.counts.links}</b><span>Links</span></div>
       <div class="metric"><b>${data.metadata.counts.joints}</b><span>Joints</span></div>
       <div class="metric"><b>${data.metadata.counts.movableJoints}</b><span>Movable</span></div>
     </div>
     <div id="xacro-args-host"></div>
+    <div class="joint-section-heading"><span>Joint controls</span><label><input id="ignore-limits" type="checkbox"> Ignore limits</label></div>
     <div class="joint-filter">
       <input id="joint-search" type="search" placeholder="Search joints">
       <label><input id="joint-modified-only" type="checkbox"> Only modified</label>
     </div>
     <div id="joint-groups"></div>
   `);
+  qs<HTMLInputElement>('#ignore-limits').addEventListener('change', event => {
+    const enabled = (event.target as HTMLInputElement).checked;
+    if (robot?.joints) {
+      for (const jointName of currentData?.metadata.movableJointNames ?? []) {
+        if (robot.joints[jointName]) {
+          robot.joints[jointName].ignoreLimits = enabled;
+        }
+      }
+    }
+  });
   qs<HTMLInputElement>('#joint-search').addEventListener('input', () => applyJointFilter());
   qs<HTMLInputElement>('#joint-modified-only').addEventListener('change', () => applyJointFilter());
 }
@@ -732,8 +893,11 @@ function renderXacroArgs(data: LoadRobotMessage): void {
     host.replaceChildren();
     return;
   }
+  const wasOpen = host.querySelector<HTMLDetailsElement>('details')?.open ?? false;
   setInnerHtml(host, html`
-    <div class="xacro-args">
+    <details class="xacro-settings">
+      <summary>Xacro parameters <span class="parameter-count">${data.xacroArgs.length}</span></summary>
+      <div class="xacro-args">
       ${data.xacroArgs.map(arg => html`
         <label>
           <span>${arg.name}</span>
@@ -741,8 +905,10 @@ function renderXacroArgs(data: LoadRobotMessage): void {
         </label>
       `)}
       <button id="apply-xacro" class="primary">Reload xacro</button>
-    </div>
+      </div>
+    </details>
   `);
+  host.querySelector<HTMLDetailsElement>('details')!.open = wasOpen;
   qs('#apply-xacro').addEventListener('click', () => {
     const args: Record<string, string> = {};
     qsa<HTMLInputElement>('[data-xacro-arg]').forEach(input => {
@@ -798,8 +964,11 @@ function renderJointRow(jointName: string, joint: JointInfo | undefined): Return
   return html`
     <div class="joint-row" data-joint-row="${jointName}">
       <span class="joint-name" title="${jointName}">${jointName}</span>
-      <input data-joint-slider="${jointName}" type="range" min="${min}" max="${max}" step="0.001" value="${value}">
-      <input data-joint-number="${jointName}" type="number" min="${min}" max="${max}" step="0.001" value="${value.toFixed(3)}">
+      <input data-joint-slider="${jointName}" type="range" aria-label="${jointName} position" min="${min}" max="${max}" step="0.001" value="${value}">
+      <label class="joint-value">
+        <input aria-label="${jointName} value" data-joint-number="${jointName}" type="number" min="${min}" max="${max}" step="0.001" value="${value.toFixed(3)}">
+        <span>${joint?.type === 'prismatic' ? 'm' : 'rad'}</span>
+      </label>
     </div>
   `;
 }
@@ -937,7 +1106,7 @@ function renderChecks(data: LoadRobotMessage): void {
   if (report.diagnostics.length === 0) {
     setInnerHtml(panel, html`
       <div class="checks-summary">
-        <span class="health-score health-good">100</span>
+        <div class="health-reading"><span class="health-score health-good">100</span><span class="health-label">/ 100<br>Model health</span></div>
         <div class="checks-counts"><span class="count-pill">No diagnostics</span></div>
       </div>
     `);
@@ -960,24 +1129,24 @@ function renderChecks(data: LoadRobotMessage): void {
     .map(([code, diagnostics]) => {
       const description = RULE_REGISTRY.find(rule => rule.code === code)?.description ?? code;
       return html`
-        <div class="checks-group">
-          <div class="checks-group-header">
+        <details class="checks-group" open>
+          <summary class="checks-group-header">
             <span>${code} · ${description}</span>
             <span class="muted">${diagnostics.length}</span>
-          </div>
+          </summary>
           <ul class="checks-group-list">
             ${diagnostics.map(diag => html`
               <li class="checks-group-item severity-${diag.severity}" data-line="${diag.line ?? ''}">
-                ${diag.message}
-                ${diag.line ? html`<span class="check-line">line ${diag.line}</span>` : ''}
+                <button class="check-message" type="button">${diag.message}
+                ${diag.line ? html`<span class="check-line">line ${diag.line}</span>` : ''}</button>
               </li>`)}
           </ul>
-        </div>`;
+        </details>`;
     });
 
   setInnerHtml(panel, html`
     <div class="checks-summary">
-      <span class="health-score ${healthClass}" title="Health score (0-100)">${report.healthScore.toFixed(0)}</span>
+      <div class="health-reading"><span class="health-score ${healthClass}" title="Health score (0-100)">${report.healthScore.toFixed(0)}</span><span class="health-label">/ 100<br>Model health</span></div>
       <div class="checks-counts">
         ${report.counts.error > 0 ? html`<span class="count-pill">${report.counts.error} error</span>` : ''}
         ${report.counts.warning > 0 ? html`<span class="count-pill">${report.counts.warning} warning</span>` : ''}
@@ -1170,7 +1339,7 @@ function fitCamera(view: CameraView = 'iso'): void {
   const center = box.getCenter(new THREE.Vector3());
   const size = box.getSize(new THREE.Vector3());
   const radius = Math.max(size.x, size.y, size.z, 0.1);
-  const distance = radius / (2 * Math.tan((camera.fov * Math.PI) / 360)) * 1.65;
+  const distance = radius / (2 * Math.tan((camera.fov * Math.PI) / 360)) * 1.35;
   const directions: Record<Exclude<CameraView, undefined>, THREE.Vector3> = {
     front: new THREE.Vector3(0, -1, 0.32),
     right: new THREE.Vector3(1, 0, 0.32),

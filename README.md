@@ -94,6 +94,18 @@ Full docs: **<https://urdf.deyuf.org/docs/>**.
 
 <img src="media/screenshots-web/01-hero.png" alt="Franka FR3 loaded in URDF Studio with joint sliders, link tree, and a 3D viewport">
 
+<img src="media/screenshots-web/06-joints-light.png" alt="URDF Studio in light mode: Franka FR3 with joint controls and collapsible xacro parameters">
+
+On a 2K display (2560 × 1440), the inspector stays at a readable width while the viewport takes the remaining space. Layout regression checks also cover 150% display scaling.
+
+<details>
+<summary>2K workspace and settings menu</summary>
+
+<img src="media/screenshots-web/07-workspace-2k.png" alt="URDF Studio on a native 2560 by 1440 viewport">
+<img src="media/screenshots-web/08-settings-2k.png" alt="Classic colors inside the settings gear menu on a 2K display">
+
+</details>
+
 The browser app loads a real ROS package off the local disk. Xacro is
 expanded client-side, every `package://` URI is resolved to a blob URL
 by the host, and meshes stream in via Three.js's `LoadingManager`.
@@ -125,7 +137,7 @@ xacro on a small screen without losing the live model preview.
 
 ### Checks panel with health score and grouped rules
 
-<img src="media/screenshots-web/04-checks-health.png" alt="Checks panel showing a 100/100 health score for a clean URDF">
+<img src="media/screenshots-web/04-checks-health.png" alt="Checks panel showing the Franka FR3 health score and grouped missing-inertia warnings">
 
 Every diagnostic surfaces here, grouped by rule code (`R-xxx`
 structural, `P-xxx` physics, `A-xxx` assets, `S-xxx` style/xacro). A
@@ -226,6 +238,18 @@ resolution, mesh blob URL allocation, Three.js render.
 
 ---
 
+## Releases
+
+Merges to `main` automatically select a stable version, run the complete test
+suite against the candidate VSIX, publish it to the Marketplace, and create a
+GitHub Release. No manual version bump is needed. `develop` and
+`design/quiet-studio` pushes publish beta builds after the same checks.
+
+Stable versions advance above any newer beta (for example, `0.5.x` beta →
+`0.6.0` stable), so users on the beta channel can upgrade. Failed runs reuse their
+release checkpoint when rerun. See [release automation](docs/development/releases.md)
+for version rules, artifacts, and recovery.
+
 ## Configuration
 
 Both targets expose the same five settings.
@@ -237,6 +261,10 @@ Both targets expose the same five settings.
 | Default xacro args | `{}` | Args merged into every xacro file. |
 | Extra package roots | `[]` | Extra `package.xml` scan roots. |
 | Semantic files | `[]` | SRDF / YAML semantic files. |
+
+**Workspace:** Camera presets and geometry layers sit inside the viewport; **Display** contains grids, frames, labels, and diagnostic overlays. Drag the inspector divider to resize it, or focus it and use the arrow keys. Joint controls pair full-width sliders with numeric values and units. Checks are grouped into collapsible sections with source links. **Export** collects PNG, pose JSON, parts CSV, and inspection PDF exports.
+
+**Colors:** **Classic colors** in the Settings (gear) menu switches between the original palette and the new Studio palette in both the browser and VS Code. The choice is remembered independently of the light/dark theme.
 
 **Web:** ⚙ button in the topbar → JSON in `localStorage`.
 **VS Code:** `urdfStudio.*` keys in `settings.json`.
@@ -293,11 +321,30 @@ npm run web:dev            # http://127.0.0.1:5173 with HMR
 npm run docs:watch         # rebuild dist-web/docs on every .md change
 
 # Tests
-npm run test:unit          # 24 node:test cases on src/core
-npx playwright test        # 19 renderer + web shell specs
+npm run test:unit          # core, editor, renderer logic, and browser storage
+npm run test:renderer      # builds both targets, then runs browser tests
+npm run test:vscode        # real VS Code integration (Linux: use xvfb-run)
 
 # Real-world smoke
 FRANKA_DIR=/tmp/franka_description node scripts/test-franka.mjs
+```
+
+Regenerate the PNG icon from its SVG master:
+
+```bash
+node scripts/build-icon.mjs
+# Set CHROMIUM_PATH=/usr/bin/chromium to use an installed browser.
+```
+
+Refresh the README screenshots and animation (requires `ffmpeg` and a full
+Franka mesh directory; the checked-in xacro fixture pins the model definition):
+
+```bash
+cp -a test/fixtures/franka_description /tmp/urdf-readme-franka
+cp -a /path/to/franka_description/meshes /tmp/urdf-readme-franka/meshes
+npm run web:build
+FRANKA_DIR=/tmp/urdf-readme-franka node scripts/capture-screenshots.mjs
+# Set CHROMIUM_PATH=/usr/bin/chromium to use an installed browser.
 ```
 
 Production builds:

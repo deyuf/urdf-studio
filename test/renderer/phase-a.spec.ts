@@ -1,7 +1,7 @@
+import { startStaticServer } from './helpers';
 import { expect, test, type Page } from '@playwright/test';
 import path from 'node:path';
-import { createReadStream, existsSync } from 'node:fs';
-import { createServer, type Server } from 'node:http';
+
 
 test.describe('Phase A features', () => {
   let server: { url: string; close(): Promise<void> };
@@ -147,6 +147,7 @@ test.describe('Phase A features', () => {
 
   test('Labels mode "joints" shows only joint labels', async ({ page }) => {
     await loadFixture(page);
+    if (await page.locator('#display-menu').getAttribute('open') === null) await page.locator('#display-menu summary').click();
     await page.locator('#labels-mode').selectOption('joints');
     await page.waitForFunction(() => (window as any).__urdfStudio?.labelsMode === 'joints');
     const state = await page.evaluate(() => (window as any).__urdfStudio);
@@ -156,6 +157,7 @@ test.describe('Phase A features', () => {
 
   test('Labels mode "links" shows only link labels', async ({ page }) => {
     await loadFixture(page);
+    if (await page.locator('#display-menu').getAttribute('open') === null) await page.locator('#display-menu summary').click();
     await page.locator('#labels-mode').selectOption('links');
     await page.waitForFunction(() => (window as any).__urdfStudio?.labelsMode === 'links');
     const state = await page.evaluate(() => (window as any).__urdfStudio);
@@ -165,12 +167,14 @@ test.describe('Phase A features', () => {
 
   test('Labels mode "off" hides everything; "both" shows everything', async ({ page }) => {
     await loadFixture(page);
+    if (await page.locator('#display-menu').getAttribute('open') === null) await page.locator('#display-menu summary').click();
     await page.locator('#labels-mode').selectOption('both');
     await page.waitForFunction(() => (window as any).__urdfStudio?.labelsMode === 'both');
     let state = await page.evaluate(() => (window as any).__urdfStudio);
     expect(state.visibleJointLabels).toBeGreaterThan(0);
     expect(state.visibleLinkLabels).toBeGreaterThan(0);
 
+    if (await page.locator('#display-menu').getAttribute('open') === null) await page.locator('#display-menu summary').click();
     await page.locator('#labels-mode').selectOption('off');
     await page.waitForFunction(() => (window as any).__urdfStudio?.labelsMode === 'off');
     state = await page.evaluate(() => (window as any).__urdfStudio);
@@ -180,12 +184,14 @@ test.describe('Phase A features', () => {
 
   test('Reloading a robot rebuilds labels without leaking previous entries', async ({ page }) => {
     await loadFixture(page);
+    if (await page.locator('#display-menu').getAttribute('open') === null) await page.locator('#display-menu summary').click();
     await page.locator('#labels-mode').selectOption('both');
     const before = await page.evaluate(() => (window as any).__urdfStudio?.totalLabels ?? 0);
     expect(before).toBeGreaterThan(0);
 
     // Reload with the same fixture — labels should rebuild, not stack.
     await loadFixture(page);
+    if (await page.locator('#display-menu').getAttribute('open') === null) await page.locator('#display-menu summary').click();
     await page.locator('#labels-mode').selectOption('both');
     const after = await page.evaluate(() => (window as any).__urdfStudio?.totalLabels ?? 0);
     expect(after).toBe(before);
@@ -309,7 +315,7 @@ test.describe('Phase A features', () => {
     await page.waitForFunction(() => {
       const messages = (window as any).__messages as Array<any>;
       return messages.some(m => m.type === 'requestSaveReport');
-    }, { timeout: 15_000 });
+    }, undefined, { timeout: 15_000 });
 
     const message = await page.evaluate(() => {
       const messages = (window as any).__messages as Array<any>;
@@ -338,34 +344,3 @@ test.describe('Phase A features', () => {
     expect(await exportButton.count()).toBe(0);
   });
 });
-
-async function startStaticServer(root: string): Promise<{ url: string; close(): Promise<void> }> {
-  const server: Server = createServer((req, res) => {
-    const url = new URL(req.url ?? '/', 'http://localhost');
-    let filePath = path.join(root, decodeURIComponent(url.pathname));
-    if (filePath.endsWith('/')) {
-      filePath = path.join(filePath, 'index.html');
-    }
-    if (!filePath.startsWith(root) || !existsSync(filePath)) {
-      res.statusCode = 404;
-      res.end();
-      return;
-    }
-    res.statusCode = 200;
-    if (filePath.endsWith('.js')) res.setHeader('content-type', 'text/javascript');
-    else if (filePath.endsWith('.html')) res.setHeader('content-type', 'text/html');
-    else if (filePath.endsWith('.css')) res.setHeader('content-type', 'text/css');
-    createReadStream(filePath).pipe(res);
-  });
-  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
-  const address = server.address();
-  if (!address || typeof address === 'string') {
-    throw new Error('Failed to bind static server');
-  }
-  return {
-    url: `http://127.0.0.1:${address.port}`,
-    close(): Promise<void> {
-      return new Promise(resolve => server.close(() => resolve()));
-    }
-  };
-}
