@@ -44,13 +44,61 @@ const AUTHOR = {
 
 // Section ordering and labels — controls the sidebar group order. Sections
 // not listed here are appended alphabetically.
+// Folder names are part of the public URLs, so they stay stable even when
+// the sidebar label changes (features/ holds the task-oriented guides).
 const SECTION_ORDER = [
   { dir: '',              label: 'Overview' },
-  { dir: 'quickstart',    label: 'Quickstart' },
-  { dir: 'features',      label: 'Features' },
-  { dir: 'architecture',  label: 'Architecture' },
-  { dir: 'development',   label: 'Development' }
+  { dir: 'quickstart',    label: 'Get started' },
+  { dir: 'features',      label: 'Guides' },
+  { dir: 'reference',     label: 'Reference' },
+  { dir: 'help',          label: 'Help' }
 ];
+
+// Pages that used to be published here. Each gets a small redirect page so
+// existing links and search results keep working.
+const CONTRIBUTOR_DOCS = 'https://github.com/deyuf/urdf-studio/tree/main/dev-docs';
+const REDIRECTS = {
+  'architecture/index.html': `${CONTRIBUTOR_DOCS}/architecture`,
+  'architecture/core.html': `${CONTRIBUTOR_DOCS}/architecture/core.md`,
+  'architecture/renderer.html': `${CONTRIBUTOR_DOCS}/architecture/renderer.md`,
+  'architecture/browser.html': `${CONTRIBUTOR_DOCS}/architecture/browser.md`,
+  'architecture/vscode.html': `${CONTRIBUTOR_DOCS}/architecture/vscode.md`,
+  'development/index.html': `${CONTRIBUTOR_DOCS}/development`,
+  'development/building.html': `${CONTRIBUTOR_DOCS}/development/building.md`,
+  'development/testing.html': `${CONTRIBUTOR_DOCS}/development/testing.md`,
+  'development/releases.html': `${CONTRIBUTOR_DOCS}/development/releases.md`,
+  'roadmap/inspiration-from-openlegged.html': `${CONTRIBUTOR_DOCS}/roadmap/inspiration-from-openlegged.md`
+};
+
+async function writeRedirects() {
+  for (const [from, to] of Object.entries(REDIRECTS)) {
+    const target = escapeHtml(to);
+    const outPath = path.join(OUT, from);
+    await mkdir(path.dirname(outPath), { recursive: true });
+    await writeFile(outPath, `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="robots" content="noindex">
+<meta http-equiv="refresh" content="0; url=${target}">
+<link rel="canonical" href="${target}">
+<title>Moved</title>
+</head>
+<body><p>This page moved to <a href="${target}">${target}</a>.</p></body>
+</html>
+`, 'utf8');
+  }
+}
+
+async function copyImages() {
+  const from = path.join(SRC, 'images');
+  const entries = await readdir(from).catch(() => []);
+  if (entries.length === 0) return;
+  await mkdir(path.join(OUT, 'images'), { recursive: true });
+  for (const name of entries) {
+    await copyFile(path.join(from, name), path.join(OUT, 'images', name));
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Markdown parsing — anchors, frontmatter, link rewriting.
@@ -129,7 +177,7 @@ async function readSection(rel, abs) {
   const pages = [];
   const subSections = [];
   for (const entry of entries) {
-    if (entry.name.startsWith('.') || entry.name === 'docs.css') continue;
+    if (entry.name.startsWith('.') || entry.name === 'docs.css' || entry.name === 'images') continue;
     const childAbs = path.join(abs, entry.name);
     const childRel = rel ? `${rel}/${entry.name}` : entry.name;
     if (entry.isDirectory()) {
@@ -514,6 +562,8 @@ async function build() {
   }
 
   await writeSitemap(sitemapEntries);
+  await writeRedirects();
+  await copyImages();
   await writeFile(path.join(OUT, 'search-index.json'), JSON.stringify(searchEntries), 'utf8');
   await copyFile(path.join(SRC, 'search.js'), path.join(OUT, 'search.js'));
   await copyFile(path.join(REPO, 'public', 'project-links.css'), path.join(OUT, 'project-links.css'));

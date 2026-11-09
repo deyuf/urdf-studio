@@ -1,56 +1,63 @@
 ---
-title: Viewport & navigation
+title: Navigate the 3D view
 order: 10
+summary: Orbit, pan and zoom around a robot model, use camera presets, and change the grid, axes and up direction.
 ---
 
-# Viewport & navigation
+# Navigate the 3D view
 
-A full Three.js viewport with orbit controls, preset cameras, and a
-configurable up axis.
+## Moving the camera
 
-## Mouse controls
-
-| Action | Effect |
+| Do this | To |
 |---|---|
-| Left-drag | Orbit around the focus point. |
-| Right-drag | Pan the focus point in screen space. |
-| Scroll wheel | Dolly zoom toward/away from the focus point. |
-| Click on a link | Selects that link and opens the Inspector tab. |
+| Drag | Orbit around the robot |
+| Right-drag | Pan |
+| Scroll | Zoom in and out |
+| Click a part of the robot | Select that link and show it in the Inspector |
+| Click empty space | Clear the selection |
 
-Wheel events are captured (with `preventDefault` + `stopPropagation` after
-the OrbitControls handler) so they never scroll the surrounding page or
-the VS Code outer panel.
+Scrolling over the 3D view never scrolls the page around it.
 
-## Toolbar — view group
+## Camera presets
 
-| Control | Effect |
+The bar in the top-left corner of the view has:
+
+- **Fit** — frame the whole robot from an angle. Use this whenever you lose
+  the robot.
+- **Front**, **Right**, **Top**, **Iso** — look along a fixed direction,
+  still framing the whole robot.
+
+## Display options
+
+Open **Display** in the same bar:
+
+| Option | What it does |
 |---|---|
-| **Fit** | Frame the entire robot at iso angle. |
-| **Front / Right / Top / Iso** | Snap to the corresponding preset camera. |
+| Wire | Draw every mesh as a wireframe. Useful for gaps between parts or heavy meshes. |
+| Grid | Show the ground grid. |
+| Axes | Show the world X (red), Y (green) and Z (blue) axes at the origin. |
+| Frames | Show each link's coordinate frame — see [Frames, labels and inertia](./overlays.html). |
+| Inertia | Show centres of mass and inertia ellipsoids. |
+| Self-collision | Highlight links whose collision shapes overlap — see [Visual and collision geometry](./render-modes.html#self-collision). |
+| Labels | Write joint or link names in the 3D view. |
 
-Both Fit and the presets adjust the dolly distance from the robot's
-bounding sphere so the model fills the viewport without clipping.
+The **Visual** menu next to the presets switches between visual geometry,
+collision geometry, or both.
 
-## Toolbar — display group
+## The robot is lying on its side
 
-| Control | Effect |
-|---|---|
-| **Render mode** | `Visual`, `Collision`, `Both` — see [Render modes](./render-modes.html). |
-| **Wire** | Wireframe overlay applied to every mesh. |
-| **Grid** | Show or hide the ground plane grid. |
-| **Axes** | Show or hide the world XYZ axes helper at the origin. |
+ROS uses Z as up, and so does URDF Studio by default. If your model was
+built for a Y-up tool, change **Up axis** in the settings — see
+[Packages, xacro args and settings](./settings.html).
 
-## Up axis
+## Resizing the side panel
 
-The world's up axis is configurable to `+X`, `+Y`, or `+Z`. The grid plane,
-camera defaults, and orbit controls all adjust automatically. The default
-is `+Z`, matching most ROS conventions.
+Drag the left edge of the side panel. With the edge focused, the **←** and
+**→** keys resize it in steps and **Home** resets it. The width is
+remembered.
 
-- **Web:** Settings → Up axis.
-- **VS Code:** `urdfStudio.upAxis` setting.
+## The caption in the corner
 
-## Status HUD
-
-The bottom-left HUD shows the current parse / load state and, after the
-robot is ready, a one-line summary (robot name, link/movable joint count).
-It auto-fades after a few seconds and re-appears on any new status event.
+The small caption at the bottom-left of the view shows what is happening —
+parsing, loading meshes — and then the robot's name with its link and
+movable joint counts.

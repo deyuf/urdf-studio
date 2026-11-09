@@ -101,7 +101,7 @@ URLs pass through to webview-resolved file URIs.
 
 `URL.createObjectURL` pins the underlying File reference; the browser
 won't reclaim that memory until you call `URL.revokeObjectURL`. To avoid
-leaking on reloads, the [browser VFS](./browser.html#blob-url-lifecycle)
+leaking on reloads, the [browser VFS](./browser.md#blob-url-lifecycle)
 maintains a two-generation cache.
 
 ## Renderer-internal mesh cache

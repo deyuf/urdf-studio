@@ -1,88 +1,88 @@
 ---
-title: VS Code extension
+title: Use it in VS Code
 order: 2
+summary: Install the URDF Studio extension to preview URDF and xacro files inside VS Code, with problems in the Problems panel and code navigation.
 ---
 
-# Quickstart — VS Code extension
+# Use it in VS Code
 
-The extension wires URDF Studio into VS Code as a custom editor and a set
-of language services. It works on any folder you have open in the editor;
-no extra setup is needed once installed.
+The extension adds a 3D preview for robot files and editor support for
+URDF and xacro.
 
-## 1. Install
+## Install
 
-From the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=deyuf.urdf-studio)
-or by running `ext install deyuf.urdf-studio` from the command palette.
+Search for **URDF Studio** in the Extensions view, or install it from the
+[Marketplace](https://marketplace.visualstudio.com/items?itemName=deyuf.urdf-studio).
 
-## 2. Open a robot
+## Open a preview
 
-Any of the following opens the preview:
+`.urdf`, `.urdf.xacro` and `.xacro` files open in the URDF Studio preview by
+default. To get there from a file open as text:
 
-- Right-click a `.urdf`, `.urdf.xacro`, or `.xacro` file in the explorer →
-  **Open With** → **URDF Studio Preview**.
-- Open the file in the regular text editor and run **URDF Studio: Open
-  Preview** from the command palette (⌘⇧P / Ctrl+Shift+P).
-- Use the inline editor-title action that appears for URDF/xacro files.
+- Click the **Open Preview** button in the editor title bar, or
+- Run **URDF Studio: Open Preview** from the Command Palette
+  (**Ctrl+Shift+P** / **⌘⇧P**), or
+- Right-click the file in the Explorer → **Open With…** → **URDF Studio
+  Preview**.
 
-## 3. Resolve `package://`
+To edit the text, use **Open With… → Text Editor**, or open the same file
+in a split.
 
-By default the extension scans every folder in your VS Code workspace for
-`package.xml`. Packages found this way are available to every preview.
+## Make `package://` paths resolve
 
-Add extra roots via settings if your packages live outside the workspace:
+URDF Studio looks for `package.xml` files in every folder of your
+workspace. Open your ROS workspace (or the `src` folder) rather than a
+single package, and meshes from other packages will be found too.
+
+If packages live outside the workspace — for example installed ones in
+`/opt/ros` — add them in your settings:
 
 ```jsonc
-// settings.json
+// .vscode/settings.json
 {
   "urdfStudio.packageRoots": [
-    "~/ros2_ws/src",
-    "/opt/ros/humble/share"
+    "/opt/ros/humble/share",
+    "~/other_ws/src"
   ]
 }
 ```
 
-Paths can be absolute or relative to the first workspace folder.
+More options: [Packages, xacro args and settings](../features/settings.html).
 
-## 4. Drive and inspect
+## What you get in the text editor
 
-Same panel layout as the web build — Joints, Inspector, Checks, Links,
-Tools. The only difference is the host integration:
+These work in any `.urdf` or `.xacro` file open as text:
 
-- **Save Pose** persists to the workspace state (per-document).
-- **Bookmarks** also persist per-workspace.
-- **Export Pose** opens a new JSON document next to the URDF.
-- **Capture Screenshot** writes a PNG into `urdf-studio-screenshots/`.
-- **Disable Collisions** writes directly into your SRDF file.
+- **Problems** — the same checks as the preview's Checks tab, with line
+  numbers, in the Problems panel.
+- **Quick fixes** — the light bulb offers fixes for common problems such as
+  a missing `<limit>` or `<inertial>`. See
+  [Checks reference](../reference/checks.html#quick-fixes).
+- **Hover** over a link or joint name to see its type, parent joint, limits
+  or mass.
+- A **summary line** above the robot (links and movable joints) opens the
+  preview when clicked.
+- **Go to Definition** and **Find All References** between joints and the
+  links they name.
+- **Outline** and breadcrumbs list every link and joint.
 
-## 5. Language services
+## Where things are saved
 
-Beyond the preview, the extension provides editor features on URDF and
-xacro source:
-
-- **Diagnostics** — every error/warning surfaced inside the preview also
-  shows up in the Problems panel, with line numbers.
-- **Hover** — joint/link details and resolved mesh paths inline.
-- **Go to Definition** / **Find References** — jump between joint
-  `parent`/`child` references and their link declarations.
-- **Document Symbols** — links and joints appear in the outline and
-  breadcrumb.
+| Action | Result in VS Code |
+|---|---|
+| Save pose, bookmarks | Stored in the workspace, per robot file |
+| Viewport image | Written to `urdf-studio-screenshots/` in the workspace |
+| Joint pose (JSON) | Opens as a new, unsaved JSON document |
+| Parts list (CSV), report (PDF) | You choose where in a save dialog |
+| Write to SRDF | Updates the SRDF in place, or asks where to create one |
+| **Ctrl+S** in the Source tab | Writes the file — see the caution in [Edit the source](../features/editing.html) |
 
 ## Commands
 
-| Command | Effect |
+| Command | What it does |
 |---|---|
-| `URDF Studio: Open Preview` | Open the preview for the active editor. |
-| `URDF Studio: Recenter` | Reset the camera to the iso fit. |
-| `URDF Studio: Export Pose` | Dump current pose + camera as JSON. |
-| `URDF Studio: Capture Screenshot` | Save a PNG. |
-| `URDF Studio: Sample Reachability Cloud` | Sample joint poses, plot the tip workspace. |
-
-## Settings
-
-| Key | Default | Effect |
-|---|---|---|
-| `urdfStudio.packageRoots` | `[]` | Extra directories scanned for `package.xml`. |
-| `urdfStudio.defaultXacroArgs` | `{}` | Default xacro args merged into every file. |
-| `urdfStudio.defaultRenderMode` | `"visual"` | Initial render layer. |
-| `urdfStudio.upAxis` | `"+Z"` | World up axis. |
-| `urdfStudio.semanticFiles` | `[]` | SRDF / YAML semantic files. |
+| URDF Studio: Open Preview | Open the preview for the active file |
+| URDF Studio: Recenter | Frame the whole robot |
+| URDF Studio: Export Pose | Open the current pose and camera as JSON |
+| URDF Studio: Capture Screenshot | Save a PNG of the 3D view |
+| URDF Studio: Sample Reachability Cloud | Plot where the tip link can reach |

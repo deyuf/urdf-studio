@@ -230,7 +230,7 @@ jobs:
                      User    · User Details     · Read
                  → constrain to your account → Continue → Create.
 
-          See docs/development/deployment.md for the full walk-through.
+          See dev-docs/development/releases.md for the full walk-through.
           EOF
             exit 1
           fi

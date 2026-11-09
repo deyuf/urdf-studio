@@ -1,83 +1,73 @@
 ---
-title: Pose, bookmarks, export
+title: Save poses and export
 order: 80
+summary: Save the current pose and camera, keep named bookmarks, and export images, joint values, a parts list or a PDF report.
 ---
 
-# Pose, bookmarks, export
+# Save poses and export
 
-URDF Studio persists what you do with a robot — pose, named bookmarks,
-and one-shot exports for sharing.
+## Save the pose you're looking at
 
-## Save Pose
+Click **Save Pose** in the toolbar. The joint values and camera view are
+remembered for this robot file and restored the next time you open it.
 
-The **Save Pose** button in the right-side toolbar group stores:
+## Keep several named poses
 
-- Every movable joint's current value.
-- The camera position, target, and up vector.
+Click **Save As**, give the pose a name, and it is added to the
+**Bookmarks** menu. Pick a bookmark to return to that pose and view.
+Saving with an existing name replaces that bookmark.
 
-The saved state is restored the next time you open the same document.
+Bookmarks belong to one robot file. Opening another file shows its own
+bookmarks.
 
-| Host | Where it's stored | Key |
+| Where | Saved poses and bookmarks are kept in |
+|---|---|
+| Browser | This browser on this computer. Clearing site data removes them. |
+| VS Code | The workspace. |
+
+To share a pose with someone else, export it as JSON (below).
+
+## Export
+
+The **Export** menu in the toolbar has four formats.
+
+| Export | Contains | Good for |
 |---|---|---|
-| Web | `localStorage` | `urdf-studio:pose:v1` → `{ <folder>:<file-path>: { pose, camera } }` |
-| VS Code | `workspaceState` | `urdfStudio.previewState:<uri>` |
+| Viewport image · PNG | The 3D view without any interface | Slides, docs, pull requests |
+| Joint pose · JSON | Every joint value plus the camera | Sharing a pose, scripting |
+| Parts list · CSV | One row per link: parent joint, mass, centre of mass, inertia | Checking masses and inertias in a spreadsheet |
+| Inspection report · PDF | Robot name and source, link and joint counts, a screenshot, and the Checks list | Design reviews, handing a model over |
 
-## Bookmarks
+For images at a higher resolution, use **Tools → Screenshot** and choose
+a **Scale** of 2× to 4×. **Copy** puts the image on the clipboard instead
+of saving a file.
 
-The **Save As** button captures the current pose + camera under a named
-bookmark. The dropdown on the left of Save Pose lists every bookmark; pick
-one to apply it.
+### Where exports go
 
-| Host | Where it's stored | Key |
+| Export | Browser | VS Code |
 |---|---|---|
-| Web | `localStorage` | `urdf-studio:bookmarks:v1` → `{ <folder>:<file-path>: [ { name, pose, camera, createdAt }, … ] }` |
-| VS Code | `workspaceState` | `urdfStudio.bookmarks:<uri>` |
+| PNG | Downloaded | `urdf-studio-screenshots/` in the workspace |
+| JSON | Downloaded | Opened as a new, unsaved document |
+| CSV, PDF | Downloaded | Save dialog |
 
-Bookmark names are unique per-document. Saving a name that already exists
-overwrites the previous bookmark.
-
-In VS Code you can also delete and rename bookmarks by editing
-`workspaceState` via the dev tools — there is no dedicated UI yet.
-
-## Semantic states (SRDF)
-
-If the loaded SRDF declares `<group_state name="ready" group="arm">`
-blocks, they appear in the same bookmark dropdown, prefixed with the
-group name. These are read-only — applying one sets the joint values it
-declares without modifying the SRDF.
-
-## Export Pose
-
-**Export Pose** writes a JSON document:
+### The pose file
 
 ```json
 {
-  "source": "/franka_description/robots/fr3/fr3.urdf.xacro",
-  "exportedAt": "2025-04-15T10:32:11.123Z",
+  "source": "franka_description/robots/fr3/fr3.urdf.xacro",
+  "exportedAt": "2026-11-09T10:32:11.123Z",
   "pose": {
-    "fr3_joint1": 0.0,
-    "fr3_joint2": 0.6,
-    ...
+    "fr3_joint1": 0,
+    "fr3_joint2": 0.5,
+    "fr3_joint4": -1.2
   },
   "camera": {
-    "position": [3.21, -4.18, 2.55],
-    "target":   [0.12, 0.04, 0.41],
-    "up":       [0, 0, 1]
+    "position": [1.8, -1.6, 1.2],
+    "target": [0, 0, 0.4],
+    "up": [0, 0, 1]
   }
 }
 ```
 
-| Host | Where it goes |
-|---|---|
-| Web | Downloaded as `<urdf-name>-pose.json`. |
-| VS Code | Opened as a new JSON document next to the URDF. |
-
-## Capture Screenshot
-
-**Capture Screenshot** writes a PNG of the current viewport at native
-resolution. Useful for documentation, PRs, or annotation.
-
-| Host | Where it goes |
-|---|---|
-| Web | Downloaded as `<urdf-name>-<timestamp>.png`. |
-| VS Code | Saved into a `urdf-studio-screenshots/` folder at the workspace root. |
+Joint values are in radians for rotating joints and metres for sliding
+ones.

@@ -37,10 +37,10 @@ codebase**. This section explains how that's organized.
 
 ## What's in this section
 
-- [Core](./core.html) — the `CoreIo` abstraction, what's pure and what's
+- [Core](./core.md) — the `CoreIo` abstraction, what's pure and what's
   not.
-- [Renderer](./renderer.html) — message protocol, URL modifier, blob
+- [Renderer](./renderer.md) — message protocol, URL modifier, blob
   lifecycle.
-- [Browser host](./browser.html) — VFS, package discovery, yaml pre-warm.
-- [VS Code host](./vscode.html) — webview wiring, custom editor,
+- [Browser host](./browser.md) — VFS, package discovery, yaml pre-warm.
+- [VS Code host](./vscode.md) — webview wiring, custom editor,
   workspace state.

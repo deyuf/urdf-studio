@@ -1,60 +1,55 @@
 ---
-title: Inspector & link tree
+title: Inspect a link
 order: 50
+summary: Browse the link tree, select a link in 3D or in the tree, and read its parent joint, limits, mass, centre of mass and mesh files.
 ---
 
-# Inspector & link tree
+# Inspect a link
 
-The **Links** tab shows the full kinematic tree; the **Inspector** tab
-shows details for whichever link is currently selected.
+## Select a link
 
-## Selecting a link
+Either:
 
-A link gets selected by:
+- Click the part in the 3D view, or
+- Open the **Links** tab and click the link's name.
 
-- Clicking it in the **Links** tree.
-- Clicking the corresponding mesh in the 3D viewport.
+The selected link gets a yellow box around it, and the **Inspector** tab
+opens with its details. Click empty space in the 3D view to clear the
+selection.
 
-The selection turns the **Inspector** tab into the active tab and draws a
-tight yellow bounding box around the link's own visual geometry (not its
-children — the box is local to the link transform). Click on empty space
-to deselect.
+## The Links tab
 
-## Links panel
+The **Links** tab shows the robot as a tree: each link sits under the link
+it is attached to. Hover a row to see the joint that connects it to its
+parent. The selected link is highlighted.
 
-The kinematic tree is rendered as nested rows:
+The tree is a quick structural check. A link that appears at the top level
+when it shouldn't usually means a joint names the wrong parent — Checks
+reports it as `R-001` or `R-003`.
 
-- The root link is at the top.
-- Each child link is indented under its parent joint.
-- Clicking a row selects the link.
-- A small ▸ / ▾ caret collapses subtrees.
-
-If the URDF analyzer detected multiple root links, all of them appear at
-the top and a warning is surfaced in the **Checks** panel.
-
-## Inspector — what's shown
-
-For the selected link:
+## What the Inspector shows
 
 | Field | Meaning |
 |---|---|
-| **Parent joint** | Joint connecting this link to its parent, with type, axis, and limits. Empty for root links. |
-| **Child joints** | List of outgoing joints (joint name → child link). |
-| **Mass** | From `<inertial><mass value=…/>`. |
-| **Center of mass** | From `<inertial><origin xyz=…/>`. |
-| **Inertia tensor** | The full 3×3 from `<inertia ixx=… iyy=… izz=… …/>`. |
-| **Inertia eigenvalues** | Principal inertia, sorted descending. Used by the inertia ellipsoid overlay. |
-| **Visual meshes** | Resolved absolute paths of every `<visual><mesh filename=…/>` reference on this link. |
-| **Collision meshes** | Same for `<collision>`. |
-| **Diagnostics** | Any link-scoped warning/error from the analyzer. |
+| Link | The link's name |
+| Parent | The joint that attaches this link to its parent (`none` for the root) |
+| Type | That joint's type: `revolute`, `prismatic`, `fixed`… or `root` |
+| Axis | The joint axis, in the joint's frame |
+| Limit | Lower and upper limit, in radians or metres |
+| Mimic | The joint it follows, as `joint × multiplier + offset`, or `none` |
+| Children | Joints that attach other links to this one |
+| Mass | From `<inertial><mass>`, or `n/a` if the link has no inertial |
+| CoM | Centre of mass, from `<inertial><origin xyz>` |
+| Meshes | Each visual and collision mesh file, marked **missing** if it can't be found |
 
-## How mesh paths resolve
+## When a mesh is missing
 
-- `package://pkg/...` → looked up in the discovered package map.
-- `file://...` → used verbatim.
-- Other absolute paths → passed through.
-- Relative paths → resolved against the URDF's directory.
+The Inspector still shows the path written in the URDF, and the part is
+left out of the 3D view. The usual causes are covered in
+[Troubleshooting](../help/#meshes-are-missing).
 
-If a referenced mesh does not exist on disk, the Inspector still shows the
-declared path, and a `mesh.missing` diagnostic appears in the **Checks**
-panel.
+## Jump to the source
+
+When a link is selected, the **Source** tab highlights the line where it
+is declared. In VS Code, the text editor jumps there too if the file is
+open.

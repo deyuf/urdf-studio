@@ -1,88 +1,83 @@
 ---
-title: Diagnostics
+title: Find and fix problems
 order: 60
+summary: Use the Checks tab to find structural, physics, mesh and xacro problems in a robot model, jump to the line, and apply quick fixes.
 ---
 
-# Diagnostics (Checks panel)
+# Find and fix problems
 
-The **Checks** tab is the unified view of every problem the parser and
-analyzer found in the current model. In the VS Code build the same items
-also appear in the Problems panel with line numbers.
+Every time a robot loads, URDF Studio checks it for problems that break
+loading, confuse simulators, or are likely mistakes. Results are in the
+**Checks** tab and, in VS Code, the Problems panel.
 
-Each diagnostic has a severity (`error` / `warning` / `info`), a stable
-code, an optional file/line, and a human message.
+![The Checks tab with the model health score and grouped warnings](../images/checks.png)
 
-## XML / xacro
+## Reading the Checks tab
 
-| Code | Severity | Triggered by |
+At the top:
+
+- **Model health** — a score out of 100. It starts at 100 and drops by 10
+  for each error, 3 for each warning and 0.5 for each info. Treat it as a
+  rough progress meter while you clean up a model, not as a grade.
+- **Counts** of errors, warnings and info items.
+
+Below, problems are grouped by check. Each group shows a code such as
+`P-001`, a short name and how many times it was found. Click any problem to
+open the **Source** tab at that line.
+
+When something serious goes wrong while loading — the file isn't valid XML,
+or xacro can't be expanded — a message also pops up in the corner. Errors
+stay until you close them; warnings fade.
+
+## What the severities mean
+
+| Severity | Meaning | What to do |
 |---|---|---|
-| `xml.parse` | error | The XML is malformed at the byte level. The URDF cannot be loaded. |
-| `xacro.expand` | error | Xacro expansion failed and no recovery was possible. The pre-expansion text is shown instead. |
-| `xacro.expressionSkipped` | warning | An expression failed to evaluate; URDF Studio retried with the offending expression elided so the rest of the file could still be expanded. |
-| `xacro.packageMissing` | warning | `$(find pkg)` was called with a package name not in the discovered map. The substitution returns `/unknown-package` so expansion can continue. |
+| Error | Something is broken: the robot may not load, or loads wrong | Fix before using the model |
+| Warning | Likely a mistake, or something a simulator or planner will trip on | Look at each one; most are worth fixing |
+| Info | Tidiness and suggestions | Fix when convenient |
 
-## Tree structure
+## Common problems and fixes
 
-| Code | Severity | Triggered by |
-|---|---|---|
-| `link.missingName` | error | A `<link>` element without a `name` attribute. |
-| `link.duplicate` | error | Two `<link>` elements share the same name. |
-| `joint.missingName` | error | A `<joint>` element without a `name` attribute. |
-| `joint.duplicate` | error | Two `<joint>` elements share the same name. |
-| `joint.parentMissing` | error | Joint references a parent link that does not exist. |
-| `joint.childMissing` | error | Joint references a child link that does not exist. |
-| `tree.multipleParents` | error | A link is named as the child of more than one joint. |
-| `tree.cycle` | error | A cycle was detected in the link tree (DFS). |
-| `tree.rootCount` | warning | Expected one root link; found zero or many. |
+**A link has no `<inertial>` block (`P-001`).** Simulators treat it as
+massless, and Gazebo may ignore it entirely. Fine for pure frames such as
+`tool0` or sensor mounts; for real parts, add mass and inertia.
 
-## Joints
+**A joint has no limits (`P-004`).** Revolute and prismatic joints need
+`<limit lower upper effort velocity>`. Without one, many tools refuse the
+model or treat the joint as frozen.
 
-| Code | Severity | Triggered by |
-|---|---|---|
-| `joint.limitMissing` | warning | A `revolute` or `prismatic` joint has no `<limit lower>` / `<limit upper>`. |
-| `joint.limitInvalid` | error | `lower > upper` on a `<limit>` element. |
-| `joint.mimicMissing` | warning | `<mimic joint="other">` references a joint that does not exist. |
+**A mesh can't be found (`A-001`).** Usually the folder you opened doesn't
+contain the package the path points to. See
+[Troubleshooting](../help/#meshes-are-missing).
 
-## Meshes
+**A joint names a link that doesn't exist (`R-003`).** Often a typo, or a
+xacro prefix applied in one place but not the other.
 
-| Code | Severity | Triggered by |
-|---|---|---|
-| `mesh.packageMalformed` | error | A `package://` URI without a package name. |
-| `mesh.packageMissing` | error | A `package://` URI references a package not found in the workspace / folder. |
-| `mesh.missing` | error | The resolved mesh path does not exist on disk. The link still shows; just without that particular mesh. |
+The full list, with what triggers each check, is in the
+[Checks reference](../reference/checks.html).
 
-## Inertial
+## Quick fixes
 
-| Code | Severity | Triggered by |
-|---|---|---|
-| `inertial.massInvalid` | warning | `<mass value>` is missing, zero, or negative. |
-| `inertial.tensorMissing` | warning | `<inertial>` block without an `<inertia>` tensor. |
-| `inertial.notPositiveDefinite` | warning | Eigenvalues of the inertia tensor are not all strictly positive. Either the link can't physically rotate that way, or the URDF is wrong. |
+Some problems can be fixed with one click. They insert a reasonable
+placeholder that you should then adjust:
 
-## Semantic (SRDF)
+- Missing `<limit>` → inserts a default limit.
+- Missing `<inertial>` → inserts a small default inertial.
+- Invalid mass → sets mass to 1.0.
+- Zero effort or velocity → sets effort 100 and velocity 1.0.
+- `<limit>` on a continuous joint → removes the angular limits.
 
-| Code | Severity | Triggered by |
-|---|---|---|
-| `srdf.parse` | error | The SRDF file is malformed XML. |
-| `srdf.groupMissingName` | warning | A `<group>` element without `name`. Skipped. |
-| `srdf.groupMissing` | warning | A `<group>` references a subgroup that does not exist. |
-| `srdf.groupCycle` | warning | Cycle in group inheritance. The branch is ignored. |
-| `srdf.stateInvalid` | warning | A `<group_state>` without `name` or `group`. |
-| `semantic.readFailed` | warning | Configured semantic file could not be read. |
-| `semantic.yamlParse` | warning | YAML semantic file did not parse. |
+In the **Source** tab, turn on **Edit**, then use the fix offered on the
+underlined line. In VS Code, use the light bulb in the text editor.
 
-## Preview
+## Xacro files
 
-| Code | Severity | Triggered by |
-|---|---|---|
-| `preview.loadFailed` | error | The preview pipeline threw an exception not classified above. |
+For a `.xacro` file, checks run on the expanded result, so line numbers
+refer to the expanded URDF shown in the Source tab — not to your xacro
+source. Search your xacro for the link or joint name to find the place to
+change.
 
-## What to do with them
-
-- Errors typically prevent something visible from working (a link won't
-  render, a mesh won't load). Fix the URDF.
-- Warnings are usually fine but worth a second look — they often catch
-  copy-paste mistakes in xacro macros or mesh paths.
-- The `xacro.expressionSkipped` category in particular is forgiving: the
-  rest of the file expands fine, you just get a noticeable hole where the
-  bad expression was. Search the file for the expression text to find it.
+If an expression in your xacro can't be evaluated, URDF Studio skips it and
+expands the rest so you still get a robot to look at. A warning tells you
+which expression was skipped.

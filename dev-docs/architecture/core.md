@@ -49,7 +49,7 @@ import './ioBrowser';      // side-effect: calls setCoreIo(browserImpl)
 ```
 
 The node impl wires `node:fs`, `node:path`, and `jsdom`'s DOM. The
-browser impl wires the [`BrowserVfs`](./browser.html), a tiny POSIX path
+browser impl wires the [`BrowserVfs`](./browser.md), a tiny POSIX path
 utility, and the native `globalThis.DOMParser` / `XMLSerializer`.
 
 ## Core modules

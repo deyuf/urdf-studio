@@ -1,42 +1,59 @@
 ---
 title: Overview
-summary: URDF Studio is a free online URDF viewer. Open URDF and xacro robot models in the browser, drive joint sliders, resolve package:// paths, no upload.
+summary: URDF Studio is a free URDF and xacro viewer for the browser and VS Code. Open a ROS package, pose the robot, find problems in the model — nothing is uploaded.
 ---
 
-# URDF Studio — an online URDF viewer for the browser
+# URDF Studio
 
-**URDF Studio** is a free, open-source **URDF viewer** and xacro inspector.
-A single TypeScript codebase lets you load, visualize and drive ROS robot
-models — as a **VS Code extension** for in-editor previews, and as a
-**browser app** that runs entirely client-side. No upload. No install.
+URDF Studio opens ROS robot descriptions — `.urdf` and `.xacro` files with
+their meshes — and shows the robot in 3D. You can move every joint, click
+any part to see what it is, and get a list of problems in the model with
+the line that causes each one.
 
-## What you can do with it
+It runs in two places, with the same features in both:
 
-| | |
+- **In the browser** at [urdf.deyuf.org](https://urdf.deyuf.org). Nothing to
+  install. Your files are read locally and never uploaded.
+- **In VS Code** as an extension. The preview sits next to your source and
+  problems appear in the Problems panel.
+
+![URDF Studio showing a Franka FR3 arm with joint sliders](./images/workbench.png)
+
+## Start here
+
+- **New to URDF Studio?** [Get started](./quickstart/) walks you through
+  opening your first robot in about two minutes.
+- **Already have it open?** The guides below are organised by what you want
+  to do.
+
+## What do you want to do?
+
+| I want to… | Read |
 |---|---|
-| 🖥 **See the robot** | Three.js viewport with orbit/pan/zoom, preset cameras, fit-to-screen, visual + collision render modes. |
-| 🦾 **Drive joints** | Sliders and numeric inputs for every movable joint, respecting `<limit>` and `<mimic>`. |
-| 🤖 **Expand xacro** | Full `xacro:include`, `xacro:macro`, `xacro:arg`, `load_yaml` support — both in Node and in the browser. |
-| 📦 **Resolve `package://`** | Auto-discovers `package.xml` files in the workspace or chosen folder. |
-| 🧭 **Inspect** | Link tree, parent/child joints, mass, CoM, inertia tensor, mesh paths, tight bounding box. |
-| 🩺 **Validate** | URDF parse errors, missing meshes, non-positive-definite inertias, joint cycles — surfaced inline. |
-| 🛠 **Author** | Reachability sampling, never-colliding pair detection, SRDF authoring. |
-| 💾 **Persist** | Save pose, name bookmarks, export pose JSON, capture PNG screenshots. |
+| See my robot and check it looks right | [Navigate the 3D view](./features/viewport.html) |
+| Move joints, try poses, check limits | [Pose the robot](./features/joints.html) |
+| Find out why a mesh is missing or the model looks wrong | [Find and fix problems](./features/diagnostics.html) |
+| Check collision geometry against the visual model | [Visual and collision geometry](./features/render-modes.html) |
+| See frames, centres of mass, inertia | [Frames, labels and inertia](./features/overlays.html) |
+| Look up mass, inertia, parent joint of one link | [Inspect a link](./features/inspector.html) |
+| Fix a URDF and see the change immediately | [Edit the source](./features/editing.html) |
+| Generate `<disable_collisions>` for MoveIt | [Measure, reach and collision pairs](./features/tools.html) |
+| Share a screenshot, pose, parts list or report | [Save poses and export](./features/poses.html) |
+| Set xacro arguments or point to other packages | [Packages, xacro args and settings](./features/settings.html) |
 
-## Which version do I want?
+Something not working? See [Troubleshooting](./help/).
 
-- **You write robot descriptions in VS Code** → use the [extension](./quickstart/vscode.html).
-  Inline diagnostics, custom editor, language services.
-- **You want to share a preview** or open a model on someone else's machine
-  → use the [web app](./quickstart/web.html).
-  No install, runs in the browser, files never leave the device.
+## Browser or VS Code?
 
-Both expose the same feature set on top of the same parser, renderer and
-analyzer. See [Architecture](./architecture/) for how that's organised.
+| | Browser | VS Code |
+|---|---|---|
+| Install | None | Marketplace extension |
+| Open a robot | Pick a folder | Open a `.urdf` / `.xacro` file |
+| Problems list | Checks tab | Checks tab and Problems panel |
+| Hover, go to definition, outline | — | Yes |
+| Saving an edited file | Downloads a copy | Writes the file |
+| Best for | A quick look, sharing, machines without ROS | Day-to-day work on robot descriptions |
 
-## Project layout
-
-- Source: <https://github.com/deyuf/urdf-studio>
-- VS Code Marketplace: [deyuf.urdf-studio](https://marketplace.visualstudio.com/items?itemName=deyuf.urdf-studio)
-- Web app: deployed at <https://urdf.deyuf.org>
-- License: MIT
+URDF Studio is free and open source under the MIT license.
+[Source on GitHub](https://github.com/deyuf/urdf-studio) ·
+[VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=deyuf.urdf-studio)
