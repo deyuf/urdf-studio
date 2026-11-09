@@ -105,7 +105,7 @@ test('renderer escapes URDF-supplied strings into all panels', async ({ page }) 
     }, { scriptPayload: SCRIPT_PAYLOAD, imgPayload: IMG_PAYLOAD });
 
     // Wait for the panel sections to populate.
-    await expect(page.locator('#panel-joints')).toContainText(/Links/);
+    await expect(page.locator('#panel-joints')).toContainText(/links/i);
 
     // Cycle through every tab so each renderer is exercised against the
     // hostile URDF in turn — including Tools, which renders the

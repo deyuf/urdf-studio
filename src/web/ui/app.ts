@@ -43,6 +43,9 @@ export class AppShell {
   private activeScan: AbortController | null = null;
   private readonly onboarding = mountOnboarding();
   private readonly toast = mountToast();
+  private emptyState: HTMLElement | null = null;
+  private candidates: string[] = [];
+  private reopenHandle: FileSystemDirectoryHandle | null = null;
 
   constructor(private readonly host: WebHost) {
     this.render();
@@ -67,22 +70,28 @@ export class AppShell {
     topbar.innerHTML = `
       <div class="topbar-row">
         <div class="brand">
-          <img src="./icon.png" alt="" class="brand-icon" width="28" height="28">
-          URDF Studio
-          <span class="brand-tag">Web</span>
+          <img src="./icon.png" alt="" class="brand-icon" width="22" height="22">
+          <span class="brand-name">URDF Studio</span>
+        </div>
+        <div class="topbar-source" role="group" aria-label="Robot source">
+          <button id="open-directory" class="tb-btn" aria-label="Open folder" title="Open a ROS package or workspace folder">${icon('folder', { size: 16 })}<span>Open folder</span></button>
+          <button id="reopen-directory" class="tb-btn ghost" title="Reopen the last folder you used" hidden></button>
+          <button id="open-files" class="tb-btn ghost" title="Select files when your browser has no folder picker">Pick files</button>
+          <span class="topbar-divider" aria-hidden="true"></span>
+          <label class="file-picker">
+            <span class="visually-hidden">Robot file</span>
+            ${icon('description', { size: 16, className: 'file-picker-icon' })}
+            <select id="file-select" disabled>
+              <option value="">No folder loaded</option>
+            </select>
+          </label>
         </div>
         <div class="topbar-actions">
-          <button id="open-directory" class="primary" title="Open a ROS package folder">Open Folder</button>
-          <button id="reopen-directory" class="ghost" title="Reopen the last folder you used" hidden></button>
-          <button id="open-files" class="ghost" title="Fallback if your browser does not support folder picker">Pick Files</button>
-          <select id="file-select" disabled>
-            <option value="">No folder loaded</option>
-          </select>
-          <a id="docs-link" class="ghost-link" href="./docs/" title="Open documentation" target="_blank" rel="noopener">Docs</a>
+          <a id="docs-link" class="tb-btn ghost" href="./docs/" title="Open the documentation in a new tab" target="_blank" rel="noopener">Docs${icon('arrow_outward', { size: 14 })}</a>
           <div id="theme-mount" class="theme-mount"></div>
-          <button id="help-btn" class="ghost icon-btn" aria-label="Show onboarding tour" title="Show the onboarding tour">${icon('help', { size: 18 })}</button>
+          <button id="help-btn" class="tb-btn ghost icon-btn" aria-label="Show onboarding tour" title="Show the onboarding tour">${icon('help', { size: 18 })}</button>
           <details id="settings-menu" class="workbench-menu settings-menu">
-            <summary id="settings-btn" class="ghost icon-btn" aria-label="Settings" title="Settings">${icon('settings', { size: 18 })}</summary>
+            <summary id="settings-btn" class="tb-btn ghost icon-btn" aria-label="Settings" title="Settings">${icon('settings', { size: 18 })}</summary>
             <div class="menu-content settings-options">
               <span class="menu-heading">Appearance</span>
               <div id="palette-settings-mount"></div>
@@ -91,7 +100,6 @@ export class AppShell {
           </details>
         </div>
       </div>
-      <div id="topbar-status" class="topbar-status" hidden></div>
       <input id="file-input" type="file" webkitdirectory multiple hidden>
       <dialog id="settings-dialog">
         <form method="dialog" id="settings-form">
@@ -155,6 +163,7 @@ export class AppShell {
     fileSelect.addEventListener('change', () => {
       if (fileSelect.value) {
         this.currentFile = fileSelect.value;
+        this.renderEmptyState();
         void this.host.openDocument(fileSelect.value);
       }
     });
@@ -166,6 +175,167 @@ export class AppShell {
 
     const themeMount = document.getElementById('theme-mount') as HTMLElement;
     mountThemeSwitcher(themeMount);
+    this.mountStatus();
+  }
+
+  /** The status line lives in the bottom bar, so progress and info
+   *  messages never push the workspace down while a model loads. */
+  private mountStatus(): void {
+    const node = document.createElement('div');
+    node.id = 'topbar-status';
+    node.className = 'status-text';
+    node.hidden = true;
+    node.setAttribute('role', 'status');
+    node.setAttribute('aria-live', 'polite');
+    const footer = document.querySelector('.project-footer');
+    (footer ?? document.getElementById('topbar'))?.prepend(node);
+  }
+
+  /** Mount the viewport's empty state. Called once the renderer has built
+   *  its DOM, because the overlay lives inside `.viewport-wrap`. */
+  mountEmptyState(): void {
+    const wrap = document.querySelector<HTMLElement>('.viewport-wrap');
+    if (!wrap || this.emptyState) {
+      return;
+    }
+    const node = document.createElement('div');
+    node.id = 'empty-state';
+    node.className = 'empty-state';
+    wrap.appendChild(node);
+    this.emptyState = node;
+    node.addEventListener('click', event => {
+      const target = (event.target as HTMLElement).closest<HTMLElement>('[data-empty-action]');
+      if (!target) {
+        return;
+      }
+      const action = target.dataset.emptyAction;
+      if (action === 'open-folder') {
+        void this.handleOpenDirectory();
+      } else if (action === 'pick-files') {
+        (document.getElementById('file-input') as HTMLInputElement).click();
+      } else if (action === 'reopen' && this.reopenHandle) {
+        const button = document.getElementById('reopen-directory') as HTMLButtonElement;
+        void this.reopenStoredHandle(this.reopenHandle, button);
+      } else if (action === 'open-file' && target.dataset.path) {
+        this.openCandidate(target.dataset.path);
+      }
+    });
+
+    // Folders can be dropped straight onto the viewport (Chromium exposes
+    // directory handles on drop; other browsers fall back to the buttons).
+    wrap.addEventListener('dragover', event => {
+      if (event.dataTransfer?.types.includes('Files')) {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'copy';
+        wrap.classList.add('drop-target');
+      }
+    });
+    wrap.addEventListener('dragleave', event => {
+      if (!wrap.contains(event.relatedTarget as Node | null)) {
+        wrap.classList.remove('drop-target');
+      }
+    });
+    wrap.addEventListener('drop', event => {
+      wrap.classList.remove('drop-target');
+      void this.handleDrop(event);
+    });
+    this.renderEmptyState();
+  }
+
+  private async handleDrop(event: DragEvent): Promise<void> {
+    const items = Array.from(event.dataTransfer?.items ?? []).filter(item => item.kind === 'file');
+    if (items.length === 0) {
+      return;
+    }
+    event.preventDefault();
+    // getAsFileSystemHandle must be called synchronously inside the drop
+    // event; the DataTransfer is neutered after the first await.
+    const item = items[0] as DataTransferItem & { getAsFileSystemHandle?: () => Promise<FileSystemHandle | null> };
+    const pending = typeof item.getAsFileSystemHandle === 'function' ? item.getAsFileSystemHandle() : null;
+    const handle = pending ? await pending.catch(() => null) : null;
+    if (handle && handle.kind === 'directory') {
+      const directory = handle as FileSystemDirectoryHandle;
+      void setStoredDirectoryHandle(directory).catch(() => undefined);
+      await this.scanHandle(directory);
+      return;
+    }
+    this.toast.push({
+      kind: 'info',
+      message: 'Drop a folder, not a single file',
+      detail: 'Meshes and included xacro files are resolved relative to the package folder. Use Open folder or Pick files if your browser does not support folder drops.'
+    });
+  }
+
+  private openCandidate(path: string): void {
+    const select = document.getElementById('file-select') as HTMLSelectElement;
+    select.value = path;
+    this.currentFile = path;
+    this.renderEmptyState();
+    void this.host.openDocument(path);
+  }
+
+  private renderEmptyState(): void {
+    const node = this.emptyState;
+    if (!node) {
+      return;
+    }
+    if (this.currentFile) {
+      node.hidden = true;
+      node.replaceChildren();
+      return;
+    }
+    node.hidden = false;
+    const canPickFolder = typeof window.showDirectoryPicker === 'function';
+    const reopen = !this.vfs && this.reopenHandle
+      ? `<button type="button" class="empty-btn primary" data-empty-action="reopen">Reopen ${escapeText(this.reopenHandle.name)}</button>`
+      : '';
+    const actions = `
+      <div class="empty-actions">
+        ${reopen}
+        ${canPickFolder ? `<button type="button" class="empty-btn${reopen ? '' : ' primary'}" data-empty-action="open-folder">${icon('folder', { size: 16 })}Open folder</button>` : ''}
+        <button type="button" class="empty-btn${canPickFolder ? '' : ' primary'}" data-empty-action="pick-files">Pick files</button>
+      </div>`;
+
+    if (!this.vfs) {
+      node.innerHTML = `
+        <div class="empty-card">
+          <h2 class="empty-title">Open a robot description</h2>
+          <p class="empty-body">Choose the root of a ROS package or workspace. URDF and xacro are expanded locally and meshes resolve through <code>package://</code> — nothing leaves this device.</p>
+          ${actions}
+          <p class="empty-foot">${canPickFolder ? 'You can also drop a folder here. ' : ''}Reads .urdf and .xacro with STL, DAE, OBJ and glTF meshes.</p>
+        </div>`;
+      return;
+    }
+
+    const root = `${this.vfs.root}/`;
+    const label = escapeText(this.vfs.label);
+    if (this.candidates.length === 0) {
+      node.innerHTML = `
+        <div class="empty-card">
+          <h2 class="empty-title">No robot files found</h2>
+          <p class="empty-body"><b>${label}</b> has no <code>.urdf</code> or <code>.xacro</code> files. Pick the package or workspace root that contains them.</p>
+          ${actions}
+        </div>`;
+      return;
+    }
+
+    const shown = this.candidates.slice(0, 8);
+    const rest = this.candidates.length - shown.length;
+    node.innerHTML = `
+      <div class="empty-card wide">
+        <h2 class="empty-title">Choose a robot</h2>
+        <p class="empty-body">${this.candidates.length} description files in <b>${label}</b></p>
+        <ul class="empty-files">
+          ${shown.map(path => {
+            const relative = path.startsWith(root) ? path.slice(root.length) : path;
+            const slash = relative.lastIndexOf('/');
+            const dir = slash >= 0 ? relative.slice(0, slash) : '';
+            const name = relative.slice(slash + 1);
+            return `<li><button type="button" data-empty-action="open-file" data-path="${escapeText(path)}">${icon('description', { size: 16 })}<span class="empty-file-name">${escapeText(name)}</span><span class="empty-file-dir"><bdi>${escapeText(dir)}</bdi></span></button></li>`;
+          }).join('')}
+        </ul>
+        ${rest > 0 ? `<p class="empty-foot">${rest} more in the file menu above</p>` : ''}
+      </div>`;
   }
 
   private async handleOpenDirectory(): Promise<void> {
@@ -275,6 +445,8 @@ export class AppShell {
     button.textContent = `Reopen ${handle.name}`;
     button.title = `Reopen the last folder: ${handle.name}`;
     button.addEventListener('click', () => void this.reopenStoredHandle(handle, button));
+    this.reopenHandle = handle;
+    this.renderEmptyState();
   }
 
   /** Re-grant permission for a stored handle (requires the user gesture this
@@ -295,11 +467,14 @@ export class AppShell {
         return;
       }
       button.hidden = true;
+      this.reopenHandle = null;
       await this.scanHandle(handle);
     } catch (error) {
       // A stale/invalid handle (folder moved/deleted, or NotFoundError on
       // permission) — drop it and fall back to the empty state.
       button.hidden = true;
+      this.reopenHandle = null;
+      this.renderEmptyState();
       void clearStoredDirectoryHandle().catch(() => undefined);
       const detail = error instanceof Error ? error.message : String(error);
       this.toast.push({ kind: 'error', message: 'Could not reopen the last folder', detail });
@@ -317,7 +492,7 @@ export class AppShell {
     this.vfs = vfs;
     setActiveVfs(vfs);
     this.populateFileSelect();
-    this.renderStatus({ type: 'info', message: `Loaded ${vfs.label}. Select a URDF file to view.` });
+    this.renderStatus({ type: 'info', message: `Opened ${vfs.label}` });
   }
 
   private populateFileSelect(): void {
@@ -325,15 +500,17 @@ export class AppShell {
     if (!this.vfs) {
       return;
     }
-    const candidates = this.vfs.allFiles().filter(path => URDF_PATTERNS.test(path));
+    const candidates = rankRobotFiles(this.vfs.allFiles().filter(path => URDF_PATTERNS.test(path)));
+    this.candidates = candidates;
     select.innerHTML = '';
     if (candidates.length === 0) {
-      select.appendChild(new Option('No URDF/xacro found', ''));
+      select.appendChild(new Option('No URDF or xacro found', ''));
       select.disabled = true;
+      this.renderEmptyState();
       return;
     }
     select.disabled = false;
-    select.appendChild(new Option(`${candidates.length} files — pick one`, ''));
+    select.appendChild(new Option(`Choose a robot (${candidates.length})`, ''));
     for (const path of candidates) {
       select.appendChild(new Option(path.replace(`${this.vfs.root}/`, ''), path));
     }
@@ -343,6 +520,7 @@ export class AppShell {
       this.currentFile = candidates[0];
       void this.host.openDocument(candidates[0]);
     }
+    this.renderEmptyState();
   }
 
   private renderStatus(status: HostStatus): void {
@@ -399,6 +577,30 @@ export class AppShell {
     dialog.addEventListener('close', onClose);
     dialog.showModal();
   }
+}
+
+/** Order description files so complete robots come before the helper
+ *  macros, argument files and SRDFs that live beside them. */
+function rankRobotFiles(paths: string[]): string[] {
+  const score = (path: string): number => {
+    const lower = path.toLowerCase();
+    const name = lower.slice(lower.lastIndexOf('/') + 1);
+    let value = 0;
+    if (/\.urdf(\.xacro)?$/.test(name)) value += 3;
+    if (/(^|\/)robots?\//.test(lower)) value += 2;
+    if (name.includes('srdf')) value -= 6;
+    if (/(macro|argument|common|util|inertial|transmission|gazebo|ros2_control|material|properties)/.test(name)) value -= 3;
+    return value;
+  };
+  const depth = (path: string): number => path.split('/').length;
+  return paths
+    .map(path => ({ path, score: score(path), depth: depth(path) }))
+    .sort((a, b) => b.score - a.score || a.depth - b.depth || a.path.localeCompare(b.path))
+    .map(entry => entry.path);
+}
+
+function escapeText(value: string): string {
+  return value.replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch] ?? ch);
 }
 
 function parseJsonObject(raw: string): Record<string, unknown> {

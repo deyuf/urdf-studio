@@ -17,28 +17,22 @@
   --us-fg:             light-dark(#252e29, #e5e9e0);
   --us-fg-muted:       light-dark(#616d64, #a9b4ab);
   --us-fg-faint:       light-dark(#727e74, #919c94);
-  --us-border:         light-dark(#dce1d6, #343e37);
-  --us-border-strong:  light-dark(#c4cdc0, #56645b);
-  --us-accent:         light-dark(#365c48, #abcbb2);
-  --us-accent-hover:   light-dark(#294a39, #bfdac4);
-  --us-accent-soft:    light-dark(rgba(54, 92, 72, 0.08), rgba(171, 203, 178, 0.12));
-  --us-accent-soft-hover: light-dark(rgba(54, 92, 72, 0.14), rgba(171, 203, 178, 0.2));
-  --us-on-accent:      light-dark(#ffffff, #172b20);
+  --us-border:         light-dark(#e1e5dc, #2d3530);
+  --us-border-strong:  light-dark(#cdd4c8, #414b44);
+  --us-accent:         light-dark(#2f6447, #8fc6a0);
+  --us-accent-hover:   light-dark(#25523a, #a5d3b3);
+  --us-accent-soft:    light-dark(rgba(47, 100, 71, 0.08), rgba(143, 198, 160, 0.12));
+  --us-accent-soft-hover: light-dark(rgba(47, 100, 71, 0.14), rgba(143, 198, 160, 0.2));
+  --us-on-accent:      light-dark(#ffffff, #0f2318);
   --us-success:        light-dark(#386447, #9bc5a1);
   --us-warning:        light-dark(#8b641c, #dec17d);
   --us-danger:         light-dark(#b13f36, #edaaa0);
-  --us-shadow-sm: light-dark(
-    0 1px 2px rgba(60, 64, 67, 0.08), 0 1px 3px 1px rgba(60, 64, 67, 0.05),
-    0 1px 2px rgba(0, 0, 0, 0.3),     0 1px 3px 1px rgba(0, 0, 0, 0.15)
-  );
-  --us-shadow-md: light-dark(
-    0 1px 3px rgba(60, 64, 67, 0.1),  0 4px 8px 3px rgba(60, 64, 67, 0.05),
-    0 1px 3px rgba(0, 0, 0, 0.4),     0 4px 8px 3px rgba(0, 0, 0, 0.15)
-  );
-  --us-shadow-lg: light-dark(
-    0 2px 6px rgba(60, 64, 67, 0.1),  0 8px 24px 4px rgba(60, 64, 67, 0.1),
-    0 2px 6px rgba(0, 0, 0, 0.4),     0 8px 24px 4px rgba(0, 0, 0, 0.3)
-  );
+  /* light-dark() only takes colors, so shadows switch via the
+     --us-shadow-color token instead of duplicating each stack. */
+  --us-shadow-color: light-dark(rgba(24, 33, 28, 0.08), rgba(0, 0, 0, 0.36));
+  --us-shadow-sm: 0 1px 2px var(--us-shadow-color);
+  --us-shadow-md: 0 1px 2px var(--us-shadow-color), 0 6px 16px -4px var(--us-shadow-color);
+  --us-shadow-lg: 0 2px 4px var(--us-shadow-color), 0 18px 40px -8px var(--us-shadow-color), 0 0 0 1px var(--us-shadow-color);
 
   /* Spacing scale (8px grid). */
   --us-space-1: 4px;
@@ -52,12 +46,18 @@
   /* Radii. */
   --us-radius-sm: 4px;
   --us-radius-md: 6px;
-  --us-radius-lg: 12px;
+  --us-radius-lg: 10px;
   --us-radius-pill: 6px;
 
+  /* Type scale. UI text is 13px; secondary 12px; captions 11px. */
+  --us-text-xs: 11px;
+  --us-text-sm: 12px;
+  --us-text-base: 13px;
+  --us-text-md: 14px;
+
   /* Typography. */
-  --us-font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-  --us-font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --us-font-sans: 'Inter', 'InterVariable', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --us-font-mono: 'JetBrains Mono', 'SF Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
   /* Drawing surface and syntax colors are deliberately distinct from chrome. */
   --us-viewport-bg: light-dark(#e8ece4, #191f1b);

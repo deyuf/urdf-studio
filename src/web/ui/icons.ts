@@ -34,7 +34,10 @@ export type IconName =
   | 'expand_less'
   | 'open_in_new'
   | 'download'
-  | 'content_copy';
+  | 'content_copy'
+  | 'folder'
+  | 'description'
+  | 'arrow_outward';
 
 interface IconDef {
   /** Inner SVG markup — paths only, no <svg> wrapper. */
@@ -92,6 +95,15 @@ const REGISTRY: Record<IconName, IconDef> = {
   },
   download: {
     paths: '<path d="M12 16L7 11L8.4 9.55L11 12.15V4H13V12.15L15.6 9.55L17 11ZM6 20Q5.175 20 4.588 19.413Q4 18.825 4 18V15H6V18H18V15H20V18Q20 18.825 19.413 19.413Q18.825 20 18 20Z"/>'
+  },
+  folder: {
+    paths: '<path d="M4 20q-.825 0-1.412-.587Q2 18.825 2 18V6q0-.825.588-1.412Q3.175 4 4 4h6l2 2h8q.825 0 1.413.588Q22 7.175 22 8v10q0 .825-.587 1.413Q20.825 20 20 20Zm0-2h16V8h-8.825l-2-2H4Z"/>'
+  },
+  description: {
+    paths: '<path d="M8 18h8v-2H8Zm0-4h8v-2H8Zm-2 8q-.825 0-1.412-.587Q4 20.825 4 20V4q0-.825.588-1.413Q5.175 2 6 2h8l6 6v12q0 .825-.587 1.413Q18.825 22 18 22Zm7-13V4H6v16h12V9Z"/>'
+  },
+  arrow_outward: {
+    paths: '<path d="M6.4 18 5 16.6 14.6 7H6V5h12v12h-2V8.4Z"/>'
   },
   content_copy: {
     paths: '<path d="M9 18Q8.175 18 7.588 17.413Q7 16.825 7 16V4Q7 3.175 7.588 2.587Q8.175 2 9 2H18Q18.825 2 19.413 2.587Q20 3.175 20 4V16Q20 16.825 19.413 17.413Q18.825 18 18 18ZM9 16H18V4H9ZM5 22Q4.175 22 3.588 21.413Q3 20.825 3 20V7H5V20H15V22Z"/>'

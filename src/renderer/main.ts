@@ -859,17 +859,19 @@ function clearMeshCache(): void {
 function renderSummary(data: LoadRobotMessage): void {
   const panel = qs('#panel-joints');
   setInnerHtml(panel, html`
-    <div class="panel-heading"><span>Robot overview</span><span class="muted">${data.metadata.robotName}</span></div>
-    <div class="summary">
-      <div class="metric"><b>${data.metadata.counts.links}</b><span>Links</span></div>
-      <div class="metric"><b>${data.metadata.counts.joints}</b><span>Joints</span></div>
-      <div class="metric"><b>${data.metadata.counts.movableJoints}</b><span>Movable</span></div>
+    <div class="overview">
+      <div class="overview-name" title="${data.metadata.robotName}">${data.metadata.robotName}</div>
+      <div class="summary">
+        <div class="metric"><b>${data.metadata.counts.links}</b><span>links</span></div>
+        <div class="metric"><b>${data.metadata.counts.joints}</b><span>joints</span></div>
+        <div class="metric"><b>${data.metadata.counts.movableJoints}</b><span>movable</span></div>
+      </div>
     </div>
     <div id="xacro-args-host"></div>
-    <div class="joint-section-heading"><span>Joint controls</span><label><input id="ignore-limits" type="checkbox"> Ignore limits</label></div>
+    <div class="joint-section-heading"><span>Joints</span><label><input id="ignore-limits" type="checkbox"> Ignore limits</label></div>
     <div class="joint-filter">
-      <input id="joint-search" type="search" placeholder="Search joints">
-      <label><input id="joint-modified-only" type="checkbox"> Only modified</label>
+      <input id="joint-search" type="search" placeholder="Filter joints" aria-label="Filter joints">
+      <label><input id="joint-modified-only" type="checkbox"> Modified only</label>
     </div>
     <div id="joint-groups"></div>
   `);
@@ -926,7 +928,7 @@ function renderJointPanel(data: LoadRobotMessage): void {
       .filter(state => state.group === group.name || (group.name === 'all' && Object.keys(state.joints).length > 0));
     return html`
       <details open data-group="${group.name}">
-        <summary>${group.name} (${group.joints.length})</summary>
+        <summary><span class="group-name">${group.name}</span><span class="group-count">${group.joints.length}</span></summary>
         <div class="detail-body">
           <div class="state-buttons">
             ${statesForGroup.map(state => html`<button data-state="${state.group}:${state.name}">${state.name}</button>`)}
@@ -937,7 +939,11 @@ function renderJointPanel(data: LoadRobotMessage): void {
   })}`);
 
   qsa<HTMLInputElement>('[data-joint-slider]').forEach(slider => {
-    slider.addEventListener('input', () => setJointValue(slider.dataset.jointSlider!, Number(slider.value), true));
+    paintSlider(slider);
+    slider.addEventListener('input', () => {
+      paintSlider(slider);
+      setJointValue(slider.dataset.jointSlider!, Number(slider.value), true);
+    });
   });
   qsa<HTMLInputElement>('[data-joint-number]').forEach(input => {
     input.addEventListener('change', () => setJointValue(input.dataset.jointNumber!, Number(input.value), true));
@@ -1036,7 +1042,20 @@ function setJointValue(jointName: string, value: number, notify: boolean): void 
 function syncJointInputs(jointName: string, value: number): void {
   qsa<HTMLInputElement>(`[data-joint-slider="${cssEscape(jointName)}"], [data-joint-number="${cssEscape(jointName)}"]`).forEach(input => {
     input.value = input.type === 'number' ? value.toFixed(3) : String(value);
+    if (input.type === 'range') {
+      paintSlider(input);
+    }
   });
+}
+
+/** Expose the slider's position as `--fill` so CSS can draw the filled
+ *  part of the track (WebKit has no native progress pseudo-element). */
+function paintSlider(input: HTMLInputElement): void {
+  const min = Number(input.min);
+  const max = Number(input.max);
+  const value = Number(input.value);
+  const fraction = max > min ? (value - min) / (max - min) : 0;
+  input.style.setProperty('--fill', `${(Math.max(0, Math.min(1, fraction)) * 100).toFixed(2)}%`);
 }
 
 function applyPose(pose: Record<string, number>): void {
@@ -1106,8 +1125,8 @@ function renderChecks(data: LoadRobotMessage): void {
   if (report.diagnostics.length === 0) {
     setInnerHtml(panel, html`
       <div class="checks-summary">
-        <div class="health-reading"><span class="health-score health-good">100</span><span class="health-label">/ 100<br>Model health</span></div>
-        <div class="checks-counts"><span class="count-pill">No diagnostics</span></div>
+        ${renderHealthReading(100, 'health-good')}
+        <p class="checks-clean">No issues found. Structure, inertias, limits and mesh references all pass.</p>
       </div>
     `);
     return;
@@ -1131,14 +1150,13 @@ function renderChecks(data: LoadRobotMessage): void {
       return html`
         <details class="checks-group" open>
           <summary class="checks-group-header">
-            <span>${code} · ${description}</span>
-            <span class="muted">${diagnostics.length}</span>
+            <span class="checks-group-title"><span class="sev-dot sev-${diagnostics[0].severity}" aria-hidden="true"></span><span class="checks-code">${code}</span>${description}</span>
+            <span class="checks-group-count">${diagnostics.length}</span>
           </summary>
           <ul class="checks-group-list">
             ${diagnostics.map(diag => html`
               <li class="checks-group-item severity-${diag.severity}" data-line="${diag.line ?? ''}">
-                <button class="check-message" type="button">${diag.message}
-                ${diag.line ? html`<span class="check-line">line ${diag.line}</span>` : ''}</button>
+                <button class="check-message" type="button"><span class="check-text">${diag.message}</span>${diag.line ? html`<span class="check-line">L${diag.line}</span>` : ''}</button>
               </li>`)}
           </ul>
         </details>`;
@@ -1146,11 +1164,11 @@ function renderChecks(data: LoadRobotMessage): void {
 
   setInnerHtml(panel, html`
     <div class="checks-summary">
-      <div class="health-reading"><span class="health-score ${healthClass}" title="Health score (0-100)">${report.healthScore.toFixed(0)}</span><span class="health-label">/ 100<br>Model health</span></div>
+      ${renderHealthReading(report.healthScore, healthClass)}
       <div class="checks-counts">
-        ${report.counts.error > 0 ? html`<span class="count-pill">${report.counts.error} error</span>` : ''}
-        ${report.counts.warning > 0 ? html`<span class="count-pill">${report.counts.warning} warning</span>` : ''}
-        ${report.counts.info > 0 ? html`<span class="count-pill">${report.counts.info} info</span>` : ''}
+        ${report.counts.error > 0 ? html`<span class="count-pill sev-error"><span class="sev-dot sev-error" aria-hidden="true"></span>${plural(report.counts.error, 'error')}</span>` : ''}
+        ${report.counts.warning > 0 ? html`<span class="count-pill sev-warning"><span class="sev-dot sev-warning" aria-hidden="true"></span>${plural(report.counts.warning, 'warning')}</span>` : ''}
+        ${report.counts.info > 0 ? html`<span class="count-pill sev-info"><span class="sev-dot sev-info" aria-hidden="true"></span>${report.counts.info} info</span>` : ''}
       </div>
     </div>
     ${groupHtml}
@@ -1167,6 +1185,20 @@ function renderChecks(data: LoadRobotMessage): void {
   });
 }
 
+function renderHealthReading(score: number, healthClass: string): ReturnType<typeof html> {
+  const value = Math.max(0, Math.min(100, Math.round(score)));
+  return html`
+    <div class="health-reading ${healthClass}">
+      <span class="health-label">Model health</span>
+      <span class="health-value"><span class="health-score ${healthClass}" title="Health score (0-100)">${value}</span><span class="health-max">/100</span></span>
+    </div>
+    <div class="health-meter ${healthClass}" role="meter" aria-label="Model health" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${value}"><span style="width: ${value}%"></span></div>`;
+}
+
+function plural(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? '' : 's'}`;
+}
+
 function severityRank(severity: 'error' | 'warning' | 'info'): number {
   return severity === 'error' ? 3 : severity === 'warning' ? 2 : 1;
 }
@@ -1174,19 +1206,30 @@ function severityRank(severity: 'error' | 'warning' | 'info'): number {
 function renderLinks(tree: LinkTreeNode[]): void {
   const panel = qs('#panel-links');
   if (tree.length === 0) {
-    setInnerHtml(panel, html`<div class="muted">No link tree.</div>`);
+    setInnerHtml(panel, html`<p class="panel-empty">This model has no link tree.</p>`);
   } else {
     setInnerHtml(panel, html`<ul>${tree.map(renderTreeNode)}</ul>`);
   }
   qsa<HTMLButtonElement>('[data-link]').forEach(button => {
     button.addEventListener('click', () => selectLink(button.dataset.link));
   });
+  markSelectedTreeLink();
+}
+
+function markSelectedTreeLink(): void {
+  qsa<HTMLButtonElement>('#panel-links [data-link]').forEach(button => {
+    if (button.dataset.link === selectedLink) {
+      button.setAttribute('aria-current', 'true');
+    } else {
+      button.removeAttribute('aria-current');
+    }
+  });
 }
 
 function renderTreeNode(node: LinkTreeNode): ReturnType<typeof html> {
   return html`
     <li>
-      <button data-link="${node.link}">${node.link}${node.joint ? html` <span class="muted">via ${node.joint}</span>` : ''}</button>
+      <button data-link="${node.link}" title="${node.joint ? `${node.link} — via ${node.joint}` : node.link}"><span class="tree-link">${node.link}</span>${node.joint ? html`<span class="tree-joint muted">${node.joint}</span>` : ''}</button>
       ${node.children.length > 0 ? html`<ul>${node.children.map(renderTreeNode)}</ul>` : ''}
     </li>
   `;
@@ -1195,7 +1238,7 @@ function renderTreeNode(node: LinkTreeNode): ReturnType<typeof html> {
 function renderInspector(): void {
   const panel = qs('#panel-inspector');
   if (!currentData || !selectedLink) {
-    setInnerHtml(panel, html`<div class="muted">Select a link in the viewport or link tree.</div>`);
+    setInnerHtml(panel, html`<p class="panel-empty">Select a link in the viewport or link tree.</p>`);
     return;
   }
   const link = currentData.metadata.links[selectedLink];
@@ -1206,6 +1249,10 @@ function renderInspector(): void {
     ? `${parentJoint.limit.lower ?? ''} .. ${parentJoint.limit.upper ?? ''}`
     : '';
   setInnerHtml(panel, html`
+    <div class="inspector-head">
+      <span class="inspector-title" title="${selectedLink}">${selectedLink}</span>
+      <span class="inspector-kind">${parentJoint?.type ?? 'root'}</span>
+    </div>
     <div class="inspector-grid">
       <b>Link</b><div class="value">${selectedLink}</div>
       <b>Parent</b><div class="value">${parentJoint?.name ?? 'none'}</div>
@@ -1213,7 +1260,7 @@ function renderInspector(): void {
       <b>Axis</b><div class="value">${parentJoint ? parentJoint.axis.join(' ') : ''}</div>
       <b>Limit</b><div class="value">${limitText}</div>
       <b>Mimic</b><div class="value">${parentJoint?.mimic ? formatMimic(parentJoint.mimic) : 'none'}</div>
-      <b>Children</b><div class="value">${link?.childJoints.join(', ') || 'none'}</div>
+      <b>Children</b><div class="value">${link?.childJoints.length ? link.childJoints.map(child => html`<span class="value-line">${child}</span>`) : 'none'}</div>
       <b>Mass</b><div class="value">${inertial ? `${inertial.mass.toFixed(4)} kg` : 'n/a'}</div>
       ${inertial ? html`<b>CoM</b><div class="value">${inertial.origin.map(value => value.toFixed(3)).join(' ')}</div>` : ''}
     </div>
@@ -1295,6 +1342,7 @@ function selectLink(linkName: string | undefined): void {
     vscode.postMessage({ type: 'selectionChanged', link: linkName, joint: currentData?.metadata.links[linkName]?.parentJoint });
   }
   renderInspector();
+  markSelectedTreeLink();
   applyFramesMode();
   highlightSourceForLink(linkName);
   requestRevealForLink(linkName);
@@ -1832,37 +1880,45 @@ function renderToolsPanel(): void {
     ? Object.values(currentData.metadata.links).filter(link => link.childJoints.length === 0)
     : [];
   setInnerHtml(panel, html`
-    <h3>Measure</h3>
-    <div class="tool-block">
+    <section class="tool-block">
+      <h3>Measure</h3>
+      <p class="tool-hint muted" id="measure-status">Click two points on the robot to measure distance.</p>
+      <div id="measure-readout" class="measure-readout"></div>
       <div class="row-buttons">
         <button id="measure-toggle" class="primary">Start measuring</button>
         <button id="measure-clear">Clear</button>
       </div>
-      <div class="muted" id="measure-status">Click two points on the robot to measure distance.</div>
-      <div id="measure-readout" class="measure-readout"></div>
-    </div>
-    <h3>Reachability</h3>
-    <div class="tool-block">
-      <label>Tip link <select id="reach-tip">${tipLinks.map(link => html`<option value="${link.name}">${link.name}</option>`)}</select></label>
-      <label>Samples <input id="reach-samples" type="number" min="50" max="20000" step="50" value="1000"></label>
-      <button id="reach-run" class="primary">Sample</button>
-      <button id="reach-clear">Clear</button>
-      <span class="muted" id="reach-status"></span>
-    </div>
-    <h3>Collision pairs (SRDF)</h3>
-    <div class="tool-block">
-      <label>Random poses <input id="srdf-samples" type="number" min="100" max="20000" step="100" value="1000"></label>
-      <button id="srdf-run" class="primary">Analyze</button>
-      <button id="srdf-write" disabled>Write to SRDF</button>
-      <div class="muted" id="srdf-status">Run analysis to find never-colliding pairs.</div>
-      <ul id="srdf-results" class="srdf-results"></ul>
-    </div>
-    <h3>Screenshot</h3>
-    <div class="tool-block">
+    </section>
+    <section class="tool-block">
+      <h3>Reachability</h3>
+      <p class="tool-hint muted">Sample random joint configurations and plot where the tip link can reach.</p>
+      <div class="tool-fields">
+        <label><span>Tip link</span><select id="reach-tip">${tipLinks.map(link => html`<option value="${link.name}">${link.name}</option>`)}</select></label>
+        <label><span>Samples</span><input id="reach-samples" type="number" min="50" max="20000" step="50" value="1000"></label>
+      </div>
       <div class="row-buttons">
-        <button id="screenshot-download" class="primary" title="Save the current 3D view as a PNG">Save PNG</button>
-        <button id="screenshot-copy" title="Copy the current 3D view to the clipboard">Copy to clipboard</button>
-        <label title="Higher = sharper, larger file"><span class="muted">Scale</span>
+        <button id="reach-run" class="primary">Sample</button>
+        <button id="reach-clear">Clear</button>
+        <span class="tool-status muted" id="reach-status"></span>
+      </div>
+    </section>
+    <section class="tool-block">
+      <h3>Collision pairs</h3>
+      <p class="tool-hint muted" id="srdf-status">Find link pairs that never collide, for an SRDF <code>disable_collisions</code> list.</p>
+      <div class="tool-fields">
+        <label><span>Random poses</span><input id="srdf-samples" type="number" min="100" max="20000" step="100" value="1000"></label>
+      </div>
+      <div class="row-buttons">
+        <button id="srdf-run" class="primary">Analyze</button>
+        <button id="srdf-write" disabled>Write to SRDF</button>
+      </div>
+      <ul id="srdf-results" class="srdf-results"></ul>
+    </section>
+    <section class="tool-block">
+      <h3>Screenshot</h3>
+      <p class="tool-hint muted" id="screenshot-status">PNG of the current 3D viewport, without UI chrome.</p>
+      <div class="tool-fields">
+        <label title="Higher is sharper and larger"><span>Scale</span>
           <select id="screenshot-scale">
             <option value="1">1×</option>
             <option value="2" selected>2×</option>
@@ -1871,16 +1927,19 @@ function renderToolsPanel(): void {
           </select>
         </label>
       </div>
-      <div class="muted" id="screenshot-status">PNG of the current 3D viewport, no UI chrome.</div>
-    </div>
-    <h3>Export</h3>
-    <div class="tool-block">
       <div class="row-buttons">
-        <button id="export-bom">Export BOM (CSV)</button>
-        <button id="export-report">Export Report (PDF)</button>
+        <button id="screenshot-download" class="primary" title="Save the current 3D view as a PNG">Save PNG</button>
+        <button id="screenshot-copy" title="Copy the current 3D view to the clipboard">Copy</button>
       </div>
-      <div class="muted" id="export-status">One row per link; PDF bundles screenshot + checks + summary.</div>
-    </div>
+    </section>
+    <section class="tool-block">
+      <h3>Export</h3>
+      <p class="tool-hint muted" id="export-status">Parts list with one row per link, or a PDF report with screenshot, checks and summary.</p>
+      <div class="row-buttons">
+        <button id="export-bom">Parts list · CSV</button>
+        <button id="export-report">Report · PDF</button>
+      </div>
+    </section>
   `);
   qs('#measure-toggle').addEventListener('click', () => toggleMeasureMode());
   qs('#measure-clear').addEventListener('click', () => clearMeasurement());
