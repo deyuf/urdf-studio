@@ -1,6 +1,7 @@
 // Runs INSIDE the VS Code extension host (see run.cjs).
 //
-// Validates loading, source saving, pose restoration, and included-file reload.
+// Validates loading, source saving (and that Source-tab saves never overwrite
+// xacro), pose restoration, and included-file reload.
 // Opens test/fixtures/franka_description/robots/fr3/fr3.urdf.xacro with the
 // URDF Studio custom editor and watches the URDF_STUDIO_TEST_LOG hook file
 // (written by src/extension.ts) for the host↔webview handshake. Success is
@@ -138,6 +139,51 @@ async function verifyBusinessFlows(workspaceRoot, logFile) {
     await until(async () => (await frame.locator('#panel-links').textContent()).includes('after_reload'), 'included-file watcher reload');
     assert.ok(!(await frame.locator('#panel-links').textContent()).includes('before_reload'));
     checkpoint('include-reloaded');
+
+    // Ctrl+S in the Source tab of a xacro must never write the expanded URDF
+    // over the .xacro. It offers "Save expanded URDF as…" instead. Use VS
+    // Code's in-workbench save dialog so the test can drive it over CDP.
+    await vscode.workspace.getConfiguration('files').update('simpleDialog.enable', true, vscode.ConfigurationTarget.Global);
+    const xacroBefore = fs.readFileSync(xacro, 'utf8');
+    const expandedTarget = path.join(dir, 'robot.urdf');
+    fs.rmSync(expandedTarget, { force: true });
+    const dialogCount = () => (fs.readFileSync(logFile, 'utf8').match(/saveSource:xacroDialog/g) ?? []).length;
+    const saveXacroSource = async () => {
+      const before = dialogCount();
+      await frame.locator('.tab[data-tab="source"]').click();
+      const pane = frame.locator('#panel-source');
+      await until(async () => (await pane.locator('.source-meta').textContent()).includes('expanded xacro'), 'xacro source tab');
+      assert.match(await pane.locator('.status-xacro-save').textContent(), /robot\.xacro is never overwritten/);
+      if (!(await pane.locator('.source-edit-toggle').getAttribute('class')).includes('active')) {
+        await pane.locator('.source-edit-toggle').click();
+      }
+      await pane.locator('.cm-content').click();
+      await pane.locator('.cm-content').press('Control+End');
+      await pane.locator('.cm-content').press('Enter');
+      await pane.locator('.cm-content').pressSequentially('<!-- expanded save -->');
+      await pane.locator('.cm-content').press('Control+s');
+      await until(() => dialogCount() > before, 'xacro save-as dialog');
+      return findQuickInput(browser);
+    };
+
+    // Cancelling the dialog writes nothing anywhere.
+    let input = await saveXacroSource();
+    await input.press('Escape');
+    await new Promise(resolve => setTimeout(resolve, 1_000));
+    assert.equal(fs.readFileSync(xacro, 'utf8'), xacroBefore, 'xacro modified after cancelled save');
+    assert.ok(!fs.existsSync(expandedTarget), 'expanded URDF written despite cancel');
+
+    // Accepting writes the expanded URDF next to the source; the xacro is untouched.
+    input = await saveXacroSource();
+    assert.match(await input.inputValue(), /robot\.urdf$/, 'default save name should be robot.urdf');
+    await input.fill(expandedTarget);
+    await input.press('Enter');
+    await until(() => fs.existsSync(expandedTarget) && fs.readFileSync(expandedTarget, 'utf8').includes('<!-- expanded save -->'), 'expanded URDF saved');
+    const expanded = fs.readFileSync(expandedTarget, 'utf8');
+    assert.match(expanded, /<link name="after_reload"/);
+    assert.doesNotMatch(expanded, /xacro:include/);
+    assert.equal(fs.readFileSync(xacro, 'utf8'), xacroBefore, 'xacro modified by Source-tab save');
+    checkpoint('xacro-source-protected');
   } finally {
     await vscode.commands.executeCommand('workbench.action.closeAllEditors');
     await browser.close(); // Disconnects CDP; runTests owns the Electron process.
@@ -164,6 +210,26 @@ async function findPreview(browser, joint) {
     }
     return false;
   }, 'loaded preview frame');
+  return result;
+}
+
+// VS Code's simple file dialog is a quick-input in the workbench page.
+async function findQuickInput(browser) {
+  let result;
+  await until(async () => {
+    for (const context of browser.contexts()) {
+      for (const page of context.pages()) {
+        try {
+          const input = page.locator('.quick-input-widget .quick-input-box input');
+          if (await input.count() && await input.first().isVisible()) {
+            result = input.first();
+            return true;
+          }
+        } catch { /* Page may be navigating. */ }
+      }
+    }
+    return false;
+  }, 'save dialog input');
   return result;
 }
 

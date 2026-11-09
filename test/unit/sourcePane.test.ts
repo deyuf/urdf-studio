@@ -99,6 +99,35 @@ test('mountSourcePane shows the file name and (expanded xacro) hint for xacro fo
   }
 });
 
+test('mountSourcePane warns that xacro saves go to a separate .urdf', () => {
+  const host = freshHost();
+  const pane = mountSourcePane(host, { fileName: 'arm.urdf.xacro', format: 'xacro', urdf: '<robot/>' });
+  try {
+    const note = host.querySelector('.editor-status .status-xacro-save');
+    assert.ok(note, 'xacro save notice missing');
+    assert.match(note!.textContent ?? '', /\.urdf/);
+    assert.match(note!.textContent ?? '', /arm\.urdf\.xacro is never overwritten/);
+    assert.match(note!.getAttribute('title') ?? '', /Ctrl\/Cmd\+S/);
+    // Survives a diagnostics refresh (the status bar is re-rendered).
+    pane.refreshDiagnostics([{ severity: 'warning', message: 'w', code: 'X-002', line: 1 }]);
+    assert.ok(host.querySelector('.editor-status .status-xacro-save'));
+  } finally {
+    pane.dispose();
+    host.remove();
+  }
+});
+
+test('mountSourcePane shows no xacro save notice for plain URDF', () => {
+  const host = freshHost();
+  const pane = mountSourcePane(host, { fileName: 'arm.urdf', format: 'urdf', urdf: '<robot/>' });
+  try {
+    assert.equal(host.querySelector('.status-xacro-save'), null);
+  } finally {
+    pane.dispose();
+    host.remove();
+  }
+});
+
 test('mountSourcePane renders edit + fullscreen toggle buttons in the toolbar', () => {
   const host = freshHost();
   const pane = mountSourcePane(host, { fileName: 'r.urdf', format: 'urdf', urdf: '<robot/>' });

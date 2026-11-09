@@ -8,6 +8,7 @@ import { renderRobotDocument, setLogger } from './core/xacro';
 import { analyzeUrdf } from './core/urdfAnalysis';
 import { loadSemanticMetadata, mergeDisableCollisionsIntoSrdf, parseSrdf } from './core/srdf';
 import { escapeXmlText } from './core/escapeXml';
+import { expandedUrdfFileName, isXacroPath } from './core/sourceSave';
 import type { DisableCollisionEntry, PackageMap, PoseBookmark, PreviewState, RobotMetadata, StudioDiagnostic } from './core/types';
 import { registerLanguageFeatures } from './languageFeatures';
 
@@ -248,7 +249,10 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
     if (overrideUrdf !== undefined) {
       rendered = {
         sourcePath: preview.document.uri.fsPath,
-        format: 'urdf',
+        // Keep reporting the document's real format so the renderer still
+        // knows the Source tab holds expanded xacro (and never treats it as
+        // the on-disk text).
+        format: isXacroPath(preview.document.uri.fsPath) ? 'xacro' : 'urdf',
         urdf: overrideUrdf,
         xacroArgs: [],
         includedFiles: [],
@@ -620,6 +624,13 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
   }
 
   private async saveSource(uri: vscode.Uri, text: string): Promise<void> {
+    if (isXacroPath(uri.fsPath)) {
+      // The Source tab holds the *expanded* URDF; writing it over the .xacro
+      // would destroy macros, properties, includes and args. Offer a
+      // separate .urdf instead and never touch the xacro source.
+      await this.saveExpandedXacro(uri, text);
+      return;
+    }
     try {
       await vscode.workspace.fs.writeFile(uri, Buffer.from(text, 'utf8'));
       void vscode.window.setStatusBarMessage(`URDF Studio: saved ${vscode.workspace.asRelativePath(uri)}.`, 2500);
@@ -628,6 +639,38 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
     } catch (error) {
       log(`saveSource failed: ${String(error)}`);
       void vscode.window.showErrorMessage(`URDF Studio: could not save source (${error instanceof Error ? error.message : String(error)}).`);
+    }
+  }
+
+  private async saveExpandedXacro(uri: vscode.Uri, text: string): Promise<void> {
+    const sourceName = path.basename(uri.fsPath);
+    const defaultUri = vscode.Uri.file(path.join(path.dirname(uri.fsPath), expandedUrdfFileName(sourceName)));
+    testLog('saveSource:xacroDialog');
+    const target = await vscode.window.showSaveDialog({
+      title: `Save expanded URDF as… (${sourceName} will not be modified)`,
+      saveLabel: 'Save Expanded URDF',
+      defaultUri,
+      filters: { URDF: ['urdf'] }
+    });
+    if (!target) {
+      void vscode.window.setStatusBarMessage(`URDF Studio: not saved — ${sourceName} was not modified.`, 4000);
+      return;
+    }
+    if (isXacroPath(target.fsPath)) {
+      void vscode.window.showWarningMessage(
+        'URDF Studio will not write expanded URDF over xacro source. Choose a .urdf file name instead.'
+      );
+      return;
+    }
+    try {
+      await vscode.workspace.fs.writeFile(target, Buffer.from(text, 'utf8'));
+      testLog(`saveSource:wrote:${target.fsPath}`);
+      void vscode.window.showInformationMessage(
+        `URDF Studio: expanded URDF saved to ${vscode.workspace.asRelativePath(target)}. ${sourceName} was not modified.`
+      );
+    } catch (error) {
+      log(`saveExpandedXacro failed: ${String(error)}`);
+      void vscode.window.showErrorMessage(`URDF Studio: could not save expanded URDF (${error instanceof Error ? error.message : String(error)}).`);
     }
   }
 

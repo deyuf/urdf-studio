@@ -1,6 +1,6 @@
 import { startStaticServer } from './helpers';
 import { expect, test } from '@playwright/test';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
@@ -479,4 +479,47 @@ test.describe('web shell', () => {
     expect(csvDownload!.text).toContain('link,parent_joint');
     expect(csvDownload!.name).toMatch(/\.csv$/);
   });
+
+  // Ctrl+S in the Source tab must never hand back a file that could be
+  // mistaken for (and saved over) the xacro source: the expanded result is
+  // downloaded under a .urdf name. Plain URDF keeps its own name.
+  for (const { file, expected, joint } of [
+    { file: 'model.xacro', expected: 'model.urdf', joint: 'fixture_joint' },
+    { file: 'franka_primitives.urdf', expected: 'franka_primitives.urdf', joint: 'fr3_joint1' }
+  ]) {
+    test(`Source tab save downloads ${file} as ${expected}`, async ({ page, browserName }) => {
+      test.skip(browserName !== 'chromium', 'Headless Firefox does not honour webkitdirectory in CI.');
+      await page.goto(server.url);
+      if (await page.locator('dialog.onboarding').isVisible()) {
+        await page.locator('[data-action="skip"]').click();
+      }
+      await page.setInputFiles('#file-input', FIXTURE_DIR);
+      await expect(page.locator('#file-select')).toBeEnabled({ timeout: 10_000 });
+      const target = await page.locator('#file-select option').evaluateAll((opts, name) => {
+        const found = opts.find(o => (o as HTMLOptionElement).value.split('/').pop() === name);
+        return found ? (found as HTMLOptionElement).value : '';
+      }, file);
+      expect(target, `${file} must be among the indexed files`).not.toEqual('');
+      await page.locator('#file-select').selectOption(target);
+      await expect(page.locator(`[data-joint-slider="${joint}"]`)).toBeVisible({ timeout: 15_000 });
+
+      await page.locator('.tab[data-tab="source"]').click();
+      await page.locator('#panel-source .source-edit-toggle').click();
+      await page.locator('#panel-source .cm-content').click();
+      const downloadPromise = page.waitForEvent('download', { timeout: 10_000 });
+      await page.keyboard.press('Control+s');
+      const download = await downloadPromise;
+      expect(download.suggestedFilename()).toBe(expected);
+      const text = readFileSync(await download.path(), 'utf8');
+      expect(text).toContain(`name="${joint}"`);
+      if (file.endsWith('.xacro')) {
+        // Expanded output: no xacro directives survive, yaml-driven
+        // properties are substituted.
+        expect(text).not.toMatch(/<xacro:/);
+        expect(text).not.toContain('${');
+        expect(text).toContain('lower="-0.5"');
+        await expect(page.locator('#topbar-status')).toContainText('model.xacro was not modified');
+      }
+    });
+  }
 });

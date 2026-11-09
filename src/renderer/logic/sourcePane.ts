@@ -136,6 +136,10 @@ export function mountSourcePane(host: HTMLElement, input: SourcePaneInput): Sour
     host.dispatchEvent(event);
   });
 
+  // For xacro the editor shows the *expanded* URDF, so saving can never go
+  // back to the .xacro. Say so up front instead of surprising the user.
+  const xacroSaveNote = input.format === 'xacro' ? expandedSaveNote(input.fileName) : undefined;
+
   function renderStatus(diagnostics: StudioDiagnostic[]): void {
     const errors = diagnostics.filter(d => d.severity === 'error').length;
     const warnings = diagnostics.filter(d => d.severity === 'warning').length;
@@ -155,6 +159,13 @@ export function mountSourcePane(host: HTMLElement, input: SourcePaneInput): Sour
       warnEl.className = 'status-dirty';
       warnEl.textContent = `${warnings} warning${warnings === 1 ? '' : 's'}`;
       status.appendChild(warnEl);
+    }
+    if (xacroSaveNote) {
+      const noteEl = document.createElement('span');
+      noteEl.className = 'status-xacro-save';
+      noteEl.textContent = xacroSaveNote.short;
+      noteEl.title = xacroSaveNote.long;
+      status.appendChild(noteEl);
     }
   }
 
@@ -183,5 +194,15 @@ export function mountSourcePane(host: HTMLElement, input: SourcePaneInput): Sour
     dispose() {
       editor.dispose();
     }
+  };
+}
+
+function expandedSaveNote(fileName: string): { short: string; long: string } {
+  return {
+    short: `Save writes expanded URDF to a separate .urdf — ${fileName} is never overwritten`,
+    long:
+      `This tab shows the expanded result of ${fileName}. Ctrl/Cmd+S saves it as a new ` +
+      `.urdf file (VS Code asks where; the browser downloads it). Edit the .xacro itself to ` +
+      `keep macros, properties, includes and args.`
   };
 }

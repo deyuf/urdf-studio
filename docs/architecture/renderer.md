@@ -40,6 +40,9 @@ renderer → host
   requestDeleteBookmark      user removed a bookmark
   requestRenameBookmark      user renamed a bookmark
   requestWriteDisableCollisions  user clicked Write SRDF in the Tools panel
+  previewEdit                live edit from the Source tab (already-expanded URDF)
+  requestSaveSource          Ctrl/Cmd+S in the Source tab; for xacro the host
+                             saves/downloads a separate .urdf, never the .xacro
 ```
 
 In VS Code this rides on `webview.postMessage` between the extension

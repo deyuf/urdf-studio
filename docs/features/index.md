@@ -27,6 +27,8 @@ with controls, behavior, and edge cases described in detail.
 
 - [Diagnostics (Checks panel)](./diagnostics.html) — error catalog, what
   triggers each one, how to silence them.
+- [Source editing](./editing.html) — the Source tab editor, live preview,
+  saving, and why xacro sources are never overwritten.
 - [Tools](./tools.html) — reachability sampling, never-colliding pair
   detection, SRDF authoring.
 

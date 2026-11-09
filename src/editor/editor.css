@@ -246,6 +246,16 @@
   color: var(--vscode-editorError-foreground, #f48771);
 }
 
+/* Xacro save notice: pushed to the right, truncates on narrow panels (full
+   text stays available in the tooltip). */
+#panel-source .editor-status .status-xacro-save {
+  margin-left: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ---- Checks panel: health score + rule grouping ------------------------- */
 
 .checks-summary {

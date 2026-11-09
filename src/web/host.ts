@@ -8,6 +8,7 @@ import { renderRobotDocument } from '../core/xacro';
 import { analyzeUrdf } from '../core/urdfAnalysis';
 import { loadSemanticMetadata, mergeDisableCollisionsIntoSrdf, parseSrdf } from '../core/srdf';
 import { escapeXmlText } from '../core/escapeXml';
+import { expandedUrdfFileName, isXacroPath } from '../core/sourceSave';
 import type {
   CameraSnapshot,
   DisableCollisionEntry,
@@ -154,7 +155,7 @@ export class WebHost {
       // analyze the supplied text directly.
       let rendered: Awaited<ReturnType<typeof renderRobotDocument>>;
       if (overrideUrdf !== undefined) {
-        rendered = { sourcePath: docPath, format: 'urdf', urdf: overrideUrdf, xacroArgs: [], includedFiles: [], diagnostics: [] };
+        rendered = { sourcePath: docPath, format: isXacroPath(docPath) ? 'xacro' : 'urdf', urdf: overrideUrdf, xacroArgs: [], includedFiles: [], diagnostics: [] };
       } else {
         // Pre-warm yaml cache so xacro's sync load_yaml works in the browser.
         // Scoped to the document's directory + the standard ROS subtrees of
@@ -491,9 +492,18 @@ export class WebHost {
     if (!this.active) {
       return;
     }
-    const name = posixPath.basename(this.active.path) || 'robot.urdf';
+    // For xacro the Source tab holds the expanded URDF, so the download must
+    // be named .urdf — never the .xacro name it would be mistaken for.
+    const sourceName = posixPath.basename(this.active.path);
+    const xacro = isXacroPath(sourceName);
+    const name = (xacro ? expandedUrdfFileName(sourceName) : sourceName) || 'robot.urdf';
     triggerDownload(new Blob([text], { type: 'application/xml' }), name);
-    this.setStatus({ type: 'info', message: `Source downloaded: ${name}` });
+    this.setStatus({
+      type: 'info',
+      message: xacro
+        ? `Expanded URDF downloaded: ${name} (${sourceName} was not modified)`
+        : `Source downloaded: ${name}`
+    });
   }
 
   private downloadReport(base64: string, filename?: string): void {
