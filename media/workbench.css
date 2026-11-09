@@ -96,17 +96,6 @@
 }
 #app .toolbar #save-pose.primary:hover { background: var(--wb-hover); }
 
-#app #bookmark-select {
-  appearance: none;
-  max-width: 160px;
-  padding-right: 26px;
-  background-image:
-    linear-gradient(45deg, transparent 50%, var(--wb-muted) 50%),
-    linear-gradient(135deg, var(--wb-muted) 50%, transparent 50%);
-  background-position: calc(100% - 13px) 52%, calc(100% - 9px) 52%;
-  background-size: 4px 4px;
-  background-repeat: no-repeat;
-}
 
 #app .toolbar #palette-toggle { color: var(--wb-muted); }
 
@@ -182,7 +171,87 @@
 
 #app .menu-content input[type='checkbox'] { margin: 0; }
 
-#app #export-menu .menu-content { left: auto; right: 0; }
+#app #export-menu .menu-content,
+#app #bookmarks-menu .menu-content { left: auto; right: 0; }
+
+/* Bookmarks: apply on click, delete on ×, name a new one inline. */
+#app .bookmark-options { width: 256px; }
+#app .bookmark-list { max-height: 240px; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
+#app .bookmark-list li { display: flex; align-items: center; border-radius: 5px; }
+#app .bookmark-list li:hover { background: var(--wb-hover); }
+
+#app .bookmark-apply {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  color: var(--wb-fg);
+  font-size: 12.5px;
+  text-align: left;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+#app .bookmark-delete {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  margin-right: 2px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--wb-muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+}
+
+#app .bookmark-list li:hover .bookmark-delete,
+#app .bookmark-delete:focus-visible { opacity: 1; }
+#app .bookmark-delete:hover { color: var(--wb-error); background: var(--wb-hover); }
+#app .bookmark-empty { padding: 6px 8px; font-size: 12px; line-height: 1.5; color: var(--wb-muted); }
+
+#app .bookmark-form {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 8px 2px 2px;
+  border-top: 1px solid var(--wb-border);
+}
+
+#app .bookmark-form input {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--wb-input-border);
+  border-radius: 5px;
+  background: var(--wb-input-bg);
+  color: var(--wb-fg);
+  font-size: 12.5px;
+}
+
+#app .bookmark-form input:focus { outline: none; border-color: var(--wb-accent); }
+
+#app .bookmark-form button {
+  height: 28px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 5px;
+  background: var(--wb-accent);
+  color: var(--wb-accent-fg);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+#app .bookmark-form button:hover { background: var(--wb-accent-hover); }
 
 #app .export-options button,
 .settings-options button,

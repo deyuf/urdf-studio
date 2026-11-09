@@ -25,9 +25,14 @@ Below, problems are grouped by check. Each group shows a code such as
 `P-001`, a short name and how many times it was found. Click any problem to
 open the **Source** tab at that line.
 
-When something serious goes wrong while loading — the file isn't valid XML,
-or xacro can't be expanded — a message also pops up in the corner. Errors
-stay until you close them; warnings fade.
+Problems that stop the model from loading — the file isn't valid XML, or
+xacro can't be expanded — are grouped under **Loading problems** and also
+pop up in the corner. Errors stay until you close them; warnings fade.
+
+If the robot has structural errors (a joint pointing at a missing link, a
+loop, a link with two parents), URDF Studio still draws the rest of it and
+leaves out only the broken parts. The caption in the corner of the 3D view
+says how many elements were left out.
 
 ## What the severities mean
 

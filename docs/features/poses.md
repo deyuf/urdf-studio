@@ -13,9 +13,10 @@ remembered for this robot file and restored the next time you open it.
 
 ## Keep several named poses
 
-Click **Save As**, give the pose a name, and it is added to the
-**Bookmarks** menu. Pick a bookmark to return to that pose and view.
-Saving with an existing name replaces that bookmark.
+Open **Bookmarks** in the toolbar, type a name under **Name this view**
+and press **Enter**. The current pose and camera are saved under that
+name. Click a bookmark in the list to return to it; hover it and click **×**
+to delete it. Saving with an existing name replaces that bookmark.
 
 Bookmarks belong to one robot file. Opening another file shows its own
 bookmarks.

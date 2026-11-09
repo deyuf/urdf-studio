@@ -23,7 +23,7 @@ On macOS, use **⌘** where this page says **Ctrl**.
 | Keys | Action |
 |---|---|
 | F11 or Ctrl+Shift+F | Toggle full-screen source |
-| Ctrl+S | Save — downloads in the browser, writes the file in VS Code |
+| Ctrl+S | Save — see [Edit the source](../features/editing.html#save-your-changes) |
 | Ctrl+F | Find in the source |
 | Ctrl+Space | Show completions (while editing) |
 

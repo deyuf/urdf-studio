@@ -21,8 +21,10 @@ export function analyzeUrdf(urdf: string, sourcePath: string, packages: PackageM
   const robot = doc.documentElement;
   const robotName = robot.getAttribute('name') || io.basename(sourcePath);
   const documentDir = io.dirname(sourcePath);
-  const links: Record<string, LinkInfo> = {};
-  const joints: Record<string, JointInfo> = {};
+  // Null-prototype maps: names come from the file, and a link called
+  // "constructor" or "__proto__" must not resolve to Object.prototype members.
+  const links: Record<string, LinkInfo> = Object.create(null);
+  const joints: Record<string, JointInfo> = Object.create(null);
   const childToParentJoint = new Map<string, string>();
   const parentToChildren = new Map<string, Array<{ joint: string; child: string }>>();
   let totalMass = 0;
@@ -139,7 +141,7 @@ export function analyzeUrdf(urdf: string, sourcePath: string, packages: PackageM
       const line = lineForNeedle(urdf, filename);
       if (filename.startsWith('package://') && !resolved.packageName) {
         diagnostics.push({ severity: 'error', message: `Mesh URI "${filename}" has no package name.`, code: 'mesh.packageMalformed', target: linkName, file: sourcePath, line });
-      } else if (filename.startsWith('package://') && resolved.packageName && !packages[resolved.packageName]) {
+      } else if (filename.startsWith('package://') && resolved.packageName && !Object.hasOwn(packages, resolved.packageName)) {
         if (resolved.viaFallback && exists) {
           // Fallback succeeded — emit one summary warning per missing
           // package, not per mesh, so the Checks panel and toast stay
@@ -162,6 +164,8 @@ export function analyzeUrdf(urdf: string, sourcePath: string, packages: PackageM
         }
       } else if (resolved.resolvedPath && !exists) {
         diagnostics.push({ severity: 'error', message: `Missing ${kind} mesh "${filename}".`, code: 'mesh.missing', target: linkName, file: sourcePath, line });
+      } else if (!resolved.resolvedPath && !filename.startsWith('package://')) {
+        diagnostics.push({ severity: 'error', message: `Cannot load ${kind} mesh "${filename}": use a package://, file:// or relative path.`, code: 'mesh.missing', target: linkName, file: sourcePath, line });
       }
       return [{
         link: linkName,
@@ -292,18 +296,28 @@ function emptyMetadata(message: string, file: string): RobotMetadata {
 // of the previous O(2^n) blow-up from `new Set(seen)` per child. The
 // duplicate-parent case is already reported separately via tree.multipleParents,
 // so collapsing the repeated subtree here loses no diagnostic information.
-function buildTree(link: string, children: Map<string, Array<{ joint: string; child: string }>>, seen: Set<string>): LinkTreeNode {
-  if (seen.has(link)) {
-    return { link, children: [] };
+// Iterative so a long serial chain (thousands of links) cannot overflow the
+// call stack. Each link is expanded once; a link reached again keeps an empty
+// child list, which also cuts cycles.
+function buildTree(root: string, children: Map<string, Array<{ joint: string; child: string }>>, seen: Set<string>): LinkTreeNode {
+  const rootNode: LinkTreeNode = { link: root, children: [] };
+  if (seen.has(root)) {
+    return rootNode;
   }
-  seen.add(link);
-  return {
-    link,
-    children: (children.get(link) ?? []).map(child => ({
-      ...buildTree(child.child, children, seen),
-      joint: child.joint
-    }))
-  };
+  seen.add(root);
+  const pending: LinkTreeNode[] = [rootNode];
+  while (pending.length > 0) {
+    const node = pending.pop()!;
+    for (const edge of children.get(node.link) ?? []) {
+      const childNode: LinkTreeNode = { link: edge.child, joint: edge.joint, children: [] };
+      node.children.push(childNode);
+      if (!seen.has(edge.child)) {
+        seen.add(edge.child);
+        pending.push(childNode);
+      }
+    }
+  }
+  return rootNode;
 }
 
 // Three-colour iterative DFS. We track the path as a parallel stack so cycle

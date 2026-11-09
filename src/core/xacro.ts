@@ -6,7 +6,7 @@ import type { PackageMap, RenderedRobotDocument, StudioDiagnostic, XacroArgument
 type LogFn = (message: string) => void;
 
 // Tunables — exported so callers/tests can introspect or adjust.
-export const MAX_XACRO_RECOVERY_ATTEMPTS = 32;
+export const MAX_XACRO_RECOVERY_ATTEMPTS = 64;
 
 // A "null-sink" value used by load_yaml when the YAML file can't be read.
 // Every key access returns another sink, calls return a sink, and primitive
@@ -201,7 +201,7 @@ function createXacroParser(
   parser.rospackCommands = ((command: string, ...args: string[]) => {
     if (command === 'find' || command === 'find-pkg-share') {
       const packageName = args[0];
-      const entry = packages[packageName];
+      const entry = Object.hasOwn(packages, packageName) ? packages[packageName] : undefined;
       if (!entry) {
         diagnostics.push({ severity: 'warning', message: `Unknown ROS package "${packageName}"`, code: 'xacro.packageMissing', file: sourcePath });
         logFn(`rospack ${command}: unknown package "${packageName}"`);
@@ -346,18 +346,30 @@ export function sanitizeXacroContent(content: string, skippedExpressions: Readon
   if (expressionSkips.length === 0) {
     return result;
   }
-  return result.replace(/\$\{([^{}]*)\}/g, (match, expression: string) => {
-    let body = expression;
-    let changed = false;
-    for (const target of expressionSkips) {
-      const next = body.split(target).join('');
-      if (next !== body) {
-        changed = true;
-        body = next;
-      }
+  return result.replace(/\$\{([^{}]*)\}/g, (match, expression: string) =>
+    expressionSkips.some(target => containsExpressionTerm(expression, target)) ? '' : match
+  );
+}
+
+const IDENTIFIER_CHAR = /[A-Za-z0-9_]/;
+
+/** True when `target` occurs in `body` as a whole term: `w` matches `w * 2`
+ *  but not `width`, and `u1` does not match `u10`. Only edges that are
+ *  identifier characters need a boundary, so `call()` still matches
+ *  `call() + 1`. */
+function containsExpressionTerm(body: string, target: string): boolean {
+  const needsLeftBoundary = IDENTIFIER_CHAR.test(target[0]);
+  const needsRightBoundary = IDENTIFIER_CHAR.test(target[target.length - 1]);
+  for (let index = body.indexOf(target); index >= 0; index = body.indexOf(target, index + 1)) {
+    const before = body[index - 1];
+    const after = body[index + target.length];
+    const leftOk = !needsLeftBoundary || before === undefined || !IDENTIFIER_CHAR.test(before);
+    const rightOk = !needsRightBoundary || after === undefined || !IDENTIFIER_CHAR.test(after);
+    if (leftOk && rightOk) {
+      return true;
     }
-    return changed ? '' : match;
-  });
+  }
+  return false;
 }
 
 // xacro-parser does not implement three constructs that ROS xacro accepts:

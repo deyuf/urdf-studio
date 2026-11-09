@@ -68,5 +68,5 @@ To use the same values every time, set **Default xacro args** in
 
 ## Keep a pose
 
-Click **Save Pose** in the toolbar to keep the current pose, or **Save
-As** to keep it under a name. See [Save poses and export](./poses.html).
+Click **Save Pose** in the toolbar to keep the current pose, or add it to
+**Bookmarks** under a name. See [Save poses and export](./poses.html).

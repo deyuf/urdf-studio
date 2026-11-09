@@ -46,10 +46,10 @@ still see the effect of each change. Press the same key to return.
 
 Press **Ctrl+S** (**⌘S**) in the editor.
 
-| Where | What happens |
-|---|---|
-| Browser | The edited file is downloaded. The original in your folder is not changed. |
-| VS Code | The file on disk is overwritten with the editor's content. |
+| File | Browser | VS Code |
+|---|---|---|
+| `.urdf` | Downloads the edited file; the original in your folder is not changed | Writes the file |
+| `.xacro` | Downloads the expanded result as `<name>.urdf` | Asks where to save the expanded result as a `.urdf` |
 
 ## Editing xacro files
 
@@ -58,7 +58,6 @@ xacro source: macros, properties and includes have already been resolved.
 Live preview still works, which makes it a good place to try a change
 quickly.
 
-> **Caution in VS Code:** saving from the Source tab writes the expanded
-> URDF over your `.xacro` file, replacing its macros and includes. Make
-> lasting changes to xacro files in the regular text editor instead, and
-> use the Source tab only to experiment.
+Saving never writes over the `.xacro` file — the expanded text would lose
+its macros and includes. Make lasting changes in your xacro source, in
+your usual editor.

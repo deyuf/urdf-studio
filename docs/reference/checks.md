@@ -33,7 +33,7 @@ For how to use the Checks tab, see
 |---|---|---|---|
 | `P-001` | Warning | A link has no `<inertial>` | Add mass and inertia. Fine to ignore for pure frames like `tool0` |
 | `P-002` | Warning | The inertia values are physically impossible (the tensor is not positive-definite) | Recompute the inertia, for example from the CAD model. Check `ixx`, `iyy`, `izz` are positive and each is less than the sum of the other two |
-| `P-003` | Error / Warning | Mass is negative (error), or over 10,000 kg (warning — usually grams or millimetres used by mistake) | Use kilograms |
+| `P-003` | Error / Warning | Mass is negative (error), zero or missing (warning), or over 10,000 kg (warning — usually grams used by mistake) | Give every real part its mass in kilograms |
 | `P-004` | Warning | A revolute or prismatic joint has no lower or upper limit | Add `<limit lower upper effort velocity>` |
 | `P-005` | Warning | A continuous joint declares `lower` / `upper` | Remove them (they're ignored), or make the joint revolute |
 | `P-006` | Warning | A joint's `effort` or `velocity` limit is zero | Set the real values; controllers may refuse to move the joint otherwise |
@@ -60,14 +60,18 @@ These only apply to `.xacro` files.
 
 ## Loading problems
 
-Some problems stop the model from loading properly. These appear as a
-message in the corner of the window (and in the Problems panel in VS
-Code) rather than as a coded check:
+Some problems stop the model from loading properly. They are listed
+together under **Loading problems** in the Checks tab, also pop up as a
+message in the corner of the window, and appear in the Problems panel in
+VS Code:
 
 | Message is about | Meaning |
 |---|---|
 | XML that can't be parsed | The file isn't valid XML — often an unclosed tag or a stray `&`. Nothing can be shown until it's fixed |
 | Xacro that can't be expanded | An include, macro call or argument failed. The message names it |
+| An include cycle | Two xacro files include each other (or a file includes itself) |
+| A macro that calls itself too deeply | A recursive macro has no stopping condition (limit: 200 levels) |
+| A file that isn't valid XML | The robot file or an included file is empty or not XML |
 | A skipped xacro expression | One `${…}` expression failed; the rest of the file was expanded without it |
 | `$(find pkg)` for an unknown package | The package isn't in the opened folder or [package roots](../features/settings.html) |
 | A link with more than one parent | Two joints name the same `child` |

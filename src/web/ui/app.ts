@@ -572,7 +572,11 @@ export class AppShell {
         semanticFiles: splitLines((form.elements.namedItem('semanticFiles') as HTMLTextAreaElement).value)
       };
       saveSettings(next);
-      this.renderStatus({ type: 'info', message: 'Settings saved. Reload the model to apply.' });
+      if (this.host.applySettingsToActive()) {
+        this.renderStatus({ type: 'progress', message: 'Settings saved. Reloading the robot…' });
+      } else {
+        this.renderStatus({ type: 'info', message: 'Settings saved.' });
+      }
     };
     dialog.addEventListener('close', onClose);
     dialog.showModal();

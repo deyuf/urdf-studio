@@ -251,14 +251,17 @@ test.describe('renderer feature integrations', () => {
     expect(await page.evaluate(() => (window as any).__urdfStudio?.visibleLinkAxes)).toBe(0);
   });
 
-  test('Save As bookmark button posts a requestSaveBookmark message', async ({ page }) => {
+  test('naming a view in the Bookmarks menu posts a requestSaveBookmark message', async ({ page }) => {
     await loadGripperFixture(page);
 
-    page.on('dialog', async dialog => {
-      await dialog.accept('home');
-    });
-
+    await page.locator('#bookmarks-menu summary').click();
+    await expect(page.locator('#bookmark-name')).toBeFocused();
+    // An empty name does nothing.
     await page.locator('#bookmark-save').click();
+    expect(await page.evaluate(() => (window as any).__messages.some((m: any) => m.type === 'requestSaveBookmark'))).toBe(false);
+
+    await page.locator('#bookmark-name').fill('  home  ');
+    await page.keyboard.press('Enter');
     await page.waitForFunction(() =>
       Array.isArray((window as any).__messages)
       && (window as any).__messages.some((m: any) => m.type === 'requestSaveBookmark')
@@ -269,16 +272,32 @@ test.describe('renderer feature integrations', () => {
     expect(message.name).toBe('home');
     expect(message.pose).toMatchObject({ left_finger: expect.any(Number) });
     expect(message.camera).toMatchObject({ position: expect.any(Array) });
+    await expect(page.locator('#bookmark-name')).toHaveValue('');
   });
 
-  test('bookmark dropdown applies the selected pose', async ({ page }) => {
+  test('a bookmark in the menu applies its pose, and × asks the host to delete it', async ({ page }) => {
     await loadGripperFixture(page, { bookmarks: [{ name: 'open', pose: { left_finger: 0.03 } }] });
 
     // Initially the slider value is 0.
     expect(await page.locator('[data-joint-number="left_finger"]').inputValue()).toBe('0.000');
 
-    await page.locator('#bookmark-select').selectOption('open');
+    await page.locator('#bookmarks-menu summary').click();
+    await page.locator('[data-bookmark="open"]').click();
     await expect(page.locator('[data-joint-number="left_finger"]')).toHaveValue('0.030');
+    await expect(page.locator('#bookmarks-menu')).not.toHaveAttribute('open', '');
+
+    await page.locator('#bookmarks-menu summary').click();
+    await page.getByRole('button', { name: 'Delete bookmark open' }).click();
+    const deletion = await page.evaluate(() =>
+      (window as any).__messages.find((m: any) => m.type === 'requestDeleteBookmark')
+    );
+    expect(deletion).toMatchObject({ name: 'open' });
+  });
+
+  test('the Bookmarks menu explains how to save when it is empty', async ({ page }) => {
+    await loadGripperFixture(page);
+    await page.locator('#bookmarks-menu summary').click();
+    await expect(page.locator('#bookmark-list')).toContainText('No bookmarks yet');
   });
 
   test('Display menu keeps overlays on the viewport and pose actions in the header', async ({ page }) => {

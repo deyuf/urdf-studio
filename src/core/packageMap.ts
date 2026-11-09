@@ -54,7 +54,7 @@ async function scanForPackages(root: string, packages: PackageMap, depth: number
   if (packageXml) {
     const packageXmlPath = io.join(root, packageXml.name);
     const name = await readPackageName(packageXmlPath);
-    if (name && packages[name] === undefined) {
+    if (name && !Object.hasOwn(packages, name)) {
       packages[name] = {
         name,
         path: root,
@@ -93,6 +93,18 @@ export interface ResolveResult {
   viaFallback?: boolean;
 }
 
+/** `file:///opt/a%20b/m.stl` → `/opt/a b/m.stl`; `file:///C:/m.stl` → `C:/m.stl`.
+ *  Returns undefined for malformed URLs so callers report a missing mesh
+ *  instead of throwing. */
+export function fileUrlToPath(fileUrl: string): string | undefined {
+  try {
+    const pathname = decodeURIComponent(new URL(fileUrl).pathname);
+    return /^\/[a-zA-Z]:\//.test(pathname) ? pathname.slice(1) : pathname;
+  } catch {
+    return undefined;
+  }
+}
+
 export function resolveModelUriToFile(filename: string, packages: PackageMap, documentDir: string): ResolveResult {
   const io = getCoreIo();
   if (filename.startsWith('package://')) {
@@ -100,7 +112,7 @@ export function resolveModelUriToFile(filename: string, packages: PackageMap, do
     const slash = rest.indexOf('/');
     const packageName = slash >= 0 ? rest.slice(0, slash) : rest;
     const relativePath = slash >= 0 ? rest.slice(slash + 1) : '';
-    const packageEntry = packages[packageName];
+    const packageEntry = Object.hasOwn(packages, packageName) ? packages[packageName] : undefined;
     if (packageEntry) {
       return {
         packageName,
@@ -122,7 +134,7 @@ export function resolveModelUriToFile(filename: string, packages: PackageMap, do
   }
 
   if (/^file:\/\//.test(filename)) {
-    return { resolvedPath: new URL(filename).pathname };
+    return { resolvedPath: fileUrlToPath(filename) };
   }
 
   if (/^[a-zA-Z]+:\/\//.test(filename)) {

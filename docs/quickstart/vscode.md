@@ -75,7 +75,7 @@ These work in any `.urdf` or `.xacro` file open as text:
 | Joint pose (JSON) | Opens as a new, unsaved JSON document |
 | Parts list (CSV), report (PDF) | You choose where in a save dialog |
 | Write to SRDF | Updates the SRDF in place, or asks where to create one |
-| **Ctrl+S** in the Source tab | Writes the file — see the caution in [Edit the source](../features/editing.html) |
+| **Ctrl+S** in the Source tab | Writes a `.urdf`; for `.xacro` files, asks where to save the expanded URDF — see [Edit the source](../features/editing.html) |
 
 ## Commands
 

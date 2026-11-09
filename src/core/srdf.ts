@@ -110,7 +110,7 @@ export function parseSrdf(content: string, file = 'model.srdf'): SemanticMetadat
       diagnostics.push({ severity: 'warning', message: 'SRDF group_state without name or group was ignored.', code: 'srdf.stateInvalid', file });
       continue;
     }
-    const joints: Record<string, number> = {};
+    const joints: Record<string, number> = Object.create(null);
     for (const joint of directChildren(state, 'joint')) {
       const jointName = joint.getAttribute('name')?.trim();
       const value = Number(joint.getAttribute('value'));
@@ -141,7 +141,7 @@ export function parseSrdf(content: string, file = 'model.srdf'): SemanticMetadat
 function parseInitialPositionsYaml(content: string, file: string): Pick<SemanticMetadata, 'states' | 'diagnostics'> {
   try {
     const parsed = YAML.parse(content) as { initial_positions?: Record<string, unknown> } | null;
-    const joints: Record<string, number> = {};
+    const joints: Record<string, number> = Object.create(null);
     for (const [name, value] of Object.entries(parsed?.initial_positions ?? {})) {
       const numeric = Number(value);
       if (Number.isFinite(numeric)) {

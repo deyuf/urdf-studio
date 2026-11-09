@@ -31,7 +31,8 @@ import {
 } from './logic/selfCollision';
 import { mountSourcePane, type SourcePane } from './logic/sourcePane';
 import { createLayoutController, type LayoutController } from './layout/fullscreen';
-import { runAllRules, RULE_REGISTRY, type LintReport } from '../core/lintRules';
+import { buildChecksReport, RULE_REGISTRY, type LintReport } from '../core/lintRules';
+import { makeRenderable } from '../core/renderable';
 import { createLivePreview, type LivePreviewHandle } from '../editor/livePreview';
 import type { CompletionContextProvider } from '../editor/completion';
 import { html, setInnerHtml } from './html';
@@ -151,14 +152,25 @@ let selfCollision: SelfCollision | undefined;
 let selfCollisionRequested = false;
 
 let reachability: Reachability | undefined;
+// Elements left out of the last drawn model because they would break the
+// loader (see core/renderable.ts).
+let renderOmissions: string[] = [];
 
 document.getElementById('app')!.innerHTML = `
 <div class="shell">
   <div class="toolbar">
     <div id="title" class="title">URDF Studio</div>
     <div class="toolbar-group toolbar-group-end">
-      <select id="bookmark-select" title="Apply a saved bookmark"><option value="">Bookmarks</option></select>
-      <button id="bookmark-save" title="Save current pose as a named bookmark">Save As</button>
+      <details id="bookmarks-menu" class="workbench-menu">
+        <summary title="Named poses and views for this robot">Bookmarks</summary>
+        <div class="menu-content bookmark-options">
+          <ul id="bookmark-list" class="bookmark-list" aria-label="Saved bookmarks"></ul>
+          <form id="bookmark-form" class="bookmark-form">
+            <input id="bookmark-name" type="text" placeholder="Name this view" aria-label="Bookmark name" maxlength="80" autocomplete="off">
+            <button id="bookmark-save" type="submit" title="Save the current pose and camera under this name">Save</button>
+          </form>
+        </div>
+      </details>
       <button id="save-pose" class="primary">Save Pose</button>
       <details id="preview-settings-menu" class="workbench-menu settings-menu">
         <summary aria-label="Settings" title="Settings">${icon('settings', { size: 18 })}</summary>
@@ -294,7 +306,7 @@ window.addEventListener('message', event => {
     return;
   }
   if (message.type === 'loadRobot') {
-    void loadRobot(message as LoadRobotMessage);
+    loadRobot(message as LoadRobotMessage).catch(error => reportRendererFailure('Loading the robot failed', error));
   } else if (message.type === 'recenter') {
     fitCamera('iso');
   } else if (message.type === 'exportPose') {
@@ -308,7 +320,7 @@ window.addEventListener('message', event => {
     vscode.postMessage({ type: 'poseSnapshot', pose: getPose(), camera: getCameraSnapshot() });
   } else if (message.type === 'bookmarksUpdated') {
     bookmarks = message.bookmarks ?? [];
-    renderBookmarkSelect();
+    renderBookmarkList();
   } else if (message.type === 'disableCollisionsUpdated') {
     if (currentData) {
       currentData.semantic.disableCollisions = message.disableCollisions ?? [];
@@ -541,27 +553,41 @@ function bindChrome(): void {
   qs('#save-pose').addEventListener('click', () => {
     vscode.postMessage({ type: 'requestSavePose', pose: getPose(), camera: getCameraSnapshot() });
   });
-  qs('#bookmark-save').addEventListener('click', () => {
-    const name = window.prompt('Bookmark name?');
+  // Named bookmarks live in a menu with an inline name field: window.prompt
+  // is blocked inside VS Code webviews, so it cannot be used for naming.
+  const bookmarkMenu = qs<HTMLDetailsElement>('#bookmarks-menu');
+  const bookmarkName = qs<HTMLInputElement>('#bookmark-name');
+  bookmarkMenu.addEventListener('toggle', () => {
+    if (bookmarkMenu.open) {
+      bookmarkName.focus();
+    }
+  });
+  qs<HTMLFormElement>('#bookmark-form').addEventListener('submit', event => {
+    event.preventDefault();
+    const name = bookmarkName.value.trim();
     if (!name) {
+      bookmarkName.focus();
       return;
     }
     vscode.postMessage({ type: 'requestSaveBookmark', name, pose: getPose(), camera: getCameraSnapshot() });
+    bookmarkName.value = '';
   });
-  qs<HTMLSelectElement>('#bookmark-select').addEventListener('change', event => {
-    const target = event.target as HTMLSelectElement;
-    const name = target.value;
-    if (!name) {
+  qs('#bookmark-list').addEventListener('click', event => {
+    const target = event.target as HTMLElement;
+    const remove = target.closest<HTMLElement>('[data-bookmark-delete]');
+    if (remove) {
+      vscode.postMessage({ type: 'requestDeleteBookmark', name: remove.dataset.bookmarkDelete });
       return;
     }
-    const bookmark = bookmarks.find(item => item.name === name);
+    const apply = target.closest<HTMLElement>('[data-bookmark]');
+    const bookmark = bookmarks.find(item => item.name === apply?.dataset.bookmark);
     if (bookmark) {
       applyPose(bookmark.pose);
       if (bookmark.camera) {
         applyCameraSnapshot(bookmark.camera);
       }
+      bookmarkMenu.open = false;
     }
-    target.value = '';
   });
   qsa<HTMLButtonElement>('.tab').forEach(tab => tab.addEventListener('click', () => switchTab(tab.dataset.tab!)));
 
@@ -620,7 +646,7 @@ async function loadRobot(data: LoadRobotMessage, forceCollisionGeometry = false)
   renderSource(data);
   renderInspector();
   renderToolsPanel();
-  renderBookmarkSelect();
+  renderBookmarkList();
 
   const shouldLoadCollision = forceCollisionGeometry || renderMode === 'collision' || renderMode === 'both';
   const hasExternalMeshesToLoad = data.metadata.meshes.some(mesh => mesh.exists && (mesh.kind === 'visual' || shouldLoadCollision));
@@ -650,7 +676,9 @@ async function loadRobot(data: LoadRobotMessage, forceCollisionGeometry = false)
     }
     robotReady = true;
     renderer.domElement.style.opacity = '1';
-    setStatus(`${data.metadata.robotName}: ${data.metadata.counts.links} links, ${data.metadata.counts.movableJoints} movable joints`);
+    setStatus(renderOmissions.length > 0
+      ? `${data.metadata.robotName}: drawn without ${renderOmissions.length} broken element${renderOmissions.length === 1 ? '' : 's'} — see Checks`
+      : `${data.metadata.robotName}: ${plural(data.metadata.counts.links, 'link')}, ${plural(data.metadata.counts.movableJoints, 'movable joint')}`);
     fitCamera(data.savedState?.camera ? undefined : 'iso');
     if (data.savedState?.camera) {
       applyCameraSnapshot(data.savedState.camera);
@@ -731,7 +759,15 @@ async function loadRobot(data: LoadRobotMessage, forceCollisionGeometry = false)
   };
 
   try {
-    const parsedRobot = loader.parse(data.urdf) as URDFRobot;
+    // Draw what we can: elements that would crash the loader (dangling
+    // joints, cycles, unknown mimic targets) are left out of the scene and
+    // reported by Checks instead.
+    const renderable = makeRenderable(data.urdf);
+    renderOmissions = renderable.removed;
+    if (renderOmissions.length > 0) {
+      console.warn('[urdf] left out of the 3D view:', renderOmissions.join('; '));
+    }
+    const parsedRobot = loader.parse(renderable.urdf) as URDFRobot;
     robot = parsedRobot;
     parsedRobot.visible = !hasExternalMeshesToLoad;
     collisionGeometryLoaded = shouldLoadCollision;
@@ -766,7 +802,8 @@ async function loadRobot(data: LoadRobotMessage, forceCollisionGeometry = false)
     dirty = true;
   } catch (error) {
     parseComplete = true;
-    setStatus(`Could not parse URDF: ${String(error)}`);
+    const detail = error instanceof Error ? error.message : String(error);
+    setStatus(`This model can't be drawn (${detail}). See the Checks tab for problems to fix.`);
   }
 }
 
@@ -1079,44 +1116,14 @@ function getPose(): Record<string, number> {
 function renderChecks(data: LoadRobotMessage): void {
   const panel = qs('#panel-checks');
 
-  // Run the rule engine on top of the analyzeUrdf diagnostics so the
-  // Checks panel always reflects the same data the editor's inline
-  // linter shows. Rules are pure and run on the renderer side — fast,
-  // no I/O.
-  // Combine host-supplied diagnostics (analyzeUrdf + custom hooks like
-  // package resolution, plus anything the extension layer added) with the
-  // rule engine output. Diagnostics whose code isn't rebadged by any rule
-  // (e.g., generic xacro warnings) still need to surface — we passthrough
-  // them under a synthetic "OTHER" group.
-  const combinedInputDiagnostics = [...data.metadata.diagnostics, ...data.diagnostics];
-  const report = runAllRules({
+  // Rules run here (pure, no I/O) so the panel and the editor's inline
+  // linter share one report, including host diagnostics no rule covers.
+  const report = buildChecksReport({
     urdf: data.urdf,
     sourcePath: data.sourcePath,
     packages: {},
-    metadata: { ...data.metadata, diagnostics: combinedInputDiagnostics }
-  });
-  // Passthrough: diagnostics from analyzeUrdf that no rule rebadged.
-  const knownCodes = new Set(Object.keys(RULE_REGISTRY.reduce((acc, r) => { acc[r.code] = true; return acc; }, {} as Record<string, true>)));
-  const rebadgedSourceCodes = new Set([
-    'tree.cycle', 'joint.parentMissing', 'joint.childMissing',
-    'link.duplicate', 'joint.duplicate', 'joint.mimicMissing',
-    'inertial.notPositiveDefinite', 'inertial.massInvalid',
-    'joint.limitMissing', 'mesh.missing', 'mesh.packageMissing',
-    'mesh.packageMalformed', 'mesh.packageFallback'
-  ]);
-  const passthrough = combinedInputDiagnostics.filter(diag => {
-    if (!diag.code) return true;
-    if (knownCodes.has(diag.code)) return false;
-    if (rebadgedSourceCodes.has(diag.code)) return false;
-    return true;
-  });
-  if (passthrough.length > 0) {
-    report.byRule['OTHER'] = (report.byRule['OTHER'] ?? []).concat(passthrough);
-    report.diagnostics.push(...passthrough);
-    for (const diag of passthrough) {
-      report.counts[diag.severity] += 1;
-    }
-  }
+    metadata: data.metadata
+  }, data.diagnostics);
   currentLintReport = report;
 
   // Push diagnostics into the editor's inline linter.
@@ -1133,8 +1140,11 @@ function renderChecks(data: LoadRobotMessage): void {
   }
 
   const grouped = new Map<string, typeof report.diagnostics>();
+  const ruleCodes = new Set(RULE_REGISTRY.map(rule => rule.code));
   for (const diag of report.diagnostics) {
-    const code = diag.code ?? 'unknown';
+    // Loading problems (XML, xacro, SRDF…) have internal codes; show them
+    // together under one readable group rather than one group per code.
+    const code = diag.code && ruleCodes.has(diag.code) ? diag.code : 'OTHER';
     if (!grouped.has(code)) grouped.set(code, []);
     grouped.get(code)!.push(diag);
   }
@@ -1144,13 +1154,13 @@ function renderChecks(data: LoadRobotMessage): void {
     : 'health-poor';
 
   const groupHtml = Array.from(grouped.entries())
-    .sort((a, b) => severityRank(b[1][0].severity) - severityRank(a[1][0].severity))
+    .sort((a, b) => severityRank(worstSeverity(b[1])) - severityRank(worstSeverity(a[1])))
     .map(([code, diagnostics]) => {
-      const description = RULE_REGISTRY.find(rule => rule.code === code)?.description ?? code;
+      const description = RULE_REGISTRY.find(rule => rule.code === code)?.description ?? 'Loading problems';
       return html`
         <details class="checks-group" open>
           <summary class="checks-group-header">
-            <span class="checks-group-title"><span class="sev-dot sev-${diagnostics[0].severity}" aria-hidden="true"></span><span class="checks-code">${code}</span>${description}</span>
+            <span class="checks-group-title"><span class="sev-dot sev-${worstSeverity(diagnostics)}" aria-hidden="true"></span>${code === 'OTHER' ? '' : html`<span class="checks-code">${code}</span>`}${description}</span>
             <span class="checks-group-count">${diagnostics.length}</span>
           </summary>
           <ul class="checks-group-list">
@@ -1197,6 +1207,13 @@ function renderHealthReading(score: number, healthClass: string): ReturnType<typ
 
 function plural(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? '' : 's'}`;
+}
+
+function worstSeverity(diagnostics: Array<{ severity: 'error' | 'warning' | 'info' }>): 'error' | 'warning' | 'info' {
+  return diagnostics.reduce<'error' | 'warning' | 'info'>(
+    (worst, diag) => severityRank(diag.severity) > severityRank(worst) ? diag.severity : worst,
+    'info'
+  );
 }
 
 function severityRank(severity: 'error' | 'warning' | 'info'): number {
@@ -1533,6 +1550,15 @@ function forEachMaterial(mesh: THREE.Mesh, callback: (material: THREE.MeshStanda
   }
 }
 
+/** Show a failure in the HUD and forward it to the host log, so an async
+ *  error never disappears as an unhandled rejection. */
+function reportRendererFailure(context: string, error: unknown): void {
+  const detail = error instanceof Error ? error.message : String(error);
+  console.error(`[urdf] ${context}`, error);
+  setStatus(`${context}: ${detail}`);
+  vscode.postMessage({ type: '__rendererError', detail: `${context}: ${detail}` });
+}
+
 function setStatus(text: string): void {
   qs('#hud').textContent = text;
 }
@@ -1557,18 +1583,14 @@ function cssEscape(value: string): string {
 // Bookmarks
 // =============================================================================
 
-function renderBookmarkSelect(): void {
-  const select = qs<HTMLSelectElement>('#bookmark-select');
-  const previous = select.value;
-  setInnerHtml(select, html`
-    <option value="">Bookmarks</option>
-    ${bookmarks.map(item => html`<option value="${item.name}">${item.name}</option>`)}
-  `);
-  if (bookmarks.some(item => item.name === previous)) {
-    select.value = previous;
-  } else {
-    select.value = '';
-  }
+function renderBookmarkList(): void {
+  setInnerHtml(qs('#bookmark-list'), bookmarks.length === 0
+    ? html`<li class="bookmark-empty">No bookmarks yet. Name the current view below to save one.</li>`
+    : html`${bookmarks.map(item => html`
+      <li>
+        <button type="button" class="bookmark-apply" data-bookmark="${item.name}" title="Apply ${item.name}">${item.name}</button>
+        <button type="button" class="bookmark-delete" data-bookmark-delete="${item.name}" aria-label="Delete bookmark ${item.name}" title="Delete">×</button>
+      </li>`)}`);
   publishTestState();
 }
 

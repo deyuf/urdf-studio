@@ -9,7 +9,8 @@ summary: Make package:// paths resolve, set default xacro arguments, load SRDF f
 ## Open settings
 
 - **Browser:** the gear button in the top bar → **Model settings…**.
-  Changes apply to the next robot you open.
+  Saving applies the changes to the open robot straight away, keeping
+  its pose and camera.
 - **VS Code:** **Settings** → search for *URDF Studio*, or edit
   `.vscode/settings.json` with the `urdfStudio.*` keys shown below.
 

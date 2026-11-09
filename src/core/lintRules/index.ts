@@ -13,7 +13,7 @@
 // them), so renaming requires bumping the editor adapter too.
 
 import type { PackageMap, RobotMetadata, StudioDiagnostic } from '../types';
-import { lineForNeedle } from '../xml';
+import { lineAtOffset, lineForNeedle } from '../xml';
 
 export interface LintInput {
   urdf: string;
@@ -184,6 +184,17 @@ const ruleP003MassValid: LintRule = ({ metadata, sourcePath, urdf }) => {
         target: link.name,
         line: link.line ?? lineForNeedle(urdf, `<link name="${link.name}"`)
       });
+    } else if (!(mass > 0)) {
+      // Zero or missing <mass>: simulators divide by mass, so this is as
+      // broken as a missing <inertial> block.
+      out.push({
+        severity: 'warning',
+        message: `Link "${link.name}" has zero or missing mass.`,
+        code: 'P-003',
+        file: sourcePath,
+        target: link.name,
+        line: link.line ?? lineForNeedle(urdf, `<link name="${link.name}"`)
+      });
     }
   }
   return out;
@@ -272,7 +283,7 @@ const ruleA003MeshScaleSuspicious: LintRule = ({ urdf, sourcePath }) => {
   // case; otherwise we silently accept. A literal scale of 1000 or 0.001
   // is *probably* a unit conversion — emit info.
   const out: StudioDiagnostic[] = [];
-  const matches = urdf.matchAll(/<mesh\b[^/>]*scale="([^"]+)"/g);
+  const matches = urdf.matchAll(/<mesh\b[^/<>]*scale="([^"]+)"/g);
   for (const match of matches) {
     const parts = match[1].trim().split(/\s+/).map(Number);
     if (parts.length !== 3 || parts.some(v => !Number.isFinite(v))) {
@@ -282,7 +293,7 @@ const ruleA003MeshScaleSuspicious: LintRule = ({ urdf, sourcePath }) => {
     const isKm = parts.every(v => Math.abs(v - 1000) < 1e-6);
     if (isMm || isKm) {
       const offset = match.index ?? 0;
-      const line = urdf.slice(0, offset).split(/\r?\n/).length;
+      const line = lineAtOffset(urdf, offset);
       out.push({
         severity: 'info',
         message: `Mesh scale ${match[1]} looks like a unit conversion (URDF expects metres). Verify against the source mesh.`,
@@ -312,7 +323,7 @@ const ruleS001UndeclaredXacroArg: LintRule = ({ urdf, sourcePath }) => {
     if (!declared.has(name) && !seen.has(name)) {
       seen.add(name);
       const offset = match.index ?? 0;
-      const line = urdf.slice(0, offset).split(/\r?\n/).length;
+      const line = lineAtOffset(urdf, offset);
       out.push({
         severity: 'info',
         message: `Xacro argument "${name}" used but never declared with <xacro:arg name="${name}"/>.`,
@@ -331,12 +342,12 @@ const ruleS002UnusedXacroPropOrArg: LintRule = ({ urdf, sourcePath }) => {
   const declaredProps = new Map<string, number>(); // name -> line
   for (const match of urdf.matchAll(/<xacro:property\s+name="([^"]+)"/g)) {
     const offset = match.index ?? 0;
-    declaredProps.set(match[1], urdf.slice(0, offset).split(/\r?\n/).length);
+    declaredProps.set(match[1], lineAtOffset(urdf, offset));
   }
   const declaredArgs = new Map<string, number>();
   for (const match of urdf.matchAll(/<xacro:arg\s+name="([^"]+)"/g)) {
     const offset = match.index ?? 0;
-    declaredArgs.set(match[1], urdf.slice(0, offset).split(/\r?\n/).length);
+    declaredArgs.set(match[1], lineAtOffset(urdf, offset));
   }
   for (const [name, line] of declaredProps) {
     const usage = new RegExp(`\\$\\{[^}]*\\b${escapeRegex(name)}\\b[^}]*\\}`);
@@ -372,7 +383,7 @@ const ruleS003UnusedMacro: LintRule = ({ urdf, sourcePath }) => {
   const declared = new Map<string, number>();
   for (const match of urdf.matchAll(/<xacro:macro\s+name="([^"]+)"/g)) {
     const offset = match.index ?? 0;
-    declared.set(match[1], urdf.slice(0, offset).split(/\r?\n/).length);
+    declared.set(match[1], lineAtOffset(urdf, offset));
   }
   for (const [name, line] of declared) {
     // A macro is "used" if there's a tag <xacro:name ...> elsewhere.
@@ -397,14 +408,14 @@ const ruleS003UnusedMacro: LintRule = ({ urdf, sourcePath }) => {
 const ruleS004DivisionByZero: LintRule = ({ urdf, sourcePath }) => {
   const out: StudioDiagnostic[] = [];
   // Lightweight: find ${... / 0} or "/ 0)" or "/0 " inside ${} braces.
-  for (const match of urdf.matchAll(/\$\{[^}]*\/\s*0([^.\d][^}]*)?\}/g)) {
+  for (const match of urdf.matchAll(/\$\{[^{}]*\/\s*0([^.\d{}][^{}]*)?\}/g)) {
     const offset = match.index ?? 0;
     out.push({
       severity: 'warning',
       message: `Expression "${match[0]}" appears to divide by zero.`,
       code: 'S-004',
       file: sourcePath,
-      line: urdf.slice(0, offset).split(/\r?\n/).length
+      line: lineAtOffset(urdf, offset)
     });
   }
   return out;
@@ -508,12 +519,42 @@ export function runAllRules(input: LintInput, enabled?: Set<string>): LintReport
     seen.add(key);
     return true;
   });
+  return summarize(unique, byRule);
+}
+
+function summarize(diagnostics: StudioDiagnostic[], byRule: Record<string, StudioDiagnostic[]>): LintReport {
   const counts = { error: 0, warning: 0, info: 0 };
-  for (const diag of unique) {
+  for (const diag of diagnostics) {
     counts[diag.severity] += 1;
   }
   const healthScore = Math.max(0, 100 - counts.error * 10 - counts.warning * 3 - counts.info * 0.5);
-  return { diagnostics: unique, byRule, healthScore: Math.round(healthScore * 10) / 10, counts };
+  return { diagnostics, byRule, healthScore: Math.round(healthScore * 10) / 10, counts };
+}
+
+/** analyzeUrdf codes that a rule above re-reports under its own code. */
+export const REBADGED_SOURCE_CODES: ReadonlySet<string> = new Set([
+  'tree.cycle', 'joint.parentMissing', 'joint.childMissing',
+  'link.duplicate', 'joint.duplicate', 'joint.mimicMissing',
+  'inertial.notPositiveDefinite', 'inertial.massInvalid',
+  'joint.limitMissing', 'mesh.missing', 'mesh.packageMissing',
+  'mesh.packageMalformed', 'mesh.packageFallback'
+]);
+
+/**
+ * The full Checks report: every rule, plus any input diagnostic no rule
+ * covers (XML/xacro failures, SRDF problems, multiple parents…) under the
+ * synthetic `OTHER` group. Counts and the health score include both.
+ */
+export function buildChecksReport(input: LintInput, extraDiagnostics: StudioDiagnostic[] = []): LintReport {
+  const combined = [...input.metadata.diagnostics, ...extraDiagnostics];
+  const report = runAllRules({ ...input, metadata: { ...input.metadata, diagnostics: combined } });
+  const ruleCodes = new Set(RULE_CODES);
+  const unmatched = combined.filter(diag => !diag.code || (!ruleCodes.has(diag.code) && !REBADGED_SOURCE_CODES.has(diag.code)));
+  if (unmatched.length === 0) {
+    return report;
+  }
+  const byRule = { ...report.byRule, OTHER: [...(report.byRule.OTHER ?? []), ...unmatched] };
+  return summarize([...report.diagnostics, ...unmatched], byRule);
 }
 
 // Convenience: list of rule codes (for UI filters etc.).

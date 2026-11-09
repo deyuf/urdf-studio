@@ -10,6 +10,7 @@ import { loadSemanticMetadata, mergeDisableCollisionsIntoSrdf, parseSrdf } from 
 import { escapeXmlText } from './core/escapeXml';
 import type { DisableCollisionEntry, PackageMap, PoseBookmark, PreviewState, RobotMetadata, StudioDiagnostic } from './core/types';
 import { registerLanguageFeatures } from './languageFeatures';
+import { expandedUrdfName, isXacroPath } from './core/sourceSave';
 
 const VIEW_TYPE = 'urdfStudio.preview';
 
@@ -125,7 +126,7 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
       this.diagnostics.delete(document.uri);
     });
 
-    webviewPanel.webview.onDidReceiveMessage(async message => {
+    webviewPanel.webview.onDidReceiveMessage(message => void this.handleWebviewMessage(message?.type, async () => {
       testLog(`recv:${String(message?.type)}${message?.type === '__rendererError' ? `:${String(message.detail)}` : ''}`);
       if (message?.type === '__rendererError') {
         log(`Renderer error: ${String(message.detail)}`);
@@ -195,7 +196,18 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
         default:
           break;
       }
-    });
+    }));
+  }
+
+  /** Run one webview request; report failures instead of dropping them. */
+  private async handleWebviewMessage(type: unknown, run: () => Promise<void>): Promise<void> {
+    try {
+      await run();
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      log(`Handling ${String(type)} failed: ${detail}`);
+      void vscode.window.showErrorMessage(`URDF Studio: ${String(type)} failed (${detail}).`);
+    }
   }
 
   async openPreviewForActiveEditor(): Promise<void> {
@@ -620,6 +632,10 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
   }
 
   private async saveSource(uri: vscode.Uri, text: string): Promise<void> {
+    if (isXacroPath(uri.fsPath)) {
+      await this.saveExpandedXacro(uri, text);
+      return;
+    }
     try {
       await vscode.workspace.fs.writeFile(uri, Buffer.from(text, 'utf8'));
       void vscode.window.setStatusBarMessage(`URDF Studio: saved ${vscode.workspace.asRelativePath(uri)}.`, 2500);
@@ -628,6 +644,29 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
     } catch (error) {
       log(`saveSource failed: ${String(error)}`);
       void vscode.window.showErrorMessage(`URDF Studio: could not save source (${error instanceof Error ? error.message : String(error)}).`);
+    }
+  }
+
+  /** The editor holds expanded URDF; never write it over the xacro source. */
+  private async saveExpandedXacro(xacroUri: vscode.Uri, text: string): Promise<void> {
+    const target = await vscode.window.showSaveDialog({
+      title: 'Save expanded URDF (the .xacro file is not changed)',
+      defaultUri: vscode.Uri.joinPath(xacroUri, '..', expandedUrdfName(path.basename(xacroUri.fsPath))),
+      filters: { URDF: ['urdf'] }
+    });
+    if (!target) {
+      return;
+    }
+    if (target.toString() === xacroUri.toString() || isXacroPath(target.fsPath)) {
+      void vscode.window.showErrorMessage('URDF Studio: expanded URDF cannot be saved over a .xacro file. Choose a .urdf name.');
+      return;
+    }
+    try {
+      await vscode.workspace.fs.writeFile(target, Buffer.from(text, 'utf8'));
+      void vscode.window.setStatusBarMessage(`URDF Studio: saved expanded URDF to ${vscode.workspace.asRelativePath(target)}.`, 4000);
+    } catch (error) {
+      log(`saveExpandedXacro failed: ${String(error)}`);
+      void vscode.window.showErrorMessage(`URDF Studio: could not save expanded URDF (${error instanceof Error ? error.message : String(error)}).`);
     }
   }
 

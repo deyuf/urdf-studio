@@ -34,9 +34,9 @@ const STEPS: Step[] = [
   },
   {
     title: '3 · Save and share',
-    body: `<b>Save Pose</b> stores the current joint values + camera per-robot in your browser.
-           <b>Save As</b> creates a named bookmark. The export buttons download a JSON pose or a PNG
-           screenshot.
+    body: `<b>Save Pose</b> remembers the current joint values and camera for this robot.
+           <b>Bookmarks</b> keeps named views you can return to. <b>Export</b> downloads an image,
+           the joint values, a parts list or a PDF report.
            <br><br>Read the <a href="./docs/" target="_blank" rel="noopener">Docs</a> for the full reference.`
   }
 ];

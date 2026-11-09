@@ -18,6 +18,39 @@ import {
 } from 'xacro-parser/src/utils.js';
 import { ExpressionParser } from 'xacro-parser/src/ExpressionParser.js';
 
+// Local patch: guards against inputs that would otherwise never finish.
+// Python xacro also stops at these, so well-formed files are unaffected.
+const MAX_MACRO_DEPTH = 200;
+
+// Local patch: DOMParser reports bad XML by returning a document with a
+// <parsererror> element (or no root) instead of throwing. Without this check
+// the error text was spliced into the robot as if it were content.
+function assertParsedXml(doc, label) {
+    const root = doc && doc.documentElement;
+    const errorNode = root && (root.tagName === 'parsererror' ? root : doc.getElementsByTagName('parsererror')[0]);
+    if (!root || errorNode) {
+        const detail = errorNode ? errorNode.textContent.trim().split('\n')[0] : 'the file is empty or has no root element';
+        throw new Error(`XacroParser: ${ label } is not valid XML: ${ detail }`);
+    }
+    return doc;
+}
+
+// Collapse `.` and `..` segments so `a/../b.xacro` and `b.xacro` compare equal
+// when detecting include cycles.
+function normalizeIncludePath(filePath) {
+    const absolute = /^[/\\]/.test(filePath);
+    const parts = [];
+    for (const part of filePath.split(/[/\\]+/)) {
+        if (part === '' || part === '.') continue;
+        if (part === '..' && parts.length > 0 && parts[parts.length - 1] !== '..') {
+            parts.pop();
+        } else {
+            parts.push(part);
+        }
+    }
+    return (absolute ? '/' : '') + parts.join('/');
+}
+
 export class XacroParser {
 
     constructor() {
@@ -234,6 +267,19 @@ export class XacroParser {
             if (!macro) {
                 throw new Error(`XacroParser: Cannot find macro "${ macroName }"`);
             }
+
+            if (macroDepth >= MAX_MACRO_DEPTH) {
+                throw new Error(`XacroParser: Macro "${ macroName }" calls itself too deeply (more than ${ MAX_MACRO_DEPTH } levels). Check for a macro that calls itself without a stopping condition.`);
+            }
+            macroDepth++;
+            try {
+                await expandMacro(node, macro, properties, macros, resultsList);
+            } finally {
+                macroDepth--;
+            }
+        }
+
+        async function expandMacro(node, macro, properties, macros, resultsList) {
 
             // Copy the properties and macros so we can modify them with
             // macro input fields and local macro definitions.
@@ -483,16 +529,24 @@ export class XacroParser {
                     const isAbsolute = /^[/\\]/.test(filename) || /^[a-zA-Z]+:[/\\]/.test(filename);
                     const filePath = isAbsolute ? filename : currWorkingPath + filename;
 
-                    const prevWorkingPath = currWorkingPath;
-                    currWorkingPath = getUrlBase(filePath);
-
-                    const includeContent = await loadInclude(filePath);
-                    const childNodes = [...includeContent.children[0].childNodes];
-                    for (const c of childNodes) {
-                        await processNode(c, properties, macros, resultsList);
+                    const includeKey = normalizeIncludePath(filePath);
+                    if (includeStack.includes(includeKey)) {
+                        throw new Error(`XacroParser: Include cycle: ${ [...includeStack, includeKey].join(' → ') }`);
                     }
 
-                    currWorkingPath = prevWorkingPath;
+                    const prevWorkingPath = currWorkingPath;
+                    currWorkingPath = getUrlBase(filePath);
+                    includeStack.push(includeKey);
+                    try {
+                        const includeContent = await loadInclude(filePath);
+                        const childNodes = [...includeContent.children[0].childNodes];
+                        for (const c of childNodes) {
+                            await processNode(c, properties, macros, resultsList);
+                        }
+                    } finally {
+                        includeStack.pop();
+                        currWorkingPath = prevWorkingPath;
+                    }
                     return;
                 }
                 case 'xacro:arg': {
@@ -567,16 +621,17 @@ export class XacroParser {
 
         async function loadInclude(path) {
 
+            let text;
             try {
-                const text = await scope.getFileContents(path);
-                return scope._createDomParser().parseFromString(text, 'text/xml');
+                text = await scope.getFileContents(path);
             } catch (e) {
                 throw new Error(`XacroParser: Could not load included file: ${ path }`);
             }
+            return assertParsedXml(scope._createDomParser().parseFromString(text, 'text/xml'), `Included file ${ path }`);
 
         }
 
-        async function loadIncludes(xacro, workingPath, results = []) {
+        async function loadIncludes(xacro, workingPath, results = [], ancestors = []) {
 
             const includeEl = getElementsWithName(xacro, 'xacro:include');
             if (!requirePrefix) {
@@ -593,12 +648,16 @@ export class XacroParser {
                 const namespace = el.getAttribute('ns') || null;
                 const isAbsolute = /^[/\\]/.test(filename) || /^[a-zA-Z]+:[/\\]/.test(filename);
                 const filePath = isAbsolute ? filename : workingPath + filename;
+                const includeKey = normalizeIncludePath(filePath);
+                if (ancestors.includes(includeKey)) {
+                    throw new Error(`XacroParser: Include cycle: ${ [...ancestors, includeKey].join(' → ') }`);
+                }
                 const pr = loadInclude(filePath)
                     .then(content => {
                         results.push({ filename, namespace, content });
 
                         const relPath = getUrlBase(filePath);
-                        return loadIncludes(content, relPath, results);
+                        return loadIncludes(content, relPath, results, [...ancestors, includeKey]);
                     });
                 return pr;
             });
@@ -655,7 +714,9 @@ export class XacroParser {
         const expressionParser = this.expressionParser;
         let localProperties = this.localProperties;
         let currWorkingPath = workingPath;
-        let content = this._createDomParser().parseFromString(data, 'text/xml');
+        const includeStack = [];
+        let macroDepth = 0;
+        let content = assertParsedXml(this._createDomParser().parseFromString(data, 'text/xml'), 'The robot file');
 
         if (localProperties && !inOrder) {
             console.warn('XacroParser: Implicitly setting "localProperties" option to false because "inOrder" is false.');
