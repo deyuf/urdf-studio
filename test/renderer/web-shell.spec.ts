@@ -181,6 +181,38 @@ test.describe('web shell', () => {
     await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('urdf-studio:settings:v1') || '{}').upAxis)).toBe('+Y');
   });
 
+  test('opens a MuJoCo MJCF model from a folder, read-only, and saves it as URDF', async ({ page, browserName }) => {
+    test.skip(browserName !== 'chromium', 'webkitdirectory only on chromium.');
+    await captureDownloads(page);
+    await page.goto(server.url);
+    if (await page.locator('dialog.onboarding').isVisible()) {
+      await page.locator('[data-action="skip"]').click();
+    }
+    await page.setInputFiles('#file-input', path.join(FIXTURE_DIR, 'mjcf', 'arm'));
+    await expect(page.locator('#file-select')).toBeEnabled({ timeout: 10_000 });
+    // Both MuJoCo files are offered; scene.xml (the Menagerie entry point) first.
+    const options = await page.locator('#file-select option').evaluateAll(o => o.map(x => (x as HTMLOptionElement).value).filter(Boolean));
+    expect(options.map(value => value.split('/').pop())).toEqual(['scene.xml', 'arm.xml']);
+    await page.locator('#file-select').selectOption(options[0]);
+
+    await expect(page.locator('[data-joint-slider="shoulder_pan"]')).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('[data-joint-slider="elbow"]')).toBeVisible();
+    await expect(page.locator('#hud')).toContainText('2 movable joints');
+
+    // MuJoCo infers inertia from geoms, so P-001 is not reported for MJCF.
+    await page.locator('.tab[data-tab="checks"]').click();
+    await expect(page.locator('#panel-checks')).not.toContainText('P-001');
+
+    await page.locator('.tab[data-tab="source"]').click();
+    await expect(page.locator('#panel-source .source-meta')).toContainText('converted from MJCF');
+    await page.locator('#panel-source .source-edit-toggle').click();
+    await page.locator('#panel-source .cm-content').click();
+    await page.keyboard.press('Control+s');
+    await page.waitForFunction(() => ((window as any).__downloads as Array<{ name?: string }>).some(d => d.name), null, { timeout: 5_000 });
+    const names = await page.evaluate(() => ((window as any).__downloads as Array<{ name?: string }>).map(d => d.name).filter(Boolean));
+    expect(names).toEqual(['scene.urdf']);
+  });
+
   test('saving settings re-applies them to the open robot and keeps its pose', async ({ page, browserName }) => {
     test.skip(browserName !== 'chromium', 'webkitdirectory only on chromium.');
     await page.goto(server.url);
@@ -532,6 +564,6 @@ test.describe('web shell', () => {
     await page.waitForFunction(() => ((window as any).__downloads as Array<{ name?: string }>).some(d => d.name), null, { timeout: 5_000 });
     const names = await page.evaluate(() => ((window as any).__downloads as Array<{ name?: string }>).map(d => d.name).filter(Boolean));
     expect(names).toEqual(['model.urdf']);
-    await expect(page.locator('#topbar-status')).toContainText('Expanded URDF downloaded as model.urdf');
+    await expect(page.locator('#topbar-status')).toContainText('URDF downloaded as model.urdf');
   });
 });

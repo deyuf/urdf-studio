@@ -3,7 +3,7 @@
 // posts the `loadRobot` message to the renderer. Handles the renderer's reply
 // messages (save pose, bookmark, export, screenshot, etc.).
 
-import { expandedUrdfName, isXacroPath } from '../core/sourceSave';
+import { expandedUrdfName, isGeneratedSourcePath } from '../core/sourceSave';
 import { discoverPackages } from '../core/packageMap';
 import { renderRobotDocument } from '../core/xacro';
 import { analyzeUrdf } from '../core/urdfAnalysis';
@@ -515,13 +515,13 @@ export class WebHost {
       return;
     }
     const base = posixPath.basename(this.active.path) || 'robot.urdf';
-    const xacro = isXacroPath(base);
-    // The editor text is expanded URDF for xacro documents; name it so.
-    const name = xacro ? expandedUrdfName(base) : base;
+    const generated = isGeneratedSourcePath(base);
+    // The editor holds generated URDF for xacro and MJCF documents; name it so.
+    const name = generated ? expandedUrdfName(base) : base;
     triggerDownload(new Blob([text], { type: 'application/xml' }), name);
     this.setStatus({
       type: 'info',
-      message: xacro ? `Expanded URDF downloaded as ${name}` : `Source downloaded: ${name}`
+      message: generated ? `URDF downloaded as ${name}` : `Source downloaded: ${name}`
     });
   }
 

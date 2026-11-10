@@ -2,6 +2,7 @@ import YAML from 'yaml';
 import { XacroParser } from '../vendor/xacro-parser/XacroParser.js';
 import { getCoreIo } from './io';
 import type { PackageMap, RenderedRobotDocument, StudioDiagnostic, XacroArgument } from './types';
+import { convertMjcfToUrdf, isMjcfContent } from './mjcf';
 
 type LogFn = (message: string) => void;
 
@@ -66,6 +67,23 @@ async function withXacroLock<T>(task: () => Promise<T>): Promise<T> {
   }
 }
 
+async function renderMjcfFile(sourcePath: string, content: string): Promise<RenderedRobotDocument> {
+  try {
+    const converted = await convertMjcfToUrdf(sourcePath, content);
+    return { sourcePath, format: 'mjcf', urdf: converted.urdf, xacroArgs: [], includedFiles: converted.includedFiles, diagnostics: converted.diagnostics };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      sourcePath,
+      format: 'mjcf',
+      urdf: '<?xml version="1.0"?>\n<robot name="unreadable"/>\n',
+      xacroArgs: [],
+      includedFiles: [],
+      diagnostics: [{ severity: 'error', code: 'mjcf.parse', message: `MJCF could not be read: ${message}`, file: sourcePath }]
+    };
+  }
+}
+
 export async function renderRobotDocument(
   sourcePath: string,
   packages: PackageMap,
@@ -73,6 +91,9 @@ export async function renderRobotDocument(
 ): Promise<RenderedRobotDocument> {
   const io = getCoreIo();
   const content = await io.readText(sourcePath);
+  if (isMjcfContent(content)) {
+    return renderMjcfFile(sourcePath, content);
+  }
   const isXacro = sourcePath.endsWith('.xacro') || sourcePath.endsWith('.urdf.xacro');
   if (!isXacro) {
     return {

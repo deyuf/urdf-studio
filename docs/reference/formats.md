@@ -14,6 +14,7 @@ summary: File types, xacro features, mesh formats and browsers supported by URDF
 | `.urdf.xacro`, `.xacro` | Expanded by URDF Studio — no ROS installation needed |
 | `.srdf` | Planning groups, named states, `disable_collisions` |
 | `initial_positions.yaml` | Read as a named state |
+| `.xml` with a `<mujoco>` root, `.mjcf` | MuJoCo MJCF, read-only — see [View MuJoCo models](../features/mjcf.html) |
 
 ### Xacro support
 

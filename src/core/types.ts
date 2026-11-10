@@ -146,9 +146,12 @@ export interface XacroArgument {
   defaultValue?: string;
 }
 
+/** `xacro` and `mjcf` documents are shown as the URDF they expand/convert to. */
+export type RobotFormat = 'urdf' | 'xacro' | 'mjcf';
+
 export interface RenderedRobotDocument {
   sourcePath: string;
-  format: 'urdf' | 'xacro';
+  format: RobotFormat;
   urdf: string;
   xacroArgs: XacroArgument[];
   includedFiles: string[];

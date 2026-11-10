@@ -16,8 +16,14 @@ import { mountOnboarding, shouldShowOnboarding } from './onboarding';
 import { mountToast } from './toast';
 import { mountThemeSwitcher } from './theme';
 import { icon } from './icons';
+import { isMjcfContent } from '../../core/mjcf';
 
-const URDF_PATTERNS = /\.(urdf|xacro|urdf\.xacro)$/i;
+const URDF_PATTERNS = /\.(urdf|xacro|urdf\.xacro|mjcf)$/i;
+// MuJoCo models are usually plain .xml; these are checked for a <mujoco>
+// root. ROS manifests and launch files are never robot descriptions.
+const XML_CANDIDATE = /\.xml$/i;
+const NOT_A_MODEL = /(^|\/)(package|manifest|.*\.launch|.*_launch)\.xml$/i;
+const MAX_XML_PROBES = 500;
 
 declare global {
   interface Window {
@@ -300,9 +306,9 @@ export class AppShell {
       node.innerHTML = `
         <div class="empty-card">
           <h2 class="empty-title">Open a robot description</h2>
-          <p class="empty-body">Choose the root of a ROS package or workspace. URDF and xacro are expanded locally and meshes resolve through <code>package://</code> — nothing leaves this device.</p>
+          <p class="empty-body">Choose the root of a ROS package or workspace, or a MuJoCo model folder. Files are read on this device and never uploaded.</p>
           ${actions}
-          <p class="empty-foot">${canPickFolder ? 'You can also drop a folder here. ' : ''}Reads .urdf and .xacro with STL, DAE, OBJ and glTF meshes.</p>
+          <p class="empty-foot">${canPickFolder ? 'You can also drop a folder here. ' : ''}Reads URDF, xacro and MuJoCo MJCF, with STL, DAE, OBJ and glTF meshes.</p>
         </div>`;
       return;
     }
@@ -313,7 +319,7 @@ export class AppShell {
       node.innerHTML = `
         <div class="empty-card">
           <h2 class="empty-title">No robot files found</h2>
-          <p class="empty-body"><b>${label}</b> has no <code>.urdf</code> or <code>.xacro</code> files. Pick the package or workspace root that contains them.</p>
+          <p class="empty-body"><b>${label}</b> has no URDF, xacro or MJCF files. Pick the package or workspace root that contains them.</p>
           ${actions}
         </div>`;
       return;
@@ -491,20 +497,30 @@ export class AppShell {
     this.currentFile = null;
     this.vfs = vfs;
     setActiveVfs(vfs);
-    this.populateFileSelect();
-    this.renderStatus({ type: 'info', message: `Opened ${vfs.label}` });
+    this.renderStatus({ type: 'progress', message: `Looking for robot files in ${vfs.label}…` });
+    void this.populateFileSelect().then(() => {
+      if (this.vfs === vfs) {
+        this.renderStatus({ type: 'info', message: `Opened ${vfs.label}` });
+      }
+    });
   }
 
-  private populateFileSelect(): void {
+  private async populateFileSelect(): Promise<void> {
     const select = document.getElementById('file-select') as HTMLSelectElement;
-    if (!this.vfs) {
+    const vfs = this.vfs;
+    if (!vfs) {
       return;
     }
-    const candidates = rankRobotFiles(this.vfs.allFiles().filter(path => URDF_PATTERNS.test(path)));
+    const files = vfs.allFiles();
+    const mjcf = await findMjcfFiles(vfs, files);
+    if (this.vfs !== vfs) {
+      return; // A newer folder replaced this one while we were reading.
+    }
+    const candidates = rankRobotFiles([...files.filter(path => URDF_PATTERNS.test(path)), ...mjcf]);
     this.candidates = candidates;
     select.innerHTML = '';
     if (candidates.length === 0) {
-      select.appendChild(new Option('No URDF or xacro found', ''));
+      select.appendChild(new Option('No URDF, xacro or MJCF found', ''));
       select.disabled = true;
       this.renderEmptyState();
       return;
@@ -512,7 +528,7 @@ export class AppShell {
     select.disabled = false;
     select.appendChild(new Option(`Choose a robot (${candidates.length})`, ''));
     for (const path of candidates) {
-      select.appendChild(new Option(path.replace(`${this.vfs.root}/`, ''), path));
+      select.appendChild(new Option(path.replace(`${vfs.root}/`, ''), path));
     }
     // Auto-load the first if there is only one.
     if (candidates.length === 1) {
@@ -583,6 +599,19 @@ export class AppShell {
   }
 }
 
+/** The .xml files in `files` whose root element is <mujoco>. */
+async function findMjcfFiles(vfs: BrowserVfs, files: string[]): Promise<string[]> {
+  const probes = files.filter(path => XML_CANDIDATE.test(path) && !NOT_A_MODEL.test(path)).slice(0, MAX_XML_PROBES);
+  const results = await Promise.all(probes.map(async path => {
+    try {
+      return isMjcfContent(await vfs.readText(path)) ? path : undefined;
+    } catch {
+      return undefined;
+    }
+  }));
+  return results.filter((path): path is string => path !== undefined);
+}
+
 /** Order description files so complete robots come before the helper
  *  macros, argument files and SRDFs that live beside them. */
 function rankRobotFiles(paths: string[]): string[] {
@@ -590,7 +619,9 @@ function rankRobotFiles(paths: string[]): string[] {
     const lower = path.toLowerCase();
     const name = lower.slice(lower.lastIndexOf('/') + 1);
     let value = 0;
-    if (/\.urdf(\.xacro)?$/.test(name)) value += 3;
+    if (/\.(urdf(\.xacro)?|xml|mjcf)$/.test(name)) value += 3;
+    // MuJoCo Menagerie convention: scene.xml = robot + floor + lights.
+    if (name === 'scene.xml') value += 1;
     if (/(^|\/)robots?\//.test(lower)) value += 2;
     if (name.includes('srdf')) value -= 6;
     if (/(macro|argument|common|util|inertial|transmission|gazebo|ros2_control|material|properties)/.test(name)) value -= 3;

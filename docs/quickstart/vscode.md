@@ -16,8 +16,9 @@ Search for **URDF Studio** in the Extensions view, or install it from the
 
 ## Open a preview
 
-`.urdf`, `.urdf.xacro` and `.xacro` files open in the URDF Studio preview by
-default. To get there from a file open as text:
+`.urdf`, `.urdf.xacro`, `.xacro` and `.mjcf` files open in the URDF Studio
+preview by default. MuJoCo models saved as `.xml` open with the button or
+command below. To get there from a file open as text:
 
 - Click the **Open Preview** button in the editor title bar, or
 - Run **URDF Studio: Open Preview** from the Command Palette
