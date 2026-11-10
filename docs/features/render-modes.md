@@ -35,7 +35,11 @@ To start every robot in collision view, change **Default render mode** in
 
 Turn on **Display → Self-collision** to highlight links whose collision
 shapes overlap in the current pose. Overlapping links turn red, and a
-caption in the corner of the view counts the pairs.
+caption in the corner of the view names the colliding pairs.
+
+Some contact is expected. Closed gripper fingers, for example, touch each
+other — robot SRDFs usually disable such pairs, and pairs disabled in the
+loaded SRDF are not reported.
 
 The check updates as you move joints, so you can drag a slider and watch
 where the arm starts hitting itself. Links joined directly to each other

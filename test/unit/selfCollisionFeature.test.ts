@@ -206,3 +206,86 @@ test('computeCollisions does NOT flip the feature into enabled state', () => {
   sc.computeCollisions(ctxStub());
   assert.equal(sc.isEnabled(), false);
 });
+
+// =============================================================================
+// Geometry: real meshes, indexed by owning link
+// =============================================================================
+
+import * as THREE from 'three';
+import { computeBoundsTree } from 'three-mesh-bvh';
+import { linkGeometry } from '../../src/renderer/features/selfCollision';
+
+(THREE.BufferGeometry.prototype as unknown as { computeBoundsTree: typeof computeBoundsTree }).computeBoundsTree = computeBoundsTree;
+
+/** A chain base → a → b → c of unit boxes, built the way urdf-loader builds
+ *  it: links contain their <collision> groups; child links hang off joints. */
+function boxChain(options: { namedColliders: boolean; cAt: [number, number, number] }) {
+  const links: Record<string, THREE.Object3D> = {};
+  const makeLink = (name: string, colliderName?: string) => {
+    const link = Object.assign(new THREE.Object3D(), { isURDFLink: true });
+    const collider = Object.assign(new THREE.Group(), { isURDFCollider: true });
+    if (colliderName) collider.name = colliderName;
+    collider.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial()));
+    link.add(collider);
+    links[name] = link;
+    return link;
+  };
+  const attach = (parent: THREE.Object3D, child: THREE.Object3D, x: number, y: number, z: number) => {
+    const joint = Object.assign(new THREE.Object3D(), { isURDFJoint: true });
+    joint.position.set(x, y, z);
+    joint.add(child);
+    parent.add(joint);
+  };
+  const named = (link: string) => options.namedColliders ? `${link}_collision` : undefined;
+  const base = makeLink('base', named('base'));
+  const a = makeLink('a', named('a'));
+  const b = makeLink('b', named('b'));
+  const c = makeLink('c', named('c'));
+  // Adjacent links overlap at their joints (0.8 apart, boxes are 1 wide).
+  attach(base, a, 0.8, 0, 0);
+  attach(a, b, 0.8, 0, 0);
+  attach(b, c, ...options.cAt);
+  const robot = Object.assign(new THREE.Object3D(), { links, updateMatrixWorld: THREE.Object3D.prototype.updateMatrixWorld });
+  robot.add(base);
+  const metadata = {
+    links: {
+      base: { name: 'base', childJoints: ['ja'] },
+      a: { name: 'a', parentJoint: 'ja', childJoints: ['jb'] },
+      b: { name: 'b', parentJoint: 'jb', childJoints: ['jc'] },
+      c: { name: 'c', parentJoint: 'jc', childJoints: [] }
+    },
+    joints: {
+      ja: { name: 'ja', parent: 'base', child: 'a' },
+      jb: { name: 'jb', parent: 'a', child: 'b' },
+      jc: { name: 'jc', parent: 'b', child: 'c' }
+    }
+  };
+  return { robot: robot as never, metadata: metadata as never, semantic: { disableCollisions: [] } };
+}
+
+for (const namedColliders of [false, true]) {
+  test(`collisions are reported by link name and skip adjacent links (${namedColliders ? 'named' : 'unnamed'} <collision>)`, () => {
+    const { sc } = makeSc();
+    // c folds back onto base: base↔c really overlap; every adjacent pair
+    // touches at its joint and must be ignored.
+    const ctx = boxChain({ namedColliders, cAt: [-2.0, 0, 0] });
+    sc.rebuildIndex(ctx.robot);
+    assert.deepEqual([...sc.linksWithCollisionGeometry()].sort(), ['a', 'b', 'base', 'c']);
+    const result = sc.computeCollisions(ctx);
+    assert.deepEqual(result.pairs.map(pair => [...pair].sort().join('|')), ['base|c']);
+  });
+}
+
+test('a pose with no real contact reports no collisions despite touching neighbours', () => {
+  const { sc } = makeSc();
+  const ctx = boxChain({ namedColliders: true, cAt: [0.8, 0, 0] });
+  sc.rebuildIndex(ctx.robot);
+  assert.deepEqual(sc.computeCollisions(ctx).pairs, []);
+});
+
+test('linkGeometry finds a link\'s own groups but not its descendants\'', () => {
+  const ctx = boxChain({ namedColliders: false, cAt: [0.8, 0, 0] });
+  const groups = linkGeometry(ctx.robot, 'isURDFCollider');
+  assert.equal(groups.size, 4);
+  for (const list of groups.values()) assert.equal(list.length, 1);
+});

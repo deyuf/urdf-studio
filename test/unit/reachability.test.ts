@@ -293,3 +293,19 @@ test('dispose() after a successful sample removes the cloud from the scene', asy
   scene.traverse(obj => { if ((obj as THREE.Points).isPoints) pointsObjs++; });
   assert.equal(pointsObjs, 0);
 });
+
+test('sample() explains a tip that no joint moves instead of drawing an invisible point', async () => {
+  const { r } = makeReachability();
+  // The fake robot ignores joint values, so the tip never moves.
+  const fake = fakeRobot({ tipName: 'tip', tipWorld: [0.1, 0.2, 0.3] });
+  await r.sample({
+    robot: fake as never,
+    metadata: fakeMetadata(),
+    tipLinkName: 'tip',
+    sampleCount: 20,
+    poseBeforeSampling: { joint1: 0, joint2: 0 },
+    applyPose: () => {},
+    propagateMimics: () => {}
+  });
+  assert.match(document.getElementById('reach-status')!.textContent ?? '', /"tip" does not move with any joint/);
+});

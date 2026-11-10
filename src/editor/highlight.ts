@@ -8,7 +8,7 @@
 
 import { HighlightStyle, syntaxTree } from '@codemirror/language';
 import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate } from '@codemirror/view';
-import { RangeSetBuilder } from '@codemirror/state';
+import type { Range } from '@codemirror/state';
 import { tags as t } from '@lezer/highlight';
 
 // Base highlight style — applies to the @lezer/xml token types. We pick
@@ -35,6 +35,11 @@ const URDF_STRUCTURAL = new Set([
 // Pre-compute which characters in URDF attribute values look like numbers
 // so the highlight plugin can recolour them. We don't try to be exact —
 // just a hint that helps with reading dense xyz="..." attributes.
+const XACRO_MARK = Decoration.mark({ class: 'cm-urdf-xacro' });
+const STRUCTURAL_MARK = Decoration.mark({ class: 'cm-urdf-structural' });
+const PACKAGE_MARK = Decoration.mark({ class: 'cm-urdf-package' });
+const EXPR_MARK = Decoration.mark({ class: 'cm-urdf-expr' });
+
 const NUMERIC_REGEX = /-?\d+\.?\d*(?:[eE][-+]?\d+)?/g;
 const PACKAGE_URI_REGEX = /package:\/\/[^"\s]+/g;
 const XACRO_EXPR_REGEX = /\$\{[^}]+\}|\$\([^)]+\)/g;
@@ -53,7 +58,10 @@ class UrdfHighlightPlugin {
   }
 
   private build(view: EditorView): DecorationSet {
-    const builder = new RangeSetBuilder<Decoration>();
+    // Collected, then sorted by Decoration.set: the two passes below visit
+    // positions out of order, which RangeSetBuilder rejects (it threw, and
+    // CodeMirror then disabled this highlighter).
+    const ranges: Array<Range<Decoration>> = [];
     // First pass: walk the lezer tree for the visible viewport and tag
     // structural elements.
     for (const { from, to } of view.visibleRanges) {
@@ -65,9 +73,9 @@ class UrdfHighlightPlugin {
             const text = view.state.doc.sliceString(node.from, node.to);
             const bareName = text.replace(/^<\/?/, '').trim();
             if (bareName.startsWith('xacro:')) {
-              builder.add(node.from, node.to, Decoration.mark({ class: 'cm-urdf-xacro' }));
+              ranges.push(XACRO_MARK.range(node.from, node.to));
             } else if (URDF_STRUCTURAL.has(bareName)) {
-              builder.add(node.from, node.to, Decoration.mark({ class: 'cm-urdf-structural' }));
+              ranges.push(STRUCTURAL_MARK.range(node.from, node.to));
             }
           }
         }
@@ -84,14 +92,14 @@ class UrdfHighlightPlugin {
         const inner = stringMatch[1];
 
         scanRegex(inner, PACKAGE_URI_REGEX, (start, end) => {
-          builder.add(stringStart + start, stringStart + end, Decoration.mark({ class: 'cm-urdf-package' }));
+          ranges.push(PACKAGE_MARK.range(stringStart + start, stringStart + end));
         });
         scanRegex(inner, XACRO_EXPR_REGEX, (start, end) => {
-          builder.add(stringStart + start, stringStart + end, Decoration.mark({ class: 'cm-urdf-expr' }));
+          ranges.push(EXPR_MARK.range(stringStart + start, stringStart + end));
         });
       }
     }
-    return builder.finish();
+    return Decoration.set(ranges, true);
   }
 }
 

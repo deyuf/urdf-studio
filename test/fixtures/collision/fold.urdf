@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<!-- Collision-tool fixture. Boxes are 0.2 m; neighbours overlap at their
+     joints (adjacent, must be ignored). c folds back under base, so base and c
+     are the only non-adjacent pair in contact at the zero pose. imu has no
+     collision geometry. <collision> elements are deliberately unnamed. -->
+<robot name="fold">
+  <link name="base"><collision><geometry><box size="0.2 0.2 0.2"/></geometry></collision></link>
+  <link name="a"><collision><geometry><box size="0.2 0.2 0.2"/></geometry></collision></link>
+  <link name="b"><collision><geometry><box size="0.2 0.2 0.2"/></geometry></collision></link>
+  <link name="c"><collision><geometry><box size="0.2 0.2 0.2"/></geometry></collision></link>
+  <link name="imu">
+    <visual><geometry><mesh filename="package://fold_description/meshes/imu.stl"/></geometry></visual>
+  </link>
+  <joint name="ja" type="revolute"><parent link="base"/><child link="a"/><origin xyz="0.18 0 0"/><axis xyz="0 0 1"/><limit lower="-0.3" upper="0.3" effort="1" velocity="1"/></joint>
+  <joint name="jb" type="revolute"><parent link="a"/><child link="b"/><origin xyz="0.18 0 0"/><axis xyz="0 0 1"/><limit lower="-0.3" upper="0.3" effort="1" velocity="1"/></joint>
+  <joint name="jc" type="revolute"><parent link="b"/><child link="c"/><origin xyz="-0.46 0 -0.15"/><axis xyz="0 0 1"/><limit lower="-0.3" upper="0.3" effort="1" velocity="1"/></joint>
+  <joint name="j_imu" type="fixed"><parent link="base"/><child link="imu"/><origin xyz="0 0 0.3"/></joint>
+</robot>
