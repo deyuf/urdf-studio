@@ -36,6 +36,30 @@ folder.
 
 Primitive shapes — `<box>`, `<cylinder>`, `<sphere>` — are drawn directly.
 
+### Capsules
+
+URDF Studio also draws MuJoCo-style capsules in `<visual>` and `<collision>`
+geometry. This is an extension: standard ROS tools don't read it.
+
+```xml
+<geometry>
+  <capsule radius="0.05" length="0.2"/>
+</geometry>
+```
+
+- `length` is the straight middle section; the capsule is
+  `length + 2 × radius` long end to end.
+- The capsule runs along the geometry's local Z axis, then the usual
+  `<origin>` applies.
+- `length="0"` gives a sphere. `radius` must be positive and `length` zero or
+  more.
+- Materials and opacity work as for other shapes.
+
+The repository's
+[capsule example](https://github.com/deyuf/urdf-studio/blob/main/test/fixtures/capsules.urdf)
+shows a visual capsule, a rotated collision capsule and an ordinary cylinder
+side by side.
+
 ## Paths
 
 | Path in the URDF | Resolved against |

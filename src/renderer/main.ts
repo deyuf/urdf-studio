@@ -7,6 +7,7 @@ import { ColladaLoader } from 'three/examples/jsm/loaders/ColladaLoader.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import URDFLoader from 'urdf-loader';
+import { parseUrdfWithCapsules } from './parseUrdf';
 import type { URDFRobot } from 'urdf-loader/src/URDFClasses';
 import { acceleratedRaycast, computeBoundsTree, disposeBoundsTree, MeshBVH } from 'three-mesh-bvh';
 import type {
@@ -765,13 +766,13 @@ async function loadRobot(data: LoadRobotMessage, forceCollisionGeometry = false)
   try {
     // Draw what we can: elements that would crash the loader (dangling
     // joints, cycles, unknown mimic targets) are left out of the scene and
-    // reported by Checks instead.
+    // reported by Checks instead. Capsules are then drawn as one mesh.
     const renderable = makeRenderable(data.urdf);
     renderOmissions = renderable.removed;
     if (renderOmissions.length > 0) {
       console.warn('[urdf] left out of the 3D view:', renderOmissions.join('; '));
     }
-    const parsedRobot = loader.parse(renderable.urdf) as URDFRobot;
+    const parsedRobot = parseUrdfWithCapsules(loader, renderable.urdf);
     robot = parsedRobot;
     parsedRobot.visible = !hasExternalMeshesToLoad;
     collisionGeometryLoaded = shouldLoadCollision;
