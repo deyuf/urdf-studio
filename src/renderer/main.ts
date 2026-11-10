@@ -7,6 +7,7 @@ import { ColladaLoader } from 'three/examples/jsm/loaders/ColladaLoader.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import URDFLoader from 'urdf-loader';
+import { parseUrdfWithCapsules } from './parseUrdf';
 import type { URDFRobot } from 'urdf-loader/src/URDFClasses';
 import { acceleratedRaycast, computeBoundsTree, disposeBoundsTree, MeshBVH } from 'three-mesh-bvh';
 import type {
@@ -731,7 +732,7 @@ async function loadRobot(data: LoadRobotMessage, forceCollisionGeometry = false)
   };
 
   try {
-    const parsedRobot = loader.parse(data.urdf) as URDFRobot;
+    const parsedRobot = parseUrdfWithCapsules(loader, data.urdf);
     robot = parsedRobot;
     parsedRobot.visible = !hasExternalMeshesToLoad;
     collisionGeometryLoaded = shouldLoadCollision;

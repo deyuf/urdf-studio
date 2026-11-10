@@ -366,3 +366,17 @@ More: [docs/development/building →](https://urdf.deyuf.org/docs/development/bu
 PRs welcome.
 
 License: [MIT](LICENSE).
+
+
+### Capsule geometry extension
+
+The preview accepts MuJoCo-style `<capsule radius="0.05" length="0.2"/>`
+in visual and collision geometry. `length` is the cylindrical core length;
+the total end-to-end length is `length + 2 * radius`. The capsule axis is local
+Z before the usual URDF origin/RPY transform. A zero-length core renders as a
+sphere. Radius must be positive and length nonnegative, with finite values.
+Capsules use one continuous mesh, preserving URDF materials and opacity.
+This is an extension to standard URDF, not a ROS URDF schema change.
+
+Open the [capsule example](test/fixtures/capsules.urdf) to compare a visual capsule, a rotated
+collision capsule and an ordinary cylinder.
