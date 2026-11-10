@@ -13,6 +13,7 @@
 // The schema list is hand-curated (not generated from XSD) so we can write
 // short, expressive snippets and pick sensible default attribute order.
 
+import type { RobotFormat } from '../core/types';
 import { autocompletion, type CompletionContext, type CompletionResult, type Completion } from '@codemirror/autocomplete';
 import { snippetCompletion } from '@codemirror/autocomplete';
 
@@ -76,7 +77,7 @@ const XACRO_SNIPPETS: Completion[] = [
 
 export function urdfCompletionSource(
   provider: CompletionContextProvider,
-  format: 'urdf' | 'xacro'
+  format: RobotFormat
 ) {
   return (context: CompletionContext): CompletionResult | null => {
     const cursor = context.pos;
@@ -163,7 +164,7 @@ function makeJointResult(provider: CompletionContextProvider, from: number): Com
 
 // Convenience: expose the autocompletion extension factory so callers can
 // add it directly without thinking about the source signature.
-export function urdfAutocomplete(provider: CompletionContextProvider, format: 'urdf' | 'xacro') {
+export function urdfAutocomplete(provider: CompletionContextProvider, format: RobotFormat) {
   return autocompletion({
     override: [urdfCompletionSource(provider, format)],
     activateOnTyping: true,

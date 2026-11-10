@@ -6,6 +6,7 @@
 // returned handle exposes setActiveLine / replaceText / dispose so the
 // renderer can shuttle data in and out without knowing the CM6 API.
 
+import type { RobotFormat } from '../core/types';
 import { EditorState, type Extension, Compartment } from '@codemirror/state';
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
@@ -26,7 +27,7 @@ export interface UrdfEditorOptions {
   /** Whether editing is allowed. */
   readOnly?: boolean;
   /** Whether the document is xacro (affects completion lists). */
-  format: 'urdf' | 'xacro';
+  format: RobotFormat;
   /** Provides live link / joint names for semantic completion. */
   completionProvider: CompletionContextProvider;
   /** Provides current lint report + asks for a refresh when document changes. */

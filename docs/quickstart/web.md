@@ -22,6 +22,9 @@ Choose the **package or workspace root** — the folder that contains
 needs the whole package, not just the robot file, because meshes and
 included xacro files are found through `package://` paths.
 
+For a MuJoCo model, choose the folder with its `.xml` files and meshes; see
+[View MuJoCo models](../features/mjcf.html).
+
 There are three ways to open one:
 
 | How | Works in |

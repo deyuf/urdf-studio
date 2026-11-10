@@ -17,6 +17,7 @@ import type {
   MimicInfo,
   PoseBookmark,
   PreviewState,
+  RobotFormat,
   RobotMetadata,
   SemanticMetadata,
   StudioDiagnostic,
@@ -57,7 +58,7 @@ interface LoadRobotMessage {
   fileName: string;
   sourcePath: string;
   sourceBaseUri: string;
-  format: 'urdf' | 'xacro';
+  format: RobotFormat;
   urdf: string;
   packageMap: Record<string, string>;
   metadata: RobotMetadata;
@@ -701,6 +702,9 @@ async function loadRobot(data: LoadRobotMessage, forceCollisionGeometry = false)
     if (!parseComplete || pendingMeshes > 0) {
       return;
     }
+    if (robot) {
+      applyVisualMaterials(robot);
+    }
     revealRobot();
   };
 
@@ -853,12 +857,57 @@ function loadMesh(pathToModel: string, manager: LoadingManager): Promise<Object3
     return new Promise((resolve, reject) => new ColladaLoader(manager).load(pathToModel, result => resolve(result?.scene ?? null), undefined, reject));
   }
   if (lower.endsWith('.obj')) {
-    return new Promise((resolve, reject) => new OBJLoader(manager).load(pathToModel, resolve, undefined, reject));
+    // OBJ without an .mtl carries no colour, and urdf-loader only assigns the
+    // URDF <material> to a bare Mesh — not to the Group OBJLoader returns.
+    // Tag it so applyVisualMaterials() can colour it once it is in place.
+    return new Promise((resolve, reject) => new OBJLoader(manager).load(pathToModel, (group: Object3D) => {
+      group.userData.takesUrdfMaterial = true;
+      resolve(group);
+    }, undefined, reject));
   }
   if (lower.endsWith('.gltf') || lower.endsWith('.glb')) {
     return new Promise((resolve, reject) => new GLTFLoader(manager).load(pathToModel, (result: { scene: Object3D }) => resolve(result.scene), undefined, reject));
   }
   return Promise.resolve(null);
+}
+
+/** Give tagged (colourless OBJ) meshes the colour their URDF <visual>
+ *  declares, as ROS viewers do. Meshes with their own materials (DAE, glTF)
+ *  are left alone. */
+function applyVisualMaterials(root: Object3D): void {
+  root.traverse(object => {
+    const visual = object as Object3D & { isURDFVisual?: boolean; urdfNode?: Element };
+    if (!visual.isURDFVisual || !visual.urdfNode) {
+      return;
+    }
+    const color = Array.from(visual.urdfNode.children).find(node => node.nodeName.toLowerCase() === 'material')
+      ?.querySelector('color')?.getAttribute('rgba');
+    const rgba = color?.trim().split(/\s+/).map(Number);
+    if (!rgba || rgba.length < 3 || rgba.some(value => !Number.isFinite(value))) {
+      return;
+    }
+    for (const child of visual.children) {
+      if (!child.userData.takesUrdfMaterial) {
+        continue;
+      }
+      child.traverse(part => {
+        const mesh = part as THREE.Mesh;
+        if (!mesh.isMesh) {
+          return;
+        }
+        forEachMaterial(mesh, material => material.dispose());
+        const opacity = rgba[3] ?? 1;
+        mesh.material = new THREE.MeshPhongMaterial({
+          // Same colour handling as urdf-loader uses for primitives.
+          color: new THREE.Color().setRGB(rgba[0], rgba[1], rgba[2]),
+          opacity,
+          transparent: opacity < 1,
+          side: THREE.DoubleSide
+        });
+      });
+      child.userData.takesUrdfMaterial = false;
+    }
+  });
 }
 
 function cloneObject(object: Object3D): Object3D {
@@ -1123,7 +1172,11 @@ function renderChecks(data: LoadRobotMessage): void {
     sourcePath: data.sourcePath,
     packages: {},
     metadata: data.metadata
-  }, data.diagnostics);
+  }, data.diagnostics, {
+    // MuJoCo derives mass and inertia from the geoms when a body has no
+    // <inertial>, so a missing block is normal in MJCF.
+    skipRules: data.format === 'mjcf' ? ['P-001'] : []
+  });
   currentLintReport = report;
 
   // Push diagnostics into the editor's inline linter.

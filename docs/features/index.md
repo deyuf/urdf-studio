@@ -18,6 +18,7 @@ they exist.
 - [Frames, labels and inertia](./overlays.html) — see joint frames, names
   and mass distribution in 3D.
 - [Inspect a link](./inspector.html) — the link tree and per-link details.
+- [View MuJoCo (MJCF) models](./mjcf.html) — open MuJoCo models read-only.
 
 ## Working with the model
 

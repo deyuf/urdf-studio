@@ -31,7 +31,7 @@ For how to use the Checks tab, see
 
 | Code | Severity | Found when | How to fix |
 |---|---|---|---|
-| `P-001` | Warning | A link has no `<inertial>` | Add mass and inertia. Fine to ignore for pure frames like `tool0` |
+| `P-001` | Warning | A link has no `<inertial>` | Add mass and inertia. Fine to ignore for pure frames like `tool0`. Not checked for MuJoCo models, which compute inertia from geoms |
 | `P-002` | Warning | The inertia values are physically impossible (the tensor is not positive-definite) | Recompute the inertia, for example from the CAD model. Check `ixx`, `iyy`, `izz` are positive and each is less than the sum of the other two |
 | `P-003` | Error / Warning | Mass is negative (error), zero or missing (warning), or over 10,000 kg (warning — usually grams used by mistake) | Give every real part its mass in kilograms |
 | `P-004` | Warning | A revolute or prismatic joint has no lower or upper limit | Add `<limit lower upper effort velocity>` |

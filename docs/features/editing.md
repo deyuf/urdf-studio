@@ -50,6 +50,7 @@ Press **Ctrl+S** (**⌘S**) in the editor.
 |---|---|---|
 | `.urdf` | Downloads the edited file; the original in your folder is not changed | Writes the file |
 | `.xacro` | Downloads the expanded result as `<name>.urdf` | Asks where to save the expanded result as a `.urdf` |
+| MJCF (`.xml`, `.mjcf`) | Downloads the converted URDF as `<name>.urdf` | Asks where to save the converted URDF |
 
 ## Editing xacro files
 
@@ -59,5 +60,6 @@ Live preview still works, which makes it a good place to try a change
 quickly.
 
 Saving never writes over the `.xacro` file — the expanded text would lose
-its macros and includes. Make lasting changes in your xacro source, in
+its macros and includes. The same applies to MuJoCo models, whose Source
+tab shows the [converted URDF](./mjcf.html). Make lasting changes in your xacro source, in
 your usual editor.

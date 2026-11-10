@@ -10,7 +10,8 @@ import { loadSemanticMetadata, mergeDisableCollisionsIntoSrdf, parseSrdf } from 
 import { escapeXmlText } from './core/escapeXml';
 import type { DisableCollisionEntry, PackageMap, PoseBookmark, PreviewState, RobotMetadata, StudioDiagnostic } from './core/types';
 import { registerLanguageFeatures } from './languageFeatures';
-import { expandedUrdfName, isXacroPath } from './core/sourceSave';
+import { expandedUrdfName, isGeneratedSourcePath } from './core/sourceSave';
+import { isMjcfContent } from './core/mjcf';
 
 const VIEW_TYPE = 'urdfStudio.preview';
 
@@ -211,9 +212,15 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
   }
 
   async openPreviewForActiveEditor(): Promise<void> {
-    const uri = vscode.window.activeTextEditor?.document.uri;
+    const editor = vscode.window.activeTextEditor;
+    const uri = editor?.document.uri;
     if (!uri) {
-      void vscode.window.showInformationMessage('Open a URDF or xacro file first.');
+      void vscode.window.showInformationMessage('Open a URDF, xacro or MJCF file first.');
+      return;
+    }
+    // .xml is only previewable when it is a MuJoCo model.
+    if (/\.xml$/i.test(uri.fsPath) && !isMjcfContent(editor.document.getText())) {
+      void vscode.window.showInformationMessage('URDF Studio: this XML file is not a MuJoCo (MJCF) model.');
       return;
     }
     await vscode.commands.executeCommand('vscode.openWith', uri, VIEW_TYPE);
@@ -632,8 +639,8 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
   }
 
   private async saveSource(uri: vscode.Uri, text: string): Promise<void> {
-    if (isXacroPath(uri.fsPath)) {
-      await this.saveExpandedXacro(uri, text);
+    if (isGeneratedSourcePath(uri.fsPath)) {
+      await this.saveGeneratedUrdf(uri, text);
       return;
     }
     try {
@@ -647,26 +654,27 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
     }
   }
 
-  /** The editor holds expanded URDF; never write it over the xacro source. */
-  private async saveExpandedXacro(xacroUri: vscode.Uri, text: string): Promise<void> {
+  /** The editor holds URDF generated from xacro or MJCF; never write it over
+   *  the original source. */
+  private async saveGeneratedUrdf(sourceUri: vscode.Uri, text: string): Promise<void> {
     const target = await vscode.window.showSaveDialog({
-      title: 'Save expanded URDF (the .xacro file is not changed)',
-      defaultUri: vscode.Uri.joinPath(xacroUri, '..', expandedUrdfName(path.basename(xacroUri.fsPath))),
+      title: `Save as URDF (${path.basename(sourceUri.fsPath)} is not changed)`,
+      defaultUri: vscode.Uri.joinPath(sourceUri, '..', expandedUrdfName(path.basename(sourceUri.fsPath))),
       filters: { URDF: ['urdf'] }
     });
     if (!target) {
       return;
     }
-    if (target.toString() === xacroUri.toString() || isXacroPath(target.fsPath)) {
-      void vscode.window.showErrorMessage('URDF Studio: expanded URDF cannot be saved over a .xacro file. Choose a .urdf name.');
+    if (target.toString() === sourceUri.toString() || isGeneratedSourcePath(target.fsPath)) {
+      void vscode.window.showErrorMessage('URDF Studio: the URDF cannot be saved over a xacro or MJCF file. Choose a .urdf name.');
       return;
     }
     try {
       await vscode.workspace.fs.writeFile(target, Buffer.from(text, 'utf8'));
-      void vscode.window.setStatusBarMessage(`URDF Studio: saved expanded URDF to ${vscode.workspace.asRelativePath(target)}.`, 4000);
+      void vscode.window.setStatusBarMessage(`URDF Studio: saved URDF to ${vscode.workspace.asRelativePath(target)}.`, 4000);
     } catch (error) {
-      log(`saveExpandedXacro failed: ${String(error)}`);
-      void vscode.window.showErrorMessage(`URDF Studio: could not save expanded URDF (${error instanceof Error ? error.message : String(error)}).`);
+      log(`saveGeneratedUrdf failed: ${String(error)}`);
+      void vscode.window.showErrorMessage(`URDF Studio: could not save URDF (${error instanceof Error ? error.message : String(error)}).`);
     }
   }
 

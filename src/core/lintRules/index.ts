@@ -545,9 +545,16 @@ export const REBADGED_SOURCE_CODES: ReadonlySet<string> = new Set([
  * covers (XML/xacro failures, SRDF problems, multiple parents…) under the
  * synthetic `OTHER` group. Counts and the health score include both.
  */
-export function buildChecksReport(input: LintInput, extraDiagnostics: StudioDiagnostic[] = []): LintReport {
+export function buildChecksReport(
+  input: LintInput,
+  extraDiagnostics: StudioDiagnostic[] = [],
+  options: { skipRules?: readonly string[] } = {}
+): LintReport {
   const combined = [...input.metadata.diagnostics, ...extraDiagnostics];
-  const report = runAllRules({ ...input, metadata: { ...input.metadata, diagnostics: combined } });
+  const enabled = options.skipRules?.length
+    ? new Set(RULE_REGISTRY.filter(rule => rule.defaultEnabled && !options.skipRules!.includes(rule.code)).map(rule => rule.code))
+    : undefined;
+  const report = runAllRules({ ...input, metadata: { ...input.metadata, diagnostics: combined } }, enabled);
   const ruleCodes = new Set(RULE_CODES);
   const unmatched = combined.filter(diag => !diag.code || (!ruleCodes.has(diag.code) && !REBADGED_SOURCE_CODES.has(diag.code)));
   if (unmatched.length === 0) {

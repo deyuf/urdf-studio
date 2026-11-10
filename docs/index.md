@@ -1,14 +1,14 @@
 ---
 title: Overview
-summary: URDF Studio is a free URDF and xacro viewer for the browser and VS Code. Open a ROS package, pose the robot, find problems in the model — nothing is uploaded.
+summary: URDF Studio is a free URDF, xacro and MuJoCo MJCF viewer for the browser and VS Code. Open a robot, pose it, find problems in the model — nothing is uploaded.
 ---
 
 # URDF Studio
 
-URDF Studio opens ROS robot descriptions — `.urdf` and `.xacro` files with
-their meshes — and shows the robot in 3D. You can move every joint, click
-any part to see what it is, and get a list of problems in the model with
-the line that causes each one.
+URDF Studio opens robot descriptions — ROS `.urdf` and `.xacro` files and
+MuJoCo MJCF models, with their meshes — and shows the robot in 3D. You can
+move every joint, click any part to see what it is, and get a list of
+problems in the model with the line that causes each one.
 
 It runs in two places, with the same features in both:
 
@@ -31,6 +31,7 @@ It runs in two places, with the same features in both:
 | I want to… | Read |
 |---|---|
 | See my robot and check it looks right | [Navigate the 3D view](./features/viewport.html) |
+| Open a MuJoCo model | [View MuJoCo (MJCF) models](./features/mjcf.html) |
 | Move joints, try poses, check limits | [Pose the robot](./features/joints.html) |
 | Find out why a mesh is missing or the model looks wrong | [Find and fix problems](./features/diagnostics.html) |
 | Check collision geometry against the visual model | [Visual and collision geometry](./features/render-modes.html) |

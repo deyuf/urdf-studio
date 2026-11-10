@@ -5,7 +5,7 @@
 </h1>
 
 <p align="center">
-  <strong>See, pose and check ROS robot models — in your browser or in VS Code.</strong>
+  <strong>See, pose and check robot models — URDF, xacro and MuJoCo MJCF — in your browser or in VS Code.</strong>
 </p>
 
 <p align="center">
@@ -24,8 +24,8 @@
   <img src="media/screenshots-web/01-hero.gif" alt="A Franka FR3 arm in URDF Studio: joints are moved with sliders, then the Source and Checks tabs are shown">
 </p>
 
-URDF Studio opens `.urdf` and `.xacro` robot descriptions with their
-meshes and shows the robot in 3D. Move every joint, click any part to see
+URDF Studio opens `.urdf` and `.xacro` robot descriptions and MuJoCo
+(MJCF) models with their meshes and shows the robot in 3D. Move every joint, click any part to see
 what it is, compare visual and collision geometry, and get a list of
 problems in the model — each linked to the line that causes it.
 
@@ -50,6 +50,8 @@ locally and never uploaded.
   them to your SRDF; see where the arm can reach.
 - **Share** — save poses and bookmarks, export a PNG, joint values (JSON),
   a parts list (CSV) or an inspection report (PDF).
+- **Open MuJoCo models** — view MJCF read-only with the same tools, and
+  save it as URDF. Tested against MuJoCo Menagerie robots.
 
 ## Get started
 
@@ -117,8 +119,8 @@ in [Troubleshooting](https://urdf.deyuf.org/docs/help/#meshes-are-missing).
 **Do I need ROS installed?** No. Xacro is expanded by URDF Studio itself,
 including `$(find …)`, `xacro:include`, macros and `load_yaml`.
 
-**Which formats are supported?** URDF, xacro and SRDF; STL, COLLADA, OBJ,
-glTF and GLB meshes. See
+**Which formats are supported?** URDF, xacro, SRDF and MuJoCo MJCF
+(read-only); STL, COLLADA, OBJ, glTF and GLB meshes. See
 [Supported files and browsers](https://urdf.deyuf.org/docs/reference/formats.html).
 
 **Is my robot model uploaded?** No. The browser version reads your files

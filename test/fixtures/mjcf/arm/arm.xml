@@ -1,0 +1,29 @@
+<mujoco model="two_link_arm">
+  <compiler angle="radian" meshdir="assets"/>
+  <default>
+    <default class="arm">
+      <joint axis="0 0 1" range="-1.5 1.5"/>
+      <default class="visual">
+        <geom contype="0" conaffinity="0" group="2"/>
+      </default>
+      <default class="collision">
+        <geom group="3"/>
+      </default>
+    </default>
+  </default>
+  <asset>
+    <mesh file="link.stl" scale="0.5 0.5 0.5"/>
+    <material name="orange" rgba="1 0.5 0 1"/>
+  </asset>
+  <worldbody>
+    <body name="shoulder" childclass="arm">
+      <joint name="shoulder_pan"/>
+      <geom class="visual" type="mesh" mesh="link" material="orange"/>
+      <geom class="collision" type="capsule" size="0.03 0.1"/>
+      <body name="forearm" pos="0.3 0 0">
+        <joint name="elbow"/>
+        <geom class="visual" type="mesh" mesh="link"/>
+      </body>
+    </body>
+  </worldbody>
+</mujoco>
