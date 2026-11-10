@@ -32,6 +32,7 @@ import {
   isAdjacent as isAdjacentPure
 } from './logic/selfCollision';
 import { mountSourcePane, type SourcePane } from './logic/sourcePane';
+import { rankTipLinks } from './logic/tipLinks';
 import { createLayoutController, type LayoutController } from './layout/fullscreen';
 import { buildChecksReport, RULE_REGISTRY, type LintReport } from '../core/lintRules';
 import { makeRenderable } from '../core/renderable';
@@ -705,6 +706,10 @@ async function loadRobot(data: LoadRobotMessage, forceCollisionGeometry = false)
     }
     if (robot) {
       applyVisualMaterials(robot);
+      // Meshes load asynchronously, after the first applyRenderMode() ran on
+      // the parsed robot; apply it again so late collision meshes get the
+      // collider style instead of keeping their default grey.
+      applyRenderMode();
     }
     revealRobot();
   };
@@ -1952,9 +1957,8 @@ async function copyViewportScreenshot(): Promise<void> {
 
 function renderToolsPanel(): void {
   const panel = qs('#panel-tools');
-  const tipLinks = currentData
-    ? Object.values(currentData.metadata.links).filter(link => link.childJoints.length === 0)
-    : [];
+  // Best candidate first, so the default selection is the end effector.
+  const tipLinks = currentData ? rankTipLinks(currentData.metadata) : [];
   setInnerHtml(panel, html`
     <section class="tool-block">
       <h3>Measure</h3>
@@ -1969,7 +1973,7 @@ function renderToolsPanel(): void {
       <h3>Reachability</h3>
       <p class="tool-hint muted">Sample random joint configurations and plot where the tip link can reach.</p>
       <div class="tool-fields">
-        <label><span>Tip link</span><select id="reach-tip">${tipLinks.map(link => html`<option value="${link.name}">${link.name}</option>`)}</select></label>
+        <label><span>Tip link</span><select id="reach-tip">${tipLinks.map(name => html`<option value="${name}">${name}</option>`)}</select></label>
         <label><span>Samples</span><input id="reach-samples" type="number" min="50" max="20000" step="50" value="1000"></label>
       </div>
       <div class="row-buttons">
@@ -2303,7 +2307,12 @@ async function analyzeCollisionPairs(): Promise<void> {
   const previousPose = getPose();
   const allPairs = new Set<string>();
   const colliding = new Set<string>();
-  const linkNamesArr = Object.keys(currentData.metadata.links);
+  // Only links with collision geometry can collide. Links without any
+  // (sensor frames, tool points) are left out instead of being reported as
+  // trivially "never colliding".
+  const withGeometry = ensureSelfCollision().linksWithCollisionGeometry();
+  const linkNamesArr = Object.keys(currentData.metadata.links).filter(name => withGeometry.has(name));
+  const skippedLinks = Object.keys(currentData.metadata.links).length - linkNamesArr.length;
   for (let i = 0; i < linkNamesArr.length; i += 1) {
     for (let j = i + 1; j < linkNamesArr.length; j += 1) {
       if (!isAdjacentPure(linkNamesArr[i], linkNamesArr[j], currentData.metadata.links, currentData.metadata.joints)) {
@@ -2372,7 +2381,8 @@ async function analyzeCollisionPairs(): Promise<void> {
       ${overflow > 0 ? html`<li class="muted">… and ${overflow} more</li>` : ''}
     `);
   }
-  qs('#srdf-status').textContent = `${neverColliding.length} never-colliding pairs found from ${samples} samples.`;
+  qs('#srdf-status').textContent = `${neverColliding.length} of ${allPairs.size} link pairs never collided in ${samples} poses.`
+    + (skippedLinks > 0 ? ` ${skippedLinks} link${skippedLinks === 1 ? '' : 's'} without collision geometry left out.` : '');
   qs<HTMLButtonElement>('#srdf-write').disabled = neverColliding.length === 0;
 
   applyPose(previousPose);

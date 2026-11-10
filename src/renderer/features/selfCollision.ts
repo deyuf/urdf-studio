@@ -50,7 +50,9 @@ export class SelfCollision {
   private linkCollisionMaterials = new Map<string, THREE.MeshStandardMaterial[]>();
   private linkVisualMaterials = new Map<string, THREE.MeshStandardMaterial[]>();
   private originalVisualColors = new Map<THREE.MeshStandardMaterial, THREE.Color>();
+  private originalCollisionColors = new Map<THREE.MeshStandardMaterial, THREE.Color>();
   private highlightedLinks = new Set<string>();
+  private lastPairs: Array<[string, string]> = [];
 
   // Debounce: leading + trailing edge so a sustained slider drag highlights
   // the last frame too. The legacy implementation was leading-only — it could
@@ -61,6 +63,9 @@ export class SelfCollision {
   constructor(private readonly deps: SelfCollisionDeps) {}
 
   isEnabled(): boolean { return this.enabled; }
+
+  /** Link pairs found colliding by the last live check. */
+  collidingPairs(): Array<[string, string]> { return this.lastPairs.map(([a, b]) => [a, b]); }
 
   /** Number of colliding meshes the broad/narrow phase has highlighted. */
   highlightedLinkCount(): number { return this.highlightedLinks.size; }
@@ -129,7 +134,7 @@ export class SelfCollision {
 
   /** Just clear highlights without losing the indexes. */
   clearHighlights(): void {
-    this.applyHighlights(new Set(), 0);
+    this.applyHighlights(new Set(), []);
   }
 
   /**
@@ -147,7 +152,7 @@ export class SelfCollision {
 
   private runOnce(ctx: CollisionContext): void {
     const result = this.collect(ctx);
-    this.applyHighlights(result.links, result.pairs.length);
+    this.applyHighlights(result.links, result.pairs);
   }
 
   private collect(ctx: CollisionContext): CollisionResult {
@@ -207,7 +212,7 @@ export class SelfCollision {
     return { pairs, links };
   }
 
-  private applyHighlights(links: Set<string>, pairCount: number): void {
+  private applyHighlights(links: Set<string>, pairs: Array<[string, string]>): void {
     // Restore links that were tinted last frame but aren't colliding now.
     for (const link of this.highlightedLinks) {
       if (!links.has(link)) {
@@ -223,7 +228,8 @@ export class SelfCollision {
     for (const link of links) {
       this.highlightedLinks.add(link);
     }
-    this.updateHud(pairCount);
+    this.lastPairs = pairs;
+    this.updateHud(pairs);
     this.deps.requestRedraw();
     this.deps.onStateChange?.();
   }
@@ -240,10 +246,11 @@ export class SelfCollision {
   }
 
   private restoreLinkColors(linkName: string): void {
-    // Collision meshes are recoloured cyan by the renderer's applyRenderMode;
-    // just match that.
     for (const material of this.linkCollisionMaterials.get(linkName) ?? []) {
-      material.color.set(0x71d0ff);
+      const original = this.originalCollisionColors.get(material);
+      if (original) {
+        material.color.copy(original);
+      }
       material.needsUpdate = true;
     }
     for (const material of this.linkVisualMaterials.get(linkName) ?? []) {
@@ -255,7 +262,7 @@ export class SelfCollision {
     }
   }
 
-  private updateHud(pairCount: number): void {
+  private updateHud(pairs: Array<[string, string]>): void {
     const hud = document.getElementById('collide-hud');
     if (!hud) {
       return;
@@ -264,9 +271,12 @@ export class SelfCollision {
       hud.textContent = '';
       return;
     }
-    hud.textContent = pairCount === 0
-      ? 'No self-collisions.'
-      : `${pairCount} self-collision pair${pairCount === 1 ? '' : 's'}.`;
+    // Name the colliding links: a bare count can't tell a real problem from
+    // expected contact (e.g. closed gripper fingers).
+    const shown = pairs.slice(0, 3).map(([a, b]) => `${a} ↔ ${b}`).join(', ');
+    const more = pairs.length > 3 ? ` and ${pairs.length - 3} more` : '';
+    hud.textContent = pairs.length === 0 ? 'No self-collisions.' : `Self-collision: ${shown}${more}`;
+    hud.title = pairs.map(([a, b]) => `${a} ↔ ${b}`).join('\n');
   }
 
   // -------------------------------------------------------------------------
@@ -274,11 +284,8 @@ export class SelfCollision {
   // -------------------------------------------------------------------------
 
   private indexCollisionMeshes(robot: URDFRobot): void {
-    if (!robot.colliders) {
-      return;
-    }
-    for (const [linkName, collider] of Object.entries(robot.colliders)) {
-      collider.traverse(child => {
+    for (const [linkName, colliders] of linkGeometry(robot, 'isURDFCollider')) {
+      for (const collider of colliders) collider.traverse(child => {
         const mesh = child as THREE.Mesh;
         if (!mesh.isMesh || !(mesh.geometry instanceof THREE.BufferGeometry)) {
           return;
@@ -298,20 +305,25 @@ export class SelfCollision {
         if (!this.linkCollisionMaterials.has(linkName)) {
           this.linkCollisionMaterials.set(linkName, []);
         }
-        for (const material of materials(mesh)) {
-          this.linkCollisionMaterials.get(linkName)!.push(material as THREE.MeshStandardMaterial);
+        for (const material of materials(mesh) as THREE.MeshStandardMaterial[]) {
+          this.linkCollisionMaterials.get(linkName)!.push(material);
+          if (!this.originalCollisionColors.has(material)) {
+            this.originalCollisionColors.set(material, material.color.clone());
+          }
         }
       });
     }
   }
 
+  /** Links that have at least one collision mesh in the index. */
+  linksWithCollisionGeometry(): Set<string> {
+    return new Set(Array.from(this.collisionMeshes.values(), entry => entry.ownerLink));
+  }
+
   private indexVisualMaterials(robot: URDFRobot): void {
-    if (!robot.visual) {
-      return;
-    }
-    for (const [linkName, visual] of Object.entries(robot.visual)) {
+    for (const [linkName, visuals] of linkGeometry(robot, 'isURDFVisual')) {
       const collected: THREE.MeshStandardMaterial[] = [];
-      visual.traverse(child => {
+      for (const visual of visuals) visual.traverse(child => {
         const mesh = child as THREE.Mesh;
         if (!mesh.isMesh) {
           return;
@@ -334,7 +346,28 @@ export class SelfCollision {
     this.linkCollisionMaterials.clear();
     this.linkVisualMaterials.clear();
     this.originalVisualColors.clear();
+    this.originalCollisionColors.clear();
   }
+}
+
+/**
+ * Each link's own <collision> or <visual> groups, keyed by link name.
+ *
+ * urdf-loader's robot.colliders / robot.visual maps are keyed by the optional
+ * `name` attribute of the <collision>/<visual> element: unnamed elements are
+ * missing from them, and named ones are keyed by the element's name rather
+ * than its link's. Walking each link's direct children avoids both problems
+ * (a link's child links hang off its joints, so they are not included).
+ */
+export function linkGeometry(robot: URDFRobot, flag: 'isURDFCollider' | 'isURDFVisual'): Map<string, THREE.Object3D[]> {
+  const out = new Map<string, THREE.Object3D[]>();
+  for (const [linkName, link] of Object.entries(robot.links ?? {})) {
+    const groups = (link as THREE.Object3D).children.filter(child => (child as THREE.Object3D & Record<string, unknown>)[flag] === true);
+    if (groups.length > 0) {
+      out.set(linkName, groups);
+    }
+  }
+  return out;
 }
 
 function materials(mesh: THREE.Mesh): THREE.Material[] {

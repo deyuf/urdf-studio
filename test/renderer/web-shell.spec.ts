@@ -181,6 +181,38 @@ test.describe('web shell', () => {
     await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('urdf-studio:settings:v1') || '{}').upAxis)).toBe('+Y');
   });
 
+  test('self-collision and collision pairs use link names, skip neighbours and geometry-less links', async ({ page, browserName }) => {
+    test.skip(browserName !== 'chromium', 'webkitdirectory only on chromium.');
+    const errors: string[] = [];
+    page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+    await page.goto(server.url);
+    if (await page.locator('dialog.onboarding').isVisible()) {
+      await page.locator('[data-action="skip"]').click();
+    }
+    await page.setInputFiles('#file-input', path.join(FIXTURE_DIR, 'collision'));
+    await expect(page.locator('[data-joint-slider="ja"]')).toBeVisible({ timeout: 15_000 });
+
+    // Live overlay: only base↔c touch; neighbours touching at joints are ignored.
+    await page.locator('#render-mode').selectOption('collision');
+    await page.locator('#display-menu summary').click();
+    await page.locator('#selfcollision-toggle').check();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#collide-hud')).toHaveText(/^Self-collision: (base ↔ c|c ↔ base)$/, { timeout: 10_000 });
+
+    // Pair analysis covers only links that have collision geometry.
+    await page.locator('.tab[data-tab="tools"]').click();
+    await page.locator('#srdf-samples').fill('100');
+    await page.locator('#srdf-run').click();
+    await expect(page.locator('#srdf-status')).toContainText('1 link without collision geometry left out', { timeout: 30_000 });
+    await expect(page.locator('#srdf-status')).toContainText('of 3 link pairs');
+    await expect(page.locator('#srdf-results')).not.toContainText('imu');
+
+    // The source highlighter handles a package:// path below the tags.
+    await page.locator('.tab[data-tab="source"]').click();
+    await expect(page.locator('#panel-source .cm-urdf-package')).toHaveCount(1);
+    expect(errors.filter(text => /plugin crashed/.test(text))).toEqual([]);
+  });
+
   test('opens a MuJoCo MJCF model from a folder, read-only, and saves it as URDF', async ({ page, browserName }) => {
     test.skip(browserName !== 'chromium', 'webkitdirectory only on chromium.');
     await captureDownloads(page);

@@ -27,8 +27,9 @@ Reachability samples many random joint positions and marks where one link
 ends up each time. The resulting point cloud is a picture of the robot's
 workspace.
 
-1. Choose the **Tip link** — usually the flange, tool or hand. The list
-   shows links at the end of a chain.
+1. Choose the **Tip link**. The list shows links at the end of a chain,
+   with tool points (`tcp`, `tool`, `ee`, `flange`…) and the end of the
+   longest moving chain first — so the default is normally right.
 2. Set the number of **Samples**. 1,000 gives a quick outline; 10,000 or
    more fills the volume in.
 3. Click **Sample**. The robot returns to its current pose afterwards.
@@ -49,8 +50,10 @@ makes planning much faster. This tool finds candidates for you.
    or **Both** once.
 2. Set **Random poses** — more poses means more confidence. 1,000 is a
    reasonable start; use 10,000 before relying on the result.
-3. Click **Analyze**. The tool reports the pairs that never touched in any
-   sampled pose. Links attached directly to each other are left out.
+3. Click **Analyze**. The tool reports how many of the possible link pairs
+   never touched in any sampled pose, and lists them. Links attached
+   directly to each other are left out, and so are links with no collision
+   geometry (sensor frames, tool points), which can't collide at all.
 4. Click **Write to SRDF** to add them.
 
 | Where | What Write to SRDF does |
