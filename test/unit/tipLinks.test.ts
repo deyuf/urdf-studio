@@ -25,8 +25,9 @@ test('a tool point comes first, then the deepest movable chain, then sensors on 
       finger_joint: joint('finger_joint', 'flange', 'finger', 'prismatic')
     }
   };
-  // tcp is named like a tool point; finger has 3 movable joints, sensor 0.
-  assert.deepEqual(rankTipLinks(metadata as never), ['tcp', 'finger', 'sensor']);
+  // tcp is named like a tool point; finger has 3 movable joints. The sensor
+  // is bolted to the base (no movable joint), so it is not offered at all.
+  assert.deepEqual(rankTipLinks(metadata as never), ['tcp', 'finger']);
 });
 
 test('without a tool-point name, the end of the longest movable chain wins', () => {
@@ -38,7 +39,15 @@ test('without a tool-point name, the end of the longest movable chain wins', () 
     },
     joints: { j1: joint('j1', 'base', 'hand'), s: joint('s', 'base', 'imu', 'fixed') }
   };
-  assert.deepEqual(rankTipLinks(metadata as never), ['hand', 'imu']);
+  assert.deepEqual(rankTipLinks(metadata as never), ['hand']);
+});
+
+test('if nothing moves, the leaf links are still offered', () => {
+  const metadata = {
+    links: { base: link('base', undefined, ['s']), imu: link('imu', 's') },
+    joints: { s: joint('s', 'base', 'imu', 'fixed') }
+  };
+  assert.deepEqual(rankTipLinks(metadata as never), ['imu']);
 });
 
 test('a cyclic parent chain does not loop forever', () => {

@@ -150,7 +150,12 @@ export class Reachability {
     this.deps.scene.add(this.points);
 
     options.applyPose(options.poseBeforeSampling);
-    this.setStatus(`${sampleCount} samples · X[${minX.toFixed(2)}, ${maxX.toFixed(2)}] Y[${minY.toFixed(2)}, ${maxY.toFixed(2)}] Z[${minZ.toFixed(2)}, ${maxZ.toFixed(2)}].`);
+    const extentText = `X[${minX.toFixed(2)}, ${maxX.toFixed(2)}] Y[${minY.toFixed(2)}, ${maxY.toFixed(2)}] Z[${minZ.toFixed(2)}, ${maxZ.toFixed(2)}]`;
+    // A tip that no joint moves collapses to a single point, which is hidden
+    // inside the robot — say so instead of appearing to draw nothing.
+    this.setStatus(reachExtent < 0.005
+      ? `"${tipLinkName}" does not move with any joint, so every sample lands on the same spot. Choose a link further along the arm.`
+      : `${sampleCount} samples · ${extentText}.`);
 
     // Refit camera so the cloud is in view alongside the robot.
     const robotBox = new THREE.Box3().setFromObject(robot);

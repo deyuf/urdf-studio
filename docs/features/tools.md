@@ -27,9 +27,10 @@ Reachability samples many random joint positions and marks where one link
 ends up each time. The resulting point cloud is a picture of the robot's
 workspace.
 
-1. Choose the **Tip link**. The list shows links at the end of a chain,
-   with tool points (`tcp`, `tool`, `ee`, `flange`…) and the end of the
-   longest moving chain first — so the default is normally right.
+1. Choose the **Tip link**. The list shows links at the end of a chain
+   that the joints actually move, with tool points (`tcp`, `tool`, `ee`,
+   `flange`…) and the end of the longest moving chain first — so the default
+   is normally right.
 2. Set the number of **Samples**. 1,000 gives a quick outline; 10,000 or
    more fills the volume in.
 3. Click **Sample**. The robot returns to its current pose afterwards.

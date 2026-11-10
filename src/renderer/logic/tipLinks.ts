@@ -26,9 +26,14 @@ export function rankTipLinks(metadata: Pick<RobotMetadata, 'links' | 'joints'>):
     }
     return { movable, total };
   };
-  return Object.values(metadata.links)
+  const ranked = Object.values(metadata.links)
     .filter(link => link.childJoints.length === 0)
-    .map(link => ({ name: link.name, tool: TOOL_POINT.test(link.name) ? 1 : 0, ...depth(link.name) }))
+    .map(link => ({ name: link.name, tool: TOOL_POINT.test(link.name) ? 1 : 0, ...depth(link.name) }));
+  // A link no movable joint moves (a sensor bolted to the base) always lands
+  // on the same spot, so its "cloud" is one invisible point. Offer only links
+  // that move, unless nothing does.
+  const moving = ranked.filter(entry => entry.movable > 0);
+  return (moving.length > 0 ? moving : ranked)
     .sort((a, b) => b.tool - a.tool || b.movable - a.movable || b.total - a.total || a.name.localeCompare(b.name))
     .map(entry => entry.name);
 }
