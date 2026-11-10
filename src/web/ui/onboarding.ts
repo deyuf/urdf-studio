@@ -15,28 +15,28 @@ const STEPS: Step[] = [
     title: 'Welcome to URDF Studio',
     body: `Inspect, pose, and refine robot models in your browser.
            Open a local ROS package to get started. Your files stay on your computer.`,
-    hint: 'Press Esc or click outside to close. You can re-open this from the ? button later.'
+    hint: 'Press Esc to close. Reopen this tour any time from the ? button.'
   },
   {
     title: '1 · Open a folder',
-    body: `Click <b>Open Folder</b> and pick the root of your ROS package or workspace.
+    body: `Click <b>Open folder</b> and pick the root of your ROS package or workspace.
            The app will scan for <code>package.xml</code>, <code>.urdf</code>, <code>.urdf.xacro</code>,
            <code>.xacro</code>, plus meshes (<code>.stl</code> / <code>.dae</code> / <code>.obj</code> /
            <code>.gltf</code> / <code>.glb</code>).`,
-    hint: 'If Open Folder is unavailable in your browser, use Pick Files.'
+    hint: 'If your browser has no folder picker, use Pick files instead.'
   },
   {
     title: '2 · Drive the robot',
     body: `Pick a robot file from the dropdown. The right panel shows every movable joint with a slider
            and a numeric input. Click <b>Inspector</b> to see link details, <b>Checks</b> for URDF
            diagnostics, <b>Tools</b> for reachability sampling.`,
-    hint: 'Switch render modes via the toolbar — Visual / Collision / Both.'
+    hint: 'Switch between visual and collision geometry from the viewport toolbar.'
   },
   {
     title: '3 · Save and share',
-    body: `<b>Save Pose</b> stores the current joint values + camera per-robot in your browser.
-           <b>Save As</b> creates a named bookmark. The export buttons download a JSON pose or a PNG
-           screenshot.
+    body: `<b>Save Pose</b> remembers the current joint values and camera for this robot.
+           <b>Bookmarks</b> keeps named views you can return to. <b>Export</b> downloads an image,
+           the joint values, a parts list or a PDF report.
            <br><br>Read the <a href="./docs/" target="_blank" rel="noopener">Docs</a> for the full reference.`
   }
 ];
@@ -153,6 +153,9 @@ export function mountOnboarding(): { open(): void; close(): void } {
       render();
       if (!dialog.open) {
         dialog.showModal();
+        // showModal() focuses the first control (Skip); the primary action
+        // is the expected default.
+        dialog.querySelector<HTMLButtonElement>('[data-action="next"]')?.focus();
       }
     },
     close(): void {

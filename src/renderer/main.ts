@@ -18,6 +18,7 @@ import type {
   MimicInfo,
   PoseBookmark,
   PreviewState,
+  RobotFormat,
   RobotMetadata,
   SemanticMetadata,
   StudioDiagnostic,
@@ -32,7 +33,8 @@ import {
 } from './logic/selfCollision';
 import { mountSourcePane, type SourcePane } from './logic/sourcePane';
 import { createLayoutController, type LayoutController } from './layout/fullscreen';
-import { runAllRules, RULE_REGISTRY, type LintReport } from '../core/lintRules';
+import { buildChecksReport, RULE_REGISTRY, type LintReport } from '../core/lintRules';
+import { makeRenderable } from '../core/renderable';
 import { createLivePreview, type LivePreviewHandle } from '../editor/livePreview';
 import type { CompletionContextProvider } from '../editor/completion';
 import { html, setInnerHtml } from './html';
@@ -57,7 +59,7 @@ interface LoadRobotMessage {
   fileName: string;
   sourcePath: string;
   sourceBaseUri: string;
-  format: 'urdf' | 'xacro';
+  format: RobotFormat;
   urdf: string;
   packageMap: Record<string, string>;
   metadata: RobotMetadata;
@@ -152,14 +154,25 @@ let selfCollision: SelfCollision | undefined;
 let selfCollisionRequested = false;
 
 let reachability: Reachability | undefined;
+// Elements left out of the last drawn model because they would break the
+// loader (see core/renderable.ts).
+let renderOmissions: string[] = [];
 
 document.getElementById('app')!.innerHTML = `
 <div class="shell">
   <div class="toolbar">
     <div id="title" class="title">URDF Studio</div>
     <div class="toolbar-group toolbar-group-end">
-      <select id="bookmark-select" title="Apply a saved bookmark"><option value="">Bookmarks</option></select>
-      <button id="bookmark-save" title="Save current pose as a named bookmark">Save As</button>
+      <details id="bookmarks-menu" class="workbench-menu">
+        <summary title="Named poses and views for this robot">Bookmarks</summary>
+        <div class="menu-content bookmark-options">
+          <ul id="bookmark-list" class="bookmark-list" aria-label="Saved bookmarks"></ul>
+          <form id="bookmark-form" class="bookmark-form">
+            <input id="bookmark-name" type="text" placeholder="Name this view" aria-label="Bookmark name" maxlength="80" autocomplete="off">
+            <button id="bookmark-save" type="submit" title="Save the current pose and camera under this name">Save</button>
+          </form>
+        </div>
+      </details>
       <button id="save-pose" class="primary">Save Pose</button>
       <details id="preview-settings-menu" class="workbench-menu settings-menu">
         <summary aria-label="Settings" title="Settings">${icon('settings', { size: 18 })}</summary>
@@ -295,7 +308,7 @@ window.addEventListener('message', event => {
     return;
   }
   if (message.type === 'loadRobot') {
-    void loadRobot(message as LoadRobotMessage);
+    loadRobot(message as LoadRobotMessage).catch(error => reportRendererFailure('Loading the robot failed', error));
   } else if (message.type === 'recenter') {
     fitCamera('iso');
   } else if (message.type === 'exportPose') {
@@ -309,7 +322,7 @@ window.addEventListener('message', event => {
     vscode.postMessage({ type: 'poseSnapshot', pose: getPose(), camera: getCameraSnapshot() });
   } else if (message.type === 'bookmarksUpdated') {
     bookmarks = message.bookmarks ?? [];
-    renderBookmarkSelect();
+    renderBookmarkList();
   } else if (message.type === 'disableCollisionsUpdated') {
     if (currentData) {
       currentData.semantic.disableCollisions = message.disableCollisions ?? [];
@@ -542,27 +555,41 @@ function bindChrome(): void {
   qs('#save-pose').addEventListener('click', () => {
     vscode.postMessage({ type: 'requestSavePose', pose: getPose(), camera: getCameraSnapshot() });
   });
-  qs('#bookmark-save').addEventListener('click', () => {
-    const name = window.prompt('Bookmark name?');
+  // Named bookmarks live in a menu with an inline name field: window.prompt
+  // is blocked inside VS Code webviews, so it cannot be used for naming.
+  const bookmarkMenu = qs<HTMLDetailsElement>('#bookmarks-menu');
+  const bookmarkName = qs<HTMLInputElement>('#bookmark-name');
+  bookmarkMenu.addEventListener('toggle', () => {
+    if (bookmarkMenu.open) {
+      bookmarkName.focus();
+    }
+  });
+  qs<HTMLFormElement>('#bookmark-form').addEventListener('submit', event => {
+    event.preventDefault();
+    const name = bookmarkName.value.trim();
     if (!name) {
+      bookmarkName.focus();
       return;
     }
     vscode.postMessage({ type: 'requestSaveBookmark', name, pose: getPose(), camera: getCameraSnapshot() });
+    bookmarkName.value = '';
   });
-  qs<HTMLSelectElement>('#bookmark-select').addEventListener('change', event => {
-    const target = event.target as HTMLSelectElement;
-    const name = target.value;
-    if (!name) {
+  qs('#bookmark-list').addEventListener('click', event => {
+    const target = event.target as HTMLElement;
+    const remove = target.closest<HTMLElement>('[data-bookmark-delete]');
+    if (remove) {
+      vscode.postMessage({ type: 'requestDeleteBookmark', name: remove.dataset.bookmarkDelete });
       return;
     }
-    const bookmark = bookmarks.find(item => item.name === name);
+    const apply = target.closest<HTMLElement>('[data-bookmark]');
+    const bookmark = bookmarks.find(item => item.name === apply?.dataset.bookmark);
     if (bookmark) {
       applyPose(bookmark.pose);
       if (bookmark.camera) {
         applyCameraSnapshot(bookmark.camera);
       }
+      bookmarkMenu.open = false;
     }
-    target.value = '';
   });
   qsa<HTMLButtonElement>('.tab').forEach(tab => tab.addEventListener('click', () => switchTab(tab.dataset.tab!)));
 
@@ -621,7 +648,7 @@ async function loadRobot(data: LoadRobotMessage, forceCollisionGeometry = false)
   renderSource(data);
   renderInspector();
   renderToolsPanel();
-  renderBookmarkSelect();
+  renderBookmarkList();
 
   const shouldLoadCollision = forceCollisionGeometry || renderMode === 'collision' || renderMode === 'both';
   const hasExternalMeshesToLoad = data.metadata.meshes.some(mesh => mesh.exists && (mesh.kind === 'visual' || shouldLoadCollision));
@@ -651,7 +678,9 @@ async function loadRobot(data: LoadRobotMessage, forceCollisionGeometry = false)
     }
     robotReady = true;
     renderer.domElement.style.opacity = '1';
-    setStatus(`${data.metadata.robotName}: ${data.metadata.counts.links} links, ${data.metadata.counts.movableJoints} movable joints`);
+    setStatus(renderOmissions.length > 0
+      ? `${data.metadata.robotName}: drawn without ${renderOmissions.length} broken element${renderOmissions.length === 1 ? '' : 's'} — see Checks`
+      : `${data.metadata.robotName}: ${plural(data.metadata.counts.links, 'link')}, ${plural(data.metadata.counts.movableJoints, 'movable joint')}`);
     fitCamera(data.savedState?.camera ? undefined : 'iso');
     if (data.savedState?.camera) {
       applyCameraSnapshot(data.savedState.camera);
@@ -673,6 +702,9 @@ async function loadRobot(data: LoadRobotMessage, forceCollisionGeometry = false)
     }
     if (!parseComplete || pendingMeshes > 0) {
       return;
+    }
+    if (robot) {
+      applyVisualMaterials(robot);
     }
     revealRobot();
   };
@@ -732,7 +764,15 @@ async function loadRobot(data: LoadRobotMessage, forceCollisionGeometry = false)
   };
 
   try {
-    const parsedRobot = parseUrdfWithCapsules(loader, data.urdf);
+    // Draw what we can: elements that would crash the loader (dangling
+    // joints, cycles, unknown mimic targets) are left out of the scene and
+    // reported by Checks instead. Capsules are then drawn as one mesh.
+    const renderable = makeRenderable(data.urdf);
+    renderOmissions = renderable.removed;
+    if (renderOmissions.length > 0) {
+      console.warn('[urdf] left out of the 3D view:', renderOmissions.join('; '));
+    }
+    const parsedRobot = parseUrdfWithCapsules(loader, renderable.urdf);
     robot = parsedRobot;
     parsedRobot.visible = !hasExternalMeshesToLoad;
     collisionGeometryLoaded = shouldLoadCollision;
@@ -767,7 +807,8 @@ async function loadRobot(data: LoadRobotMessage, forceCollisionGeometry = false)
     dirty = true;
   } catch (error) {
     parseComplete = true;
-    setStatus(`Could not parse URDF: ${String(error)}`);
+    const detail = error instanceof Error ? error.message : String(error);
+    setStatus(`This model can't be drawn (${detail}). See the Checks tab for problems to fix.`);
   }
 }
 
@@ -817,12 +858,57 @@ function loadMesh(pathToModel: string, manager: LoadingManager): Promise<Object3
     return new Promise((resolve, reject) => new ColladaLoader(manager).load(pathToModel, result => resolve(result?.scene ?? null), undefined, reject));
   }
   if (lower.endsWith('.obj')) {
-    return new Promise((resolve, reject) => new OBJLoader(manager).load(pathToModel, resolve, undefined, reject));
+    // OBJ without an .mtl carries no colour, and urdf-loader only assigns the
+    // URDF <material> to a bare Mesh — not to the Group OBJLoader returns.
+    // Tag it so applyVisualMaterials() can colour it once it is in place.
+    return new Promise((resolve, reject) => new OBJLoader(manager).load(pathToModel, (group: Object3D) => {
+      group.userData.takesUrdfMaterial = true;
+      resolve(group);
+    }, undefined, reject));
   }
   if (lower.endsWith('.gltf') || lower.endsWith('.glb')) {
     return new Promise((resolve, reject) => new GLTFLoader(manager).load(pathToModel, (result: { scene: Object3D }) => resolve(result.scene), undefined, reject));
   }
   return Promise.resolve(null);
+}
+
+/** Give tagged (colourless OBJ) meshes the colour their URDF <visual>
+ *  declares, as ROS viewers do. Meshes with their own materials (DAE, glTF)
+ *  are left alone. */
+function applyVisualMaterials(root: Object3D): void {
+  root.traverse(object => {
+    const visual = object as Object3D & { isURDFVisual?: boolean; urdfNode?: Element };
+    if (!visual.isURDFVisual || !visual.urdfNode) {
+      return;
+    }
+    const color = Array.from(visual.urdfNode.children).find(node => node.nodeName.toLowerCase() === 'material')
+      ?.querySelector('color')?.getAttribute('rgba');
+    const rgba = color?.trim().split(/\s+/).map(Number);
+    if (!rgba || rgba.length < 3 || rgba.some(value => !Number.isFinite(value))) {
+      return;
+    }
+    for (const child of visual.children) {
+      if (!child.userData.takesUrdfMaterial) {
+        continue;
+      }
+      child.traverse(part => {
+        const mesh = part as THREE.Mesh;
+        if (!mesh.isMesh) {
+          return;
+        }
+        forEachMaterial(mesh, material => material.dispose());
+        const opacity = rgba[3] ?? 1;
+        mesh.material = new THREE.MeshPhongMaterial({
+          // Same colour handling as urdf-loader uses for primitives.
+          color: new THREE.Color().setRGB(rgba[0], rgba[1], rgba[2]),
+          opacity,
+          transparent: opacity < 1,
+          side: THREE.DoubleSide
+        });
+      });
+      child.userData.takesUrdfMaterial = false;
+    }
+  });
 }
 
 function cloneObject(object: Object3D): Object3D {
@@ -860,17 +946,19 @@ function clearMeshCache(): void {
 function renderSummary(data: LoadRobotMessage): void {
   const panel = qs('#panel-joints');
   setInnerHtml(panel, html`
-    <div class="panel-heading"><span>Robot overview</span><span class="muted">${data.metadata.robotName}</span></div>
-    <div class="summary">
-      <div class="metric"><b>${data.metadata.counts.links}</b><span>Links</span></div>
-      <div class="metric"><b>${data.metadata.counts.joints}</b><span>Joints</span></div>
-      <div class="metric"><b>${data.metadata.counts.movableJoints}</b><span>Movable</span></div>
+    <div class="overview">
+      <div class="overview-name" title="${data.metadata.robotName}">${data.metadata.robotName}</div>
+      <div class="summary">
+        <div class="metric"><b>${data.metadata.counts.links}</b><span>links</span></div>
+        <div class="metric"><b>${data.metadata.counts.joints}</b><span>joints</span></div>
+        <div class="metric"><b>${data.metadata.counts.movableJoints}</b><span>movable</span></div>
+      </div>
     </div>
     <div id="xacro-args-host"></div>
-    <div class="joint-section-heading"><span>Joint controls</span><label><input id="ignore-limits" type="checkbox"> Ignore limits</label></div>
+    <div class="joint-section-heading"><span>Joints</span><label><input id="ignore-limits" type="checkbox"> Ignore limits</label></div>
     <div class="joint-filter">
-      <input id="joint-search" type="search" placeholder="Search joints">
-      <label><input id="joint-modified-only" type="checkbox"> Only modified</label>
+      <input id="joint-search" type="search" placeholder="Filter joints" aria-label="Filter joints">
+      <label><input id="joint-modified-only" type="checkbox"> Modified only</label>
     </div>
     <div id="joint-groups"></div>
   `);
@@ -927,7 +1015,7 @@ function renderJointPanel(data: LoadRobotMessage): void {
       .filter(state => state.group === group.name || (group.name === 'all' && Object.keys(state.joints).length > 0));
     return html`
       <details open data-group="${group.name}">
-        <summary>${group.name} (${group.joints.length})</summary>
+        <summary><span class="group-name">${group.name}</span><span class="group-count">${group.joints.length}</span></summary>
         <div class="detail-body">
           <div class="state-buttons">
             ${statesForGroup.map(state => html`<button data-state="${state.group}:${state.name}">${state.name}</button>`)}
@@ -938,7 +1026,11 @@ function renderJointPanel(data: LoadRobotMessage): void {
   })}`);
 
   qsa<HTMLInputElement>('[data-joint-slider]').forEach(slider => {
-    slider.addEventListener('input', () => setJointValue(slider.dataset.jointSlider!, Number(slider.value), true));
+    paintSlider(slider);
+    slider.addEventListener('input', () => {
+      paintSlider(slider);
+      setJointValue(slider.dataset.jointSlider!, Number(slider.value), true);
+    });
   });
   qsa<HTMLInputElement>('[data-joint-number]').forEach(input => {
     input.addEventListener('change', () => setJointValue(input.dataset.jointNumber!, Number(input.value), true));
@@ -1037,7 +1129,20 @@ function setJointValue(jointName: string, value: number, notify: boolean): void 
 function syncJointInputs(jointName: string, value: number): void {
   qsa<HTMLInputElement>(`[data-joint-slider="${cssEscape(jointName)}"], [data-joint-number="${cssEscape(jointName)}"]`).forEach(input => {
     input.value = input.type === 'number' ? value.toFixed(3) : String(value);
+    if (input.type === 'range') {
+      paintSlider(input);
+    }
   });
+}
+
+/** Expose the slider's position as `--fill` so CSS can draw the filled
+ *  part of the track (WebKit has no native progress pseudo-element). */
+function paintSlider(input: HTMLInputElement): void {
+  const min = Number(input.min);
+  const max = Number(input.max);
+  const value = Number(input.value);
+  const fraction = max > min ? (value - min) / (max - min) : 0;
+  input.style.setProperty('--fill', `${(Math.max(0, Math.min(1, fraction)) * 100).toFixed(2)}%`);
 }
 
 function applyPose(pose: Record<string, number>): void {
@@ -1061,44 +1166,18 @@ function getPose(): Record<string, number> {
 function renderChecks(data: LoadRobotMessage): void {
   const panel = qs('#panel-checks');
 
-  // Run the rule engine on top of the analyzeUrdf diagnostics so the
-  // Checks panel always reflects the same data the editor's inline
-  // linter shows. Rules are pure and run on the renderer side — fast,
-  // no I/O.
-  // Combine host-supplied diagnostics (analyzeUrdf + custom hooks like
-  // package resolution, plus anything the extension layer added) with the
-  // rule engine output. Diagnostics whose code isn't rebadged by any rule
-  // (e.g., generic xacro warnings) still need to surface — we passthrough
-  // them under a synthetic "OTHER" group.
-  const combinedInputDiagnostics = [...data.metadata.diagnostics, ...data.diagnostics];
-  const report = runAllRules({
+  // Rules run here (pure, no I/O) so the panel and the editor's inline
+  // linter share one report, including host diagnostics no rule covers.
+  const report = buildChecksReport({
     urdf: data.urdf,
     sourcePath: data.sourcePath,
     packages: {},
-    metadata: { ...data.metadata, diagnostics: combinedInputDiagnostics }
+    metadata: data.metadata
+  }, data.diagnostics, {
+    // MuJoCo derives mass and inertia from the geoms when a body has no
+    // <inertial>, so a missing block is normal in MJCF.
+    skipRules: data.format === 'mjcf' ? ['P-001'] : []
   });
-  // Passthrough: diagnostics from analyzeUrdf that no rule rebadged.
-  const knownCodes = new Set(Object.keys(RULE_REGISTRY.reduce((acc, r) => { acc[r.code] = true; return acc; }, {} as Record<string, true>)));
-  const rebadgedSourceCodes = new Set([
-    'tree.cycle', 'joint.parentMissing', 'joint.childMissing',
-    'link.duplicate', 'joint.duplicate', 'joint.mimicMissing',
-    'inertial.notPositiveDefinite', 'inertial.massInvalid',
-    'joint.limitMissing', 'mesh.missing', 'mesh.packageMissing',
-    'mesh.packageMalformed', 'mesh.packageFallback'
-  ]);
-  const passthrough = combinedInputDiagnostics.filter(diag => {
-    if (!diag.code) return true;
-    if (knownCodes.has(diag.code)) return false;
-    if (rebadgedSourceCodes.has(diag.code)) return false;
-    return true;
-  });
-  if (passthrough.length > 0) {
-    report.byRule['OTHER'] = (report.byRule['OTHER'] ?? []).concat(passthrough);
-    report.diagnostics.push(...passthrough);
-    for (const diag of passthrough) {
-      report.counts[diag.severity] += 1;
-    }
-  }
   currentLintReport = report;
 
   // Push diagnostics into the editor's inline linter.
@@ -1107,16 +1186,19 @@ function renderChecks(data: LoadRobotMessage): void {
   if (report.diagnostics.length === 0) {
     setInnerHtml(panel, html`
       <div class="checks-summary">
-        <div class="health-reading"><span class="health-score health-good">100</span><span class="health-label">/ 100<br>Model health</span></div>
-        <div class="checks-counts"><span class="count-pill">No diagnostics</span></div>
+        ${renderHealthReading(100, 'health-good')}
+        <p class="checks-clean">No issues found. Structure, inertias, limits and mesh references all pass.</p>
       </div>
     `);
     return;
   }
 
   const grouped = new Map<string, typeof report.diagnostics>();
+  const ruleCodes = new Set(RULE_REGISTRY.map(rule => rule.code));
   for (const diag of report.diagnostics) {
-    const code = diag.code ?? 'unknown';
+    // Loading problems (XML, xacro, SRDF…) have internal codes; show them
+    // together under one readable group rather than one group per code.
+    const code = diag.code && ruleCodes.has(diag.code) ? diag.code : 'OTHER';
     if (!grouped.has(code)) grouped.set(code, []);
     grouped.get(code)!.push(diag);
   }
@@ -1126,20 +1208,19 @@ function renderChecks(data: LoadRobotMessage): void {
     : 'health-poor';
 
   const groupHtml = Array.from(grouped.entries())
-    .sort((a, b) => severityRank(b[1][0].severity) - severityRank(a[1][0].severity))
+    .sort((a, b) => severityRank(worstSeverity(b[1])) - severityRank(worstSeverity(a[1])))
     .map(([code, diagnostics]) => {
-      const description = RULE_REGISTRY.find(rule => rule.code === code)?.description ?? code;
+      const description = RULE_REGISTRY.find(rule => rule.code === code)?.description ?? 'Loading problems';
       return html`
         <details class="checks-group" open>
           <summary class="checks-group-header">
-            <span>${code} · ${description}</span>
-            <span class="muted">${diagnostics.length}</span>
+            <span class="checks-group-title"><span class="sev-dot sev-${worstSeverity(diagnostics)}" aria-hidden="true"></span>${code === 'OTHER' ? '' : html`<span class="checks-code">${code}</span>`}${description}</span>
+            <span class="checks-group-count">${diagnostics.length}</span>
           </summary>
           <ul class="checks-group-list">
             ${diagnostics.map(diag => html`
               <li class="checks-group-item severity-${diag.severity}" data-line="${diag.line ?? ''}">
-                <button class="check-message" type="button">${diag.message}
-                ${diag.line ? html`<span class="check-line">line ${diag.line}</span>` : ''}</button>
+                <button class="check-message" type="button"><span class="check-text">${diag.message}</span>${diag.line ? html`<span class="check-line">L${diag.line}</span>` : ''}</button>
               </li>`)}
           </ul>
         </details>`;
@@ -1147,11 +1228,11 @@ function renderChecks(data: LoadRobotMessage): void {
 
   setInnerHtml(panel, html`
     <div class="checks-summary">
-      <div class="health-reading"><span class="health-score ${healthClass}" title="Health score (0-100)">${report.healthScore.toFixed(0)}</span><span class="health-label">/ 100<br>Model health</span></div>
+      ${renderHealthReading(report.healthScore, healthClass)}
       <div class="checks-counts">
-        ${report.counts.error > 0 ? html`<span class="count-pill">${report.counts.error} error</span>` : ''}
-        ${report.counts.warning > 0 ? html`<span class="count-pill">${report.counts.warning} warning</span>` : ''}
-        ${report.counts.info > 0 ? html`<span class="count-pill">${report.counts.info} info</span>` : ''}
+        ${report.counts.error > 0 ? html`<span class="count-pill sev-error"><span class="sev-dot sev-error" aria-hidden="true"></span>${plural(report.counts.error, 'error')}</span>` : ''}
+        ${report.counts.warning > 0 ? html`<span class="count-pill sev-warning"><span class="sev-dot sev-warning" aria-hidden="true"></span>${plural(report.counts.warning, 'warning')}</span>` : ''}
+        ${report.counts.info > 0 ? html`<span class="count-pill sev-info"><span class="sev-dot sev-info" aria-hidden="true"></span>${report.counts.info} info</span>` : ''}
       </div>
     </div>
     ${groupHtml}
@@ -1168,6 +1249,27 @@ function renderChecks(data: LoadRobotMessage): void {
   });
 }
 
+function renderHealthReading(score: number, healthClass: string): ReturnType<typeof html> {
+  const value = Math.max(0, Math.min(100, Math.round(score)));
+  return html`
+    <div class="health-reading ${healthClass}">
+      <span class="health-label">Model health</span>
+      <span class="health-value"><span class="health-score ${healthClass}" title="Health score (0-100)">${value}</span><span class="health-max">/100</span></span>
+    </div>
+    <div class="health-meter ${healthClass}" role="meter" aria-label="Model health" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${value}"><span style="width: ${value}%"></span></div>`;
+}
+
+function plural(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? '' : 's'}`;
+}
+
+function worstSeverity(diagnostics: Array<{ severity: 'error' | 'warning' | 'info' }>): 'error' | 'warning' | 'info' {
+  return diagnostics.reduce<'error' | 'warning' | 'info'>(
+    (worst, diag) => severityRank(diag.severity) > severityRank(worst) ? diag.severity : worst,
+    'info'
+  );
+}
+
 function severityRank(severity: 'error' | 'warning' | 'info'): number {
   return severity === 'error' ? 3 : severity === 'warning' ? 2 : 1;
 }
@@ -1175,19 +1277,30 @@ function severityRank(severity: 'error' | 'warning' | 'info'): number {
 function renderLinks(tree: LinkTreeNode[]): void {
   const panel = qs('#panel-links');
   if (tree.length === 0) {
-    setInnerHtml(panel, html`<div class="muted">No link tree.</div>`);
+    setInnerHtml(panel, html`<p class="panel-empty">This model has no link tree.</p>`);
   } else {
     setInnerHtml(panel, html`<ul>${tree.map(renderTreeNode)}</ul>`);
   }
   qsa<HTMLButtonElement>('[data-link]').forEach(button => {
     button.addEventListener('click', () => selectLink(button.dataset.link));
   });
+  markSelectedTreeLink();
+}
+
+function markSelectedTreeLink(): void {
+  qsa<HTMLButtonElement>('#panel-links [data-link]').forEach(button => {
+    if (button.dataset.link === selectedLink) {
+      button.setAttribute('aria-current', 'true');
+    } else {
+      button.removeAttribute('aria-current');
+    }
+  });
 }
 
 function renderTreeNode(node: LinkTreeNode): ReturnType<typeof html> {
   return html`
     <li>
-      <button data-link="${node.link}">${node.link}${node.joint ? html` <span class="muted">via ${node.joint}</span>` : ''}</button>
+      <button data-link="${node.link}" title="${node.joint ? `${node.link} — via ${node.joint}` : node.link}"><span class="tree-link">${node.link}</span>${node.joint ? html`<span class="tree-joint muted">${node.joint}</span>` : ''}</button>
       ${node.children.length > 0 ? html`<ul>${node.children.map(renderTreeNode)}</ul>` : ''}
     </li>
   `;
@@ -1196,7 +1309,7 @@ function renderTreeNode(node: LinkTreeNode): ReturnType<typeof html> {
 function renderInspector(): void {
   const panel = qs('#panel-inspector');
   if (!currentData || !selectedLink) {
-    setInnerHtml(panel, html`<div class="muted">Select a link in the viewport or link tree.</div>`);
+    setInnerHtml(panel, html`<p class="panel-empty">Select a link in the viewport or link tree.</p>`);
     return;
   }
   const link = currentData.metadata.links[selectedLink];
@@ -1207,6 +1320,10 @@ function renderInspector(): void {
     ? `${parentJoint.limit.lower ?? ''} .. ${parentJoint.limit.upper ?? ''}`
     : '';
   setInnerHtml(panel, html`
+    <div class="inspector-head">
+      <span class="inspector-title" title="${selectedLink}">${selectedLink}</span>
+      <span class="inspector-kind">${parentJoint?.type ?? 'root'}</span>
+    </div>
     <div class="inspector-grid">
       <b>Link</b><div class="value">${selectedLink}</div>
       <b>Parent</b><div class="value">${parentJoint?.name ?? 'none'}</div>
@@ -1214,7 +1331,7 @@ function renderInspector(): void {
       <b>Axis</b><div class="value">${parentJoint ? parentJoint.axis.join(' ') : ''}</div>
       <b>Limit</b><div class="value">${limitText}</div>
       <b>Mimic</b><div class="value">${parentJoint?.mimic ? formatMimic(parentJoint.mimic) : 'none'}</div>
-      <b>Children</b><div class="value">${link?.childJoints.join(', ') || 'none'}</div>
+      <b>Children</b><div class="value">${link?.childJoints.length ? link.childJoints.map(child => html`<span class="value-line">${child}</span>`) : 'none'}</div>
       <b>Mass</b><div class="value">${inertial ? `${inertial.mass.toFixed(4)} kg` : 'n/a'}</div>
       ${inertial ? html`<b>CoM</b><div class="value">${inertial.origin.map(value => value.toFixed(3)).join(' ')}</div>` : ''}
     </div>
@@ -1296,6 +1413,7 @@ function selectLink(linkName: string | undefined): void {
     vscode.postMessage({ type: 'selectionChanged', link: linkName, joint: currentData?.metadata.links[linkName]?.parentJoint });
   }
   renderInspector();
+  markSelectedTreeLink();
   applyFramesMode();
   highlightSourceForLink(linkName);
   requestRevealForLink(linkName);
@@ -1486,6 +1604,15 @@ function forEachMaterial(mesh: THREE.Mesh, callback: (material: THREE.MeshStanda
   }
 }
 
+/** Show a failure in the HUD and forward it to the host log, so an async
+ *  error never disappears as an unhandled rejection. */
+function reportRendererFailure(context: string, error: unknown): void {
+  const detail = error instanceof Error ? error.message : String(error);
+  console.error(`[urdf] ${context}`, error);
+  setStatus(`${context}: ${detail}`);
+  vscode.postMessage({ type: '__rendererError', detail: `${context}: ${detail}` });
+}
+
 function setStatus(text: string): void {
   qs('#hud').textContent = text;
 }
@@ -1510,18 +1637,14 @@ function cssEscape(value: string): string {
 // Bookmarks
 // =============================================================================
 
-function renderBookmarkSelect(): void {
-  const select = qs<HTMLSelectElement>('#bookmark-select');
-  const previous = select.value;
-  setInnerHtml(select, html`
-    <option value="">Bookmarks</option>
-    ${bookmarks.map(item => html`<option value="${item.name}">${item.name}</option>`)}
-  `);
-  if (bookmarks.some(item => item.name === previous)) {
-    select.value = previous;
-  } else {
-    select.value = '';
-  }
+function renderBookmarkList(): void {
+  setInnerHtml(qs('#bookmark-list'), bookmarks.length === 0
+    ? html`<li class="bookmark-empty">No bookmarks yet. Name the current view below to save one.</li>`
+    : html`${bookmarks.map(item => html`
+      <li>
+        <button type="button" class="bookmark-apply" data-bookmark="${item.name}" title="Apply ${item.name}">${item.name}</button>
+        <button type="button" class="bookmark-delete" data-bookmark-delete="${item.name}" aria-label="Delete bookmark ${item.name}" title="Delete">×</button>
+      </li>`)}`);
   publishTestState();
 }
 
@@ -1833,37 +1956,45 @@ function renderToolsPanel(): void {
     ? Object.values(currentData.metadata.links).filter(link => link.childJoints.length === 0)
     : [];
   setInnerHtml(panel, html`
-    <h3>Measure</h3>
-    <div class="tool-block">
+    <section class="tool-block">
+      <h3>Measure</h3>
+      <p class="tool-hint muted" id="measure-status">Click two points on the robot to measure distance.</p>
+      <div id="measure-readout" class="measure-readout"></div>
       <div class="row-buttons">
         <button id="measure-toggle" class="primary">Start measuring</button>
         <button id="measure-clear">Clear</button>
       </div>
-      <div class="muted" id="measure-status">Click two points on the robot to measure distance.</div>
-      <div id="measure-readout" class="measure-readout"></div>
-    </div>
-    <h3>Reachability</h3>
-    <div class="tool-block">
-      <label>Tip link <select id="reach-tip">${tipLinks.map(link => html`<option value="${link.name}">${link.name}</option>`)}</select></label>
-      <label>Samples <input id="reach-samples" type="number" min="50" max="20000" step="50" value="1000"></label>
-      <button id="reach-run" class="primary">Sample</button>
-      <button id="reach-clear">Clear</button>
-      <span class="muted" id="reach-status"></span>
-    </div>
-    <h3>Collision pairs (SRDF)</h3>
-    <div class="tool-block">
-      <label>Random poses <input id="srdf-samples" type="number" min="100" max="20000" step="100" value="1000"></label>
-      <button id="srdf-run" class="primary">Analyze</button>
-      <button id="srdf-write" disabled>Write to SRDF</button>
-      <div class="muted" id="srdf-status">Run analysis to find never-colliding pairs.</div>
-      <ul id="srdf-results" class="srdf-results"></ul>
-    </div>
-    <h3>Screenshot</h3>
-    <div class="tool-block">
+    </section>
+    <section class="tool-block">
+      <h3>Reachability</h3>
+      <p class="tool-hint muted">Sample random joint configurations and plot where the tip link can reach.</p>
+      <div class="tool-fields">
+        <label><span>Tip link</span><select id="reach-tip">${tipLinks.map(link => html`<option value="${link.name}">${link.name}</option>`)}</select></label>
+        <label><span>Samples</span><input id="reach-samples" type="number" min="50" max="20000" step="50" value="1000"></label>
+      </div>
       <div class="row-buttons">
-        <button id="screenshot-download" class="primary" title="Save the current 3D view as a PNG">Save PNG</button>
-        <button id="screenshot-copy" title="Copy the current 3D view to the clipboard">Copy to clipboard</button>
-        <label title="Higher = sharper, larger file"><span class="muted">Scale</span>
+        <button id="reach-run" class="primary">Sample</button>
+        <button id="reach-clear">Clear</button>
+        <span class="tool-status muted" id="reach-status"></span>
+      </div>
+    </section>
+    <section class="tool-block">
+      <h3>Collision pairs</h3>
+      <p class="tool-hint muted" id="srdf-status">Find link pairs that never collide, for an SRDF <code>disable_collisions</code> list.</p>
+      <div class="tool-fields">
+        <label><span>Random poses</span><input id="srdf-samples" type="number" min="100" max="20000" step="100" value="1000"></label>
+      </div>
+      <div class="row-buttons">
+        <button id="srdf-run" class="primary">Analyze</button>
+        <button id="srdf-write" disabled>Write to SRDF</button>
+      </div>
+      <ul id="srdf-results" class="srdf-results"></ul>
+    </section>
+    <section class="tool-block">
+      <h3>Screenshot</h3>
+      <p class="tool-hint muted" id="screenshot-status">PNG of the current 3D viewport, without UI chrome.</p>
+      <div class="tool-fields">
+        <label title="Higher is sharper and larger"><span>Scale</span>
           <select id="screenshot-scale">
             <option value="1">1×</option>
             <option value="2" selected>2×</option>
@@ -1872,16 +2003,19 @@ function renderToolsPanel(): void {
           </select>
         </label>
       </div>
-      <div class="muted" id="screenshot-status">PNG of the current 3D viewport, no UI chrome.</div>
-    </div>
-    <h3>Export</h3>
-    <div class="tool-block">
       <div class="row-buttons">
-        <button id="export-bom">Export BOM (CSV)</button>
-        <button id="export-report">Export Report (PDF)</button>
+        <button id="screenshot-download" class="primary" title="Save the current 3D view as a PNG">Save PNG</button>
+        <button id="screenshot-copy" title="Copy the current 3D view to the clipboard">Copy</button>
       </div>
-      <div class="muted" id="export-status">One row per link; PDF bundles screenshot + checks + summary.</div>
-    </div>
+    </section>
+    <section class="tool-block">
+      <h3>Export</h3>
+      <p class="tool-hint muted" id="export-status">Parts list with one row per link, or a PDF report with screenshot, checks and summary.</p>
+      <div class="row-buttons">
+        <button id="export-bom">Parts list · CSV</button>
+        <button id="export-report">Report · PDF</button>
+      </div>
+    </section>
   `);
   qs('#measure-toggle').addEventListener('click', () => toggleMeasureMode());
   qs('#measure-clear').addEventListener('click', () => clearMeasurement());

@@ -1,73 +1,70 @@
 ---
-title: Tools
+title: Measure, reach and collision pairs
 order: 70
+summary: Measure distances on the robot, sample the reachable workspace of a link, and find never-colliding link pairs for an SRDF disable_collisions list.
 ---
 
-# Tools
+# Measure, reach and collision pairs
 
-The **Tools** tab hosts compute-heavy actions that operate on the full
-joint space.
+These tools are in the **Tools** tab.
 
-## Reachability sampling
+## Measure a distance
 
-Generates a workspace point cloud by sampling random joint configurations
-and recording the world position of a chosen "tip" link.
+1. Click **Start measuring**.
+2. Click two points on the robot.
 
-### Controls
+The Tools tab shows the straight-line distance in metres, the X, Y and Z
+differences, and both points' world coordinates. A line is drawn between
+the points in the 3D view. Click **Clear** to remove it, or **Start
+measuring** again for a new measurement.
 
-| Control | Effect |
+Points snap to mesh surfaces, so you can only measure between parts of the
+robot, not to empty space.
+
+## See how far the robot reaches
+
+Reachability samples many random joint positions and marks where one link
+ends up each time. The resulting point cloud is a picture of the robot's
+workspace.
+
+1. Choose the **Tip link** — usually the flange, tool or hand. The list
+   shows links at the end of a chain.
+2. Set the number of **Samples**. 1,000 gives a quick outline; 10,000 or
+   more fills the volume in.
+3. Click **Sample**. The robot returns to its current pose afterwards.
+
+Points are coloured by height, and the Tools tab shows the X, Y and Z
+extent of the cloud. **Clear** removes it. Samples stay within joint
+limits. Useful for
+comparing robot variants, checking a limit change, or seeing whether a
+fixture is within reach.
+
+## Collision pairs
+
+MoveIt and other planners skip checking link pairs listed under
+`<disable_collisions>` in the SRDF. Listing pairs that can never touch
+makes planning much faster. This tool finds candidates for you.
+
+1. Make sure collision geometry is loaded: switch the view to **Collision**
+   or **Both** once.
+2. Set **Random poses** — more poses means more confidence. 1,000 is a
+   reasonable start; use 10,000 before relying on the result.
+3. Click **Analyze**. The tool reports the pairs that never touched in any
+   sampled pose. Links attached directly to each other are left out.
+4. Click **Write to SRDF** to add them.
+
+| Where | What Write to SRDF does |
 |---|---|
-| **Tip link** | The link whose world position is sampled. Defaults to the leaf link of the longest kinematic chain. |
-| **Samples** | Number of poses to sample (typical range: 1k – 100k). |
-| **Respect limits** | If on, samples obey `<limit>` bounds. If off, uses `[-π, π]` (revolute/continuous) and `[-1, 1]` (prismatic). |
-| **Sample** | Run the sampler. |
-| **Clear** | Remove the point cloud from the scene. |
+| Browser | Downloads an updated copy of your SRDF (or a new `<robot>.srdf`) |
+| VS Code | Adds the pairs to your SRDF in place, or asks where to create one |
 
-### Behavior
+Pairs already in the SRDF are not added twice.
 
-- The sampling runs in chunks via `requestIdleCallback` so the UI stays
-  responsive. The current pose is restored after sampling.
-- Points are rendered as a `THREE.Points` with a tiny disc material.
-- Mimic joints follow their master automatically.
+> "Never touched in N random poses" is strong evidence, not proof. Review
+> the list for pairs you know can meet — for example a gripper and the
+> base of a folding arm.
 
-### Use cases
+## Screenshot and export
 
-- Compare reach envelopes between robot variants.
-- Visualize the impact of changing a joint limit.
-- Find where a fixture must be placed for the robot to reach it.
-
-## Never-colliding pair detection
-
-Monte-Carlo samples joint configurations to find link pairs that **never
-collide** in any sampled pose. Output is the candidate set of
-`<disable_collisions>` entries to drop into an SRDF.
-
-### Controls
-
-| Control | Effect |
-|---|---|
-| **Samples** | Number of poses to evaluate. More samples = stronger evidence of "never collides". |
-| **Run** | Start sampling. Disabled until collision geometry is loaded. |
-| **Write SRDF** | Merge the detected pairs into the workspace SRDF (or a new one). |
-
-### Output
-
-- A list of link pairs that did not collide in any sampled pose,
-  presented compactly (first 200 with an overflow counter).
-- A summary line: `N never-colliding pairs found from M samples.`
-- A **Write SRDF** button that triggers a download (web) or an in-place
-  write (VS Code) with merged `<disable_collisions>` entries.
-
-### How it samples
-
-The sampler uses the loaded collision meshes (preferring primitives; STL
-where needed) and checks pairwise BVH overlap (via `three-mesh-bvh`).
-Pairs that are directly connected by a joint are excluded — they share a
-collision boundary by construction.
-
-### Limitations
-
-- "Never collides in N samples" is statistical evidence, not proof.
-  Increase samples for higher confidence.
-- Only meshes / primitives declared as `<collision>` are tested. Self-
-  collision capsules without collision geometry are skipped.
+The **Screenshot** and **Export** sections here do the same as the
+toolbar's **Export** menu. See [Save poses and export](./poses.html).

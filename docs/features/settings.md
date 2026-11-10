@@ -1,64 +1,93 @@
 ---
-title: Settings
+title: Packages, xacro args and settings
 order: 90
+summary: Make package:// paths resolve, set default xacro arguments, load SRDF files, and change the default view.
 ---
 
-# Settings
+# Packages, xacro args and settings
 
-All five settings exist on both the web app and the VS Code extension,
-backed by different stores.
+## Open settings
 
-| Setting | Default | Effect |
-|---|---|---|
-| **Default render mode** | `visual` | Initial geometry layer on every load. `visual`, `collision`, or `both`. |
-| **Up axis** | `+Z` | World up axis used by the camera and ground grid. `+X` / `+Y` / `+Z`. |
-| **Default xacro args** | `{}` | JSON object merged into every xacro file's `xacro:arg` values before expansion. Useful for permanently flipping a project-wide flag. |
-| **Extra package roots** | `[]` | Additional directories scanned for `package.xml`, in addition to the folder you opened. Each entry may be absolute or relative to the folder root. |
-| **Semantic files** | `[]` | SRDF or YAML files providing joint groups and named states. If empty, URDF Studio scans each discovered package's `config/` directory for `.srdf` and `initial_positions.yaml`. |
+- **Browser:** the gear button in the top bar → **Model settings…**.
+  Saving applies the changes to the open robot straight away, keeping
+  its pose and camera.
+- **VS Code:** **Settings** → search for *URDF Studio*, or edit
+  `.vscode/settings.json` with the `urdfStudio.*` keys shown below.
 
-## Where they live
+## All settings
 
-| Host | Storage | Scope |
-|---|---|---|
-| Web | `localStorage` key `urdf-studio:settings:v1` | Per-browser-profile. |
-| VS Code | `urdfStudio.*` keys in `settings.json` | Per-workspace (or user, if you prefer). |
+| Setting | VS Code key | Default | What it does |
+|---|---|---|---|
+| Default render mode | `urdfStudio.defaultRenderMode` | `visual` | The geometry shown when a robot opens: `visual`, `collision` or `both` |
+| Up axis | `urdfStudio.upAxis` | `+Z` | Which way is up: `+X`, `+Y` or `+Z` |
+| Default xacro args | `urdfStudio.defaultXacroArgs` | `{}` | Argument values applied to every xacro file |
+| Extra package roots | `urdfStudio.packageRoots` | `[]` | More folders to search for `package.xml` |
+| Semantic files | `urdfStudio.semanticFiles` | `[]` | SRDF or YAML files for planning groups and named states |
 
-The web app exposes them through the ⚙ button in the topbar. Save
-applies on the next load — current robot is not re-rendered automatically.
+Settings apply to every robot. Poses and bookmarks are kept per robot —
+see [Save poses and export](./poses.html).
 
-## Per-robot vs. global
+## Make `package://` paths resolve
 
-Settings are global (applied to every robot in the current
-browser-profile / workspace). Pose and bookmarks are
-[per-document](./poses.html).
+A path like `package://franka_description/meshes/link0.dae` needs the
+folder of the `franka_description` package — the one with its
+`package.xml`.
 
-## Examples
+- **Browser:** open a folder that contains every package the robot uses,
+  such as your workspace's `src` folder. Packages outside the opened
+  folder can't be reached, because the browser only sees what you opened.
+- **VS Code:** every folder in the workspace is searched. Add other
+  locations, such as installed packages, with **Extra package roots**:
 
-Treat every xacro file as if `arm_id=fp3` is set:
+  ```jsonc
+  "urdfStudio.packageRoots": [
+    "/opt/ros/humble/share",
+    "~/other_ws/src"
+  ]
+  ```
 
-```jsonc
-// VS Code settings.json
-"urdfStudio.defaultXacroArgs": { "arm_id": "fp3" }
-```
+  Relative paths are relative to the first workspace folder.
+
+## Set xacro arguments
+
+Many xacro files take arguments: which hand to attach, a name prefix,
+whether to include a gripper. To change them for one robot, use
+**Xacro parameters** in the Joints tab — see
+[Pose the robot](./joints.html#change-xacro-parameters).
+
+To apply values to every robot, set **Default xacro args** as a JSON
+object:
 
 ```json
-// Web — Settings → Default xacro args
 {
-  "arm_id": "fp3"
+  "arm_id": "fp3",
+  "hand": "true"
 }
 ```
 
-Always start in collision view (useful when authoring collision meshes):
-
 ```jsonc
-"urdfStudio.defaultRenderMode": "collision"
+// VS Code
+"urdfStudio.defaultXacroArgs": { "arm_id": "fp3", "hand": "true" }
 ```
 
-Add a workspace outside the current folder:
+## Load an SRDF
+
+URDF Studio automatically reads `.srdf` files and `initial_positions.yaml`
+from each package's `config/` folder. If yours live elsewhere — a MoveIt
+config package, for example — list them under **Semantic files**, one per
+line in the browser:
 
 ```jsonc
-"urdfStudio.packageRoots": [
-  "/opt/ros/humble/share",
-  "~/ros2_ws/src"
+"urdfStudio.semanticFiles": [
+  "src/fr3_moveit_config/config/fr3.srdf"
 ]
 ```
+
+The SRDF supplies the joint groups and named-state buttons in the
+[Joints tab](./joints.html#named-states-from-srdf).
+
+## Colours
+
+The gear menu also has **Classic colors**, which switches to the original
+blue colour scheme. In the browser, the sun / screen / moon buttons in the
+top bar choose light, system or dark mode.

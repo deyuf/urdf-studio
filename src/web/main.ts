@@ -23,6 +23,7 @@ async function boot(): Promise<void> {
   // Boot the renderer last — it owns #app and immediately posts a 'ready'
   // message that the host now listens for.
   await import('../renderer/main.js');
+  _shell.mountEmptyState();
 }
 
 if (document.readyState === 'loading') {

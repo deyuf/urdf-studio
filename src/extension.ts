@@ -10,6 +10,8 @@ import { loadSemanticMetadata, mergeDisableCollisionsIntoSrdf, parseSrdf } from 
 import { escapeXmlText } from './core/escapeXml';
 import type { DisableCollisionEntry, PackageMap, PoseBookmark, PreviewState, RobotMetadata, StudioDiagnostic } from './core/types';
 import { registerLanguageFeatures } from './languageFeatures';
+import { expandedUrdfName, isGeneratedSourcePath } from './core/sourceSave';
+import { isMjcfContent } from './core/mjcf';
 
 const VIEW_TYPE = 'urdfStudio.preview';
 
@@ -125,7 +127,7 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
       this.diagnostics.delete(document.uri);
     });
 
-    webviewPanel.webview.onDidReceiveMessage(async message => {
+    webviewPanel.webview.onDidReceiveMessage(message => void this.handleWebviewMessage(message?.type, async () => {
       testLog(`recv:${String(message?.type)}${message?.type === '__rendererError' ? `:${String(message.detail)}` : ''}`);
       if (message?.type === '__rendererError') {
         log(`Renderer error: ${String(message.detail)}`);
@@ -195,13 +197,30 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
         default:
           break;
       }
-    });
+    }));
+  }
+
+  /** Run one webview request; report failures instead of dropping them. */
+  private async handleWebviewMessage(type: unknown, run: () => Promise<void>): Promise<void> {
+    try {
+      await run();
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      log(`Handling ${String(type)} failed: ${detail}`);
+      void vscode.window.showErrorMessage(`URDF Studio: ${String(type)} failed (${detail}).`);
+    }
   }
 
   async openPreviewForActiveEditor(): Promise<void> {
-    const uri = vscode.window.activeTextEditor?.document.uri;
+    const editor = vscode.window.activeTextEditor;
+    const uri = editor?.document.uri;
     if (!uri) {
-      void vscode.window.showInformationMessage('Open a URDF or xacro file first.');
+      void vscode.window.showInformationMessage('Open a URDF, xacro or MJCF file first.');
+      return;
+    }
+    // .xml is only previewable when it is a MuJoCo model.
+    if (/\.xml$/i.test(uri.fsPath) && !isMjcfContent(editor.document.getText())) {
+      void vscode.window.showInformationMessage('URDF Studio: this XML file is not a MuJoCo (MJCF) model.');
       return;
     }
     await vscode.commands.executeCommand('vscode.openWith', uri, VIEW_TYPE);
@@ -620,6 +639,10 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
   }
 
   private async saveSource(uri: vscode.Uri, text: string): Promise<void> {
+    if (isGeneratedSourcePath(uri.fsPath)) {
+      await this.saveGeneratedUrdf(uri, text);
+      return;
+    }
     try {
       await vscode.workspace.fs.writeFile(uri, Buffer.from(text, 'utf8'));
       void vscode.window.setStatusBarMessage(`URDF Studio: saved ${vscode.workspace.asRelativePath(uri)}.`, 2500);
@@ -628,6 +651,30 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
     } catch (error) {
       log(`saveSource failed: ${String(error)}`);
       void vscode.window.showErrorMessage(`URDF Studio: could not save source (${error instanceof Error ? error.message : String(error)}).`);
+    }
+  }
+
+  /** The editor holds URDF generated from xacro or MJCF; never write it over
+   *  the original source. */
+  private async saveGeneratedUrdf(sourceUri: vscode.Uri, text: string): Promise<void> {
+    const target = await vscode.window.showSaveDialog({
+      title: `Save as URDF (${path.basename(sourceUri.fsPath)} is not changed)`,
+      defaultUri: vscode.Uri.joinPath(sourceUri, '..', expandedUrdfName(path.basename(sourceUri.fsPath))),
+      filters: { URDF: ['urdf'] }
+    });
+    if (!target) {
+      return;
+    }
+    if (target.toString() === sourceUri.toString() || isGeneratedSourcePath(target.fsPath)) {
+      void vscode.window.showErrorMessage('URDF Studio: the URDF cannot be saved over a xacro or MJCF file. Choose a .urdf name.');
+      return;
+    }
+    try {
+      await vscode.workspace.fs.writeFile(target, Buffer.from(text, 'utf8'));
+      void vscode.window.setStatusBarMessage(`URDF Studio: saved URDF to ${vscode.workspace.asRelativePath(target)}.`, 4000);
+    } catch (error) {
+      log(`saveGeneratedUrdf failed: ${String(error)}`);
+      void vscode.window.showErrorMessage(`URDF Studio: could not save URDF (${error instanceof Error ? error.message : String(error)}).`);
     }
   }
 

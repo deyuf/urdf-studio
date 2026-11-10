@@ -1,69 +1,72 @@
 ---
-title: Joint controls
+title: Pose the robot
 order: 40
+summary: Move joints with sliders or exact values, explore beyond limits, use mimic joints and SRDF named states, and change xacro parameters.
 ---
 
-# Joint controls
+# Pose the robot
 
-The **Joints** tab lists every movable joint in the URDF with a slider
-and a numeric input.
+The **Joints** tab lists every joint that can move. When an SRDF is
+loaded, joints are grouped by its planning groups.
 
-## Supported joint types
+![The Joints tab with a slider and value for each joint](../images/joints.png)
 
-| Type | Slider behavior |
-|---|---|
-| `revolute` | Slider range = `<limit lower>` to `<limit upper>` (radians). |
-| `continuous` | Slider range = `-π` to `π`. No hard stops on the joint itself. |
-| `prismatic` | Slider range = `<limit lower>` to `<limit upper>` (meters). |
-| `floating`, `planar` | Slider shown but axis-specific manipulation is limited; this is intentional — these joints have multiple DoFs and aren't meaningfully driven from a single slider. |
-| `fixed` | Excluded from the panel. |
+## Move a joint
 
-The slider and numeric input are bound to the same value. The numeric
-input accepts up to 3 decimal places (`step="0.001"`).
+- **Drag the slider** to move the joint and watch the robot follow.
+- **Type a value** in the number field for an exact position. Revolute and
+  continuous joints are in radians (`rad`), prismatic joints in metres
+  (`m`).
+
+The slider covers the range in the joint's `<limit>`. Continuous joints go
+from −π to π.
+
+Fixed joints are not listed because they can't move.
+
+## Find a joint
+
+On robots with many joints:
+
+- Type in **Filter joints** to show only joints whose name contains that
+  text.
+- Tick **Modified only** to show only joints you have moved away from
+  zero.
+
+## Go past the limits
+
+Tick **Ignore limits** to move joints outside their `<limit>` range. It's
+useful to see what the hardware could physically do, or to check whether a
+limit is set wrongly. It turns off again when you open another robot.
 
 ## Mimic joints
 
-A joint with a `<mimic joint="other" multiplier="m" offset="o"/>` block is
-**not** shown as an independent slider. Instead:
+A joint with `<mimic joint="…" multiplier="…" offset="…"/>` follows another
+joint, as grippers often do. It has no slider of its own: move the joint
+it follows, and it moves too, by `multiplier × value + offset`.
 
-- Its value is computed as `m * value(other) + o`.
-- It is hidden from the Joints panel and from the movable joint count.
-- Its joint limits (which often default to `[0, 0]` when unset) are
-  ignored — the propagated value passes through unclamped.
-- It does show up in the Inspector as a regular joint, with a "mimics
-  `other`" annotation.
+If a mimic points at a joint that doesn't exist, it shows up in
+[Checks](./diagnostics.html) as `R-005`.
 
-A diagnostic is raised if the master joint name does not exist.
+## Named states from SRDF
 
-## Ignore limits
+If the package has an SRDF with `<group_state>` entries — `ready`, `home`,
+`transport` and so on — each group shows them as buttons above its joints.
+Click one to apply that pose.
 
-The toolbar **Ignore limits** checkbox temporarily disables the URDF
-loader's clamp on every movable joint. Useful for:
+URDF Studio looks for `.srdf` files and `initial_positions.yaml` in each
+package's `config/` folder. To use other files, add them under
+**Semantic files** in [settings](./settings.html).
 
-- Exploring the full physical range of a continuous-but-bounded joint.
-- Sanity-checking what poses are geometrically possible vs. what the URDF
-  permits.
-- Debugging a URDF whose limits look suspect.
+## Change xacro parameters
 
-The state is **not** persisted; switching robots resets it to off.
+For a `.xacro` file, **Xacro parameters** at the top of the Joints tab
+lists the file's `xacro:arg` values — for example which hand is attached,
+or the robot's name prefix. Change values and click **Reload xacro**.
 
-## Search and filter
+To use the same values every time, set **Default xacro args** in
+[settings](./settings.html).
 
-Above the joint list:
+## Keep a pose
 
-- **Search box** — substring match against joint names. Live filter.
-- **Only modified** — show only joints whose current value differs from
-  the URDF default. Useful when posing many-joint robots.
-
-## Reset to defaults
-
-Each joint's numeric input has a small reset affordance (double-click the
-input) that snaps the joint back to its declared default (or `0` if no
-default).
-
-## Bookmarks and named states
-
-If the loaded SRDF declares `<group_state name="ready" group="arm">…`
-blocks, they appear in the **Bookmarks** dropdown. Selecting a state
-applies its joint values atomically. See
-[Pose, bookmarks, export](./poses.html).
+Click **Save Pose** in the toolbar to keep the current pose, or add it to
+**Bookmarks** under a name. See [Save poses and export](./poses.html).

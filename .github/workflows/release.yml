@@ -71,7 +71,9 @@ jobs:
   test:
     name: Test
     needs: prepare
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest moved to Ubuntu 26.04, where Playwright 1.59
+    # cannot install Chromium. Move back once Playwright supports it.
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       contents: read
@@ -230,7 +232,7 @@ jobs:
                      User    · User Details     · Read
                  → constrain to your account → Continue → Create.
 
-          See docs/development/deployment.md for the full walk-through.
+          See dev-docs/development/releases.md for the full walk-through.
           EOF
             exit 1
           fi

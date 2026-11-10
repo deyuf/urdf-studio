@@ -8,11 +8,11 @@
 import { mountUrdfEditor, type UrdfEditorHandle } from '../../editor';
 import type { CompletionContextProvider } from '../../editor/completion';
 import type { LinterContext } from '../../editor/lintAdapter';
-import type { StudioDiagnostic } from '../../core/types';
+import type { StudioDiagnostic, RobotFormat } from '../../core/types';
 
 export interface SourcePaneInput {
   fileName: string;
-  format: 'urdf' | 'xacro';
+  format: RobotFormat;
   urdf: string;
   /** When true, the editor accepts text edits. */
   editable?: boolean;
@@ -68,7 +68,8 @@ export function mountSourcePane(host: HTMLElement, input: SourcePaneInput): Sour
   const meta = document.createElement('div');
   meta.className = 'source-meta';
   const lineCount = input.urdf.split('\n').length;
-  meta.textContent = `${input.fileName} · ${lineCount} lines${input.format === 'xacro' ? ' (expanded xacro)' : ''}`;
+  const origin = input.format === 'xacro' ? ' (expanded xacro)' : input.format === 'mjcf' ? ' (converted from MJCF)' : '';
+  meta.textContent = `${input.fileName} · ${lineCount} lines${origin}`;
   toolbar.appendChild(meta);
 
   const editToggle = document.createElement('button');

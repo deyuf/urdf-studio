@@ -186,7 +186,7 @@ async function openFranka(page, robot = 'fr3') {
 // 09 — Architecture browser-host page (deeper docs URL).
 {
   const { ctx, page } = await newDarkPage(1280, 800);
-  await page.goto(`${URL_ROOT}/docs/architecture/browser.html`);
+  await page.goto(`${URL_ROOT}/docs/features/joints.html`);
   await page.waitForTimeout(500);
   await page.screenshot({ path: path.join(OUT_DIR, '09-docs-browser.png') });
   await ctx.close();

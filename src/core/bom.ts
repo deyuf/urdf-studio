@@ -96,9 +96,10 @@ function escapeCsv(value: string): string {
   // leading space/tab) is executed as a formula by Excel / Google Sheets.
   // Neutralize by prefixing a single quote, then apply the usual quoting.
   // A leading `-` is also legal for negative numbers, so don't quote-guard a
-  // cell that is a plain numeric value (e.g. "-1.25") — only genuine text.
+  // cell that is entirely a number (e.g. "-1.25", "-3e-4"). Anything else —
+  // including "-1+1|cmd" — is text and gets the guard.
   let cell = value;
-  if (/^[\s]*[=+\-@]/.test(cell) && !/^-?\d/.test(cell)) {
+  if (/^[\s]*[=+\-@]/.test(cell) && !/^-?(\d+(\.\d*)?|\.\d+)(e[+-]?\d+)?$/i.test(cell)) {
     cell = `'${cell}`;
   }
   if (/[",\n\r]/.test(cell)) {

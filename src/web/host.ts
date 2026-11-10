@@ -3,6 +3,7 @@
 // posts the `loadRobot` message to the renderer. Handles the renderer's reply
 // messages (save pose, bookmark, export, screenshot, etc.).
 
+import { expandedUrdfName, isGeneratedSourcePath } from '../core/sourceSave';
 import { discoverPackages } from '../core/packageMap';
 import { renderRobotDocument } from '../core/xacro';
 import { analyzeUrdf } from '../core/urdfAnalysis';
@@ -88,7 +89,7 @@ export class WebHost {
       if (event.source !== window && event.origin !== window.location.origin) {
         return;
       }
-      this.handleRendererMessage(event.data as RendererInbound);
+      this.dispatchRendererMessage(event.data as RendererInbound);
     });
   }
 
@@ -116,7 +117,18 @@ export class WebHost {
     await this.loadCurrent();
   }
 
-  hasActiveDocument(): boolean {
+  /** Re-apply settings to the open robot. The renderer answers with a
+   *  `poseSnapshot`, which reloads the document with pose and camera kept. */
+  applySettingsToActive(): boolean {
+    if (!this.active) {
+      return false;
+    }
+    this.active.xacroArgs = { ...this.active.xacroArgs, ...getSettings().defaultXacroArgs };
+    this.postToRenderer({ type: 'requestPoseSnapshot' });
+    return true;
+  }
+
+    hasActiveDocument(): boolean {
     return this.active !== undefined;
   }
 
@@ -271,7 +283,7 @@ export class WebHost {
     (globalThis as unknown as { acquireVsCodeApi: () => unknown }).acquireVsCodeApi = () => ({
       postMessage(message: RendererInbound) {
         // Defer so the renderer's call site finishes synchronously first.
-        queueMicrotask(() => host.handleRendererMessage(message));
+        queueMicrotask(() => host.dispatchRendererMessage(message));
       },
       setState() {
         /* no-op */
@@ -279,6 +291,17 @@ export class WebHost {
       getState() {
         return null;
       }
+    });
+  }
+
+  /** Run a renderer request and surface any failure instead of leaving an
+   *  unhandled rejection (the user would otherwise see nothing happen). */
+  private dispatchRendererMessage(message: RendererInbound | undefined): void {
+    this.handleRendererMessage(message).catch(error => {
+      const detail = error instanceof Error ? error.message : String(error);
+      console.error(`[urdf-studio] ${String(message?.type)} failed`, error);
+      this.setStatus({ type: 'error', message: `Something went wrong (${String(message?.type)}).` });
+      this.listeners.onToast?.({ kind: 'error', message: 'Something went wrong', detail });
     });
   }
 
@@ -491,9 +514,15 @@ export class WebHost {
     if (!this.active) {
       return;
     }
-    const name = posixPath.basename(this.active.path) || 'robot.urdf';
+    const base = posixPath.basename(this.active.path) || 'robot.urdf';
+    const generated = isGeneratedSourcePath(base);
+    // The editor holds generated URDF for xacro and MJCF documents; name it so.
+    const name = generated ? expandedUrdfName(base) : base;
     triggerDownload(new Blob([text], { type: 'application/xml' }), name);
-    this.setStatus({ type: 'info', message: `Source downloaded: ${name}` });
+    this.setStatus({
+      type: 'info',
+      message: generated ? `URDF downloaded as ${name}` : `Source downloaded: ${name}`
+    });
   }
 
   private downloadReport(base64: string, filename?: string): void {

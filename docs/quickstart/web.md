@@ -1,88 +1,79 @@
 ---
-title: Web app (online URDF viewer)
+title: Use it in the browser
 order: 1
-summary: Use URDF Studio as an online URDF viewer in your browser. Open URDF and xacro files from a local folder, resolve package:// paths, and drive joint sliders. No server, no upload.
+summary: Open URDF and xacro robot models in your browser with URDF Studio. Pick a folder, choose a robot, and work offline — files are never uploaded.
 ---
 
-# Quickstart — online URDF viewer in the browser
+# Use it in the browser
 
-URDF Studio's web build is a fully featured **online URDF viewer**. It runs
-entirely client-side — file bytes never touch a server; the page asks for
-read access to a folder you choose and resolves `package://` URIs against
-it.
+The browser version lives at [urdf.deyuf.org](https://urdf.deyuf.org). There
+is nothing to install and no account.
 
-## 1. Open the deployed URL
+## Your files stay on your computer
 
-Reference deployment: <https://urdf.deyuf.org>
+URDF Studio reads the folder you choose directly in the browser. Xacro is
+expanded and meshes are loaded on your machine; no file is sent to a
+server. Closing the tab ends access to the folder.
 
-Any Chromium-based browser (Chrome, Edge, Brave, Arc, Opera) supports the
-File System Access API and gets the full experience. Safari and mobile
-browsers fall back to a `webkitdirectory` file picker.
+## Opening a folder
 
-The first visit shows a 4-step onboarding tour. Press **Esc** or click
-*Skip* to dismiss; the **?** button in the topbar re-opens it.
+Choose the **package or workspace root** — the folder that contains
+`package.xml`, or a folder that contains several packages. URDF Studio
+needs the whole package, not just the robot file, because meshes and
+included xacro files are found through `package://` paths.
 
-## 2. Open a folder
+For a MuJoCo model, choose the folder with its `.xml` files and meshes; see
+[View MuJoCo models](../features/mjcf.html).
 
-Click **Open Folder** and pick the root of a ROS package or workspace.
-The browser scans for:
+There are three ways to open one:
 
-- `package.xml` (so `package://` URIs resolve)
-- `.urdf`, `.urdf.xacro`, `.xacro` (robot files)
-- `.stl`, `.dae`, `.obj`, `.gltf`, `.glb` (meshes)
-- `.yaml`, `.yml` (xacro `load_yaml` inputs — pre-cached for sync access)
-- `.srdf` (semantic descriptions)
-
-The scan yields a flat path index used for everything else. Folders like
-`.git`, `node_modules`, `build`, `install`, `log` are skipped.
-
-## 3. Pick a robot
-
-The dropdown lists every URDF/xacro file in the folder. If there is
-exactly one, it auto-loads.
-
-```
-franka_description ▾
-  /franka_description/robots/fr3/fr3.urdf.xacro
-  /franka_description/robots/fer/fer.urdf.xacro
-  /franka_description/robots/fp3/fp3.urdf.xacro
-  ...
-```
-
-The status line below the topbar shows progress while xacro expands and
-meshes load. When the robot pops into the viewport, link / joint / movable
-counts appear briefly.
-
-## 4. Drive and inspect
-
-Right-side panel tabs:
-
-- **Joints** — sliders for every movable joint, search box, filter to
-  modified joints only.
-- **Inspector** — selected link details (parent/child joints, mass, CoM,
-  inertia tensor, mesh paths).
-- **Checks** — diagnostics from the parser and analyzer.
-- **Links** — kinematic tree.
-- **Tools** — reachability sampling, never-colliding pair detection.
-
-See [Features](../features/) for the full reference.
-
-## 5. Save your work
-
-| Action | Result |
+| How | Works in |
 |---|---|
-| **Save Pose** | Joint values + camera snapshot stored in `localStorage`, keyed by `<folder>:<file-path>`. Restored next time you open the same robot. |
-| **Save As…** | Names the pose and adds it to the bookmark dropdown. |
-| **Export Pose** | Downloads a JSON file with pose + camera + source path. |
-| **Capture Screenshot** | Downloads a PNG of the current viewport. |
+| **Open folder** button | Chrome, Edge, Brave, Arc, Opera |
+| Drag the folder onto the page | Chrome, Edge, Brave, Arc, Opera |
+| **Pick files** button | All browsers, including Firefox and Safari |
 
-## Fallbacks and limits
+**Pick files** reads every file in the folder up front, so opening a large
+workspace takes longer than with **Open folder**.
 
-- **Safari / iOS / Firefox without secure context** — `showDirectoryPicker`
-  is unavailable. The **Pick Files** button uses `webkitdirectory` instead;
-  works but reads all file metadata into memory up-front, so cold start is
-  slower for large packages.
-- **HTTPS required** — the File System Access API only works on secure
-  origins. Loopback (`127.0.0.1`) counts as secure for dev.
-- **Persistence** — directory handles are not persisted across reloads
-  (yet). You re-pick the folder each session. Bookmarks and pose are kept.
+Folders named `.git`, `node_modules`, `build`, `install` and `log` are
+skipped while scanning.
+
+## Choosing a robot
+
+If the folder has one robot file, it opens straight away. If it has
+several, they are listed in the middle of the page with complete robots
+(files under `robots/`, `*.urdf.xacro`) before helper files such as macros
+and SRDFs. All files are also in the menu in the top bar, so you can switch
+robots at any time.
+
+## Coming back later
+
+In Chromium-based browsers, the page remembers the last folder you opened.
+Next time, click **Reopen *folder name*** and allow access again — browsers
+ask every session.
+
+What else is remembered, per browser:
+
+- Saved poses and bookmarks, per robot file — see
+  [Save poses and export](../features/poses.html).
+- Settings, the colour theme, and the side panel width.
+
+Clearing the site's data in your browser removes all of these.
+
+## Working with an edited file
+
+You can edit the URDF in the **Source** tab and the 3D view updates as you
+type. In the browser, **Ctrl+S** (**⌘S** on macOS) downloads the edited
+file; it does not overwrite the original on disk. See
+[Edit the source](../features/editing.html).
+
+## The tour and the help button
+
+The first visit shows a four-step tour. Press **Esc** to close it; the
+**?** button in the top bar opens it again.
+
+## If something doesn't load
+
+See [Troubleshooting](../help/) — most problems are a folder chosen one
+level too deep, or a package that lives elsewhere.

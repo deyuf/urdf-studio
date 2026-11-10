@@ -13,7 +13,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import '../../src/core/io.node';
 import { analyzeUrdf } from '../../src/core/urdfAnalysis';
-import { runAllRules, RULE_REGISTRY, RULE_CODES } from '../../src/core/lintRules';
+import { buildChecksReport, runAllRules, RULE_REGISTRY, RULE_CODES } from '../../src/core/lintRules';
 
 // npm runs tests from the project root, so we anchor at process.cwd().
 // The compiled .cjs lives in dist/test/ but the fixtures stay in test/.
@@ -272,3 +272,29 @@ for (const { fixture, budgetMs } of [
     assert.ok(elapsed < budgetMs, `lint took ${elapsed.toFixed(2)}ms/run (budget ${budgetMs}ms)`);
   });
 }
+
+test('P-003 reports zero and missing mass, not only negative or huge mass', () => {
+  for (const inertial of ['<mass value="0"/><inertia ixx="1" iyy="1" izz="1"/>', '<inertia ixx="1" iyy="1" izz="1"/>']) {
+    const urdf = `<robot name="r"><link name="base"/><link name="a"><inertial>${inertial}</inertial></link>`
+      + '<joint name="j" type="fixed"><parent link="base"/><child link="a"/></joint></robot>';
+    const metadata = analyzeUrdf(urdf, '/r.urdf', {});
+    const report = buildChecksReport({ urdf, sourcePath: '/r.urdf', packages: {}, metadata });
+    assert.ok(report.byRule['P-003']?.some(d => /zero or missing mass/.test(d.message)), inertial);
+    assert.ok(report.healthScore < 100);
+  }
+});
+
+test('buildChecksReport counts problems no rule covers in the health score', () => {
+  const urdf = '<robot name="r"><link name="a"/><link name="b"/>'
+    + '<joint name="j" type="revolute"><parent link="a"/><child link="b"/><limit lower="2" upper="1" effort="1" velocity="1"/></joint></robot>';
+  const metadata = analyzeUrdf(urdf, '/r.urdf', {});
+  const report = buildChecksReport({ urdf, sourcePath: '/r.urdf', packages: {}, metadata });
+  const invalid = report.byRule.OTHER?.find(d => d.code === 'joint.limitInvalid');
+  assert.ok(invalid, 'limitInvalid surfaces in OTHER');
+  assert.equal(report.counts.error, report.diagnostics.filter(d => d.severity === 'error').length);
+  assert.ok(report.healthScore <= 90, `health ${report.healthScore} should include the error`);
+
+  const broken = analyzeUrdf('not xml', '/r.urdf', {});
+  const parseReport = buildChecksReport({ urdf: 'not xml', sourcePath: '/r.urdf', packages: {}, metadata: broken });
+  assert.ok(parseReport.healthScore < 100, 'unparseable XML must not score 100');
+});

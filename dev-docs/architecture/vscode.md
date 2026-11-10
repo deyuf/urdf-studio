@@ -71,7 +71,7 @@ Whenever the URDF or any included xacro file changes:
 
 ## Diagnostics integration
 
-Every diagnostic from the analyzer (see [Diagnostics](../features/diagnostics.html))
+Every diagnostic from the analyzer (see [Diagnostics](../../docs/reference/checks.md))
 also lands in a `vscode.DiagnosticCollection`:
 
 - The Problems panel shows them with file/line info.

@@ -1,5 +1,5 @@
 import { startStaticServer } from './helpers';
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 
@@ -16,6 +16,43 @@ const BAD_FIXTURE_DIR = path.join(REPO_ROOT, 'test', 'fixtures', 'bad_urdf');
 // a directory path; the file layout we expose to the browser is documented
 // in test/fixtures/ on disk (xacro_pkg/{package.xml,urdf/part.xacro,
 // config/test.yaml} + model.xacro at the root).
+
+/** Record every blob download (type, text, filename) on `window.__downloads`
+ *  and swallow the anchor click so no real download starts. */
+async function captureDownloads(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const win = window as unknown as {
+      __downloads: Array<{ type: string; size: number; text: string; name?: string; url: string }>;
+    };
+    win.__downloads = [];
+    const origCreate = URL.createObjectURL.bind(URL);
+    URL.createObjectURL = (obj: Blob | MediaSource) => {
+      const url = origCreate(obj);
+      if (obj instanceof Blob) {
+        const entry: { type: string; size: number; text: string; name?: string; url: string } = {
+          type: obj.type,
+          size: obj.size,
+          text: '',
+          url
+        };
+        win.__downloads.push(entry);
+        void obj.text().then(text => { entry.text = text; });
+      }
+      return url;
+    };
+    const origClick = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function () {
+      if (this.download) {
+        const entry = win.__downloads.find(d => d.url === this.href);
+        if (entry) {
+          entry.name = this.download;
+        }
+        return;
+      }
+      return origClick.call(this);
+    };
+  });
+}
 
 test.describe('web shell', () => {
   let server: { url: string; close(): Promise<void> };
@@ -142,6 +179,65 @@ test.describe('web shell', () => {
     await dialog.locator('button[value="save"]').click();
     await expect(dialog).toBeHidden();
     await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('urdf-studio:settings:v1') || '{}').upAxis)).toBe('+Y');
+  });
+
+  test('opens a MuJoCo MJCF model from a folder, read-only, and saves it as URDF', async ({ page, browserName }) => {
+    test.skip(browserName !== 'chromium', 'webkitdirectory only on chromium.');
+    await captureDownloads(page);
+    await page.goto(server.url);
+    if (await page.locator('dialog.onboarding').isVisible()) {
+      await page.locator('[data-action="skip"]').click();
+    }
+    await page.setInputFiles('#file-input', path.join(FIXTURE_DIR, 'mjcf', 'arm'));
+    await expect(page.locator('#file-select')).toBeEnabled({ timeout: 10_000 });
+    // Both MuJoCo files are offered; scene.xml (the Menagerie entry point) first.
+    const options = await page.locator('#file-select option').evaluateAll(o => o.map(x => (x as HTMLOptionElement).value).filter(Boolean));
+    expect(options.map(value => value.split('/').pop())).toEqual(['scene.xml', 'arm.xml']);
+    await page.locator('#file-select').selectOption(options[0]);
+
+    await expect(page.locator('[data-joint-slider="shoulder_pan"]')).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('[data-joint-slider="elbow"]')).toBeVisible();
+    await expect(page.locator('#hud')).toContainText('2 movable joints');
+
+    // MuJoCo infers inertia from geoms, so P-001 is not reported for MJCF.
+    await page.locator('.tab[data-tab="checks"]').click();
+    await expect(page.locator('#panel-checks')).not.toContainText('P-001');
+
+    await page.locator('.tab[data-tab="source"]').click();
+    await expect(page.locator('#panel-source .source-meta')).toContainText('converted from MJCF');
+    await page.locator('#panel-source .source-edit-toggle').click();
+    await page.locator('#panel-source .cm-content').click();
+    await page.keyboard.press('Control+s');
+    await page.waitForFunction(() => ((window as any).__downloads as Array<{ name?: string }>).some(d => d.name), null, { timeout: 5_000 });
+    const names = await page.evaluate(() => ((window as any).__downloads as Array<{ name?: string }>).map(d => d.name).filter(Boolean));
+    expect(names).toEqual(['scene.urdf']);
+  });
+
+  test('saving settings re-applies them to the open robot and keeps its pose', async ({ page, browserName }) => {
+    test.skip(browserName !== 'chromium', 'webkitdirectory only on chromium.');
+    await page.goto(server.url);
+    if (await page.locator('dialog.onboarding').isVisible()) {
+      await page.locator('[data-action="skip"]').click();
+    }
+    await page.setInputFiles('#file-input', FIXTURE_DIR);
+    await expect(page.locator('#file-select')).toBeEnabled({ timeout: 10_000 });
+    const fixture = await page.locator('#file-select option').evaluateAll(options =>
+      options.map(option => (option as HTMLOptionElement).value).find(value => /(^|\/)model\.xacro$/.test(value)) ?? ''
+    );
+    await page.locator('#file-select').selectOption(fixture);
+    await expect(page.locator('[data-joint-slider="fixture_joint"]')).toBeVisible({ timeout: 15_000 });
+    await page.locator('[data-joint-number="fixture_joint"]').fill('0.25');
+    await page.locator('[data-joint-number="fixture_joint"]').press('Enter');
+    await expect(page.locator('#render-mode')).toHaveValue('visual');
+
+    await page.locator('#settings-btn').click();
+    await page.locator('#model-settings-btn').click();
+    const dialog = page.locator('dialog#settings-dialog');
+    await dialog.locator('select[name="defaultRenderMode"]').selectOption('collision');
+    await dialog.locator('button[value="save"]').click();
+
+    await expect(page.locator('#render-mode')).toHaveValue('collision', { timeout: 15_000 });
+    await expect(page.locator('[data-joint-number="fixture_joint"]')).toHaveValue('0.250');
   });
 
   test('theme switcher persists across reloads and flips data-theme', async ({ page }) => {
@@ -410,42 +506,7 @@ test.describe('web shell', () => {
   test('Export BOM drives the browser host download path (captures a real CSV blob)', async ({ page, browserName }) => {
     test.skip(browserName !== 'chromium', 'Headless Firefox does not honour webkitdirectory in CI.');
 
-    // Instrument createObjectURL to capture downloaded blobs and intercept the
-    // anchor click so the test never triggers a real navigation/download.
-    await page.addInitScript(() => {
-      const win = window as unknown as {
-        __downloads: Array<{ type: string; size: number; text: string; name?: string; url: string }>;
-      };
-      win.__downloads = [];
-      const origCreate = URL.createObjectURL.bind(URL);
-      URL.createObjectURL = (obj: Blob | MediaSource) => {
-        const url = origCreate(obj);
-        if (obj instanceof Blob) {
-          const entry: { type: string; size: number; text: string; name?: string; url: string } = {
-            type: obj.type,
-            size: obj.size,
-            text: '',
-            url
-          };
-          win.__downloads.push(entry);
-          void obj.text().then(text => { entry.text = text; });
-        }
-        return url;
-      };
-      // Patch HTMLAnchorElement.click to swallow downloads in the test runner
-      // while still recording the filename against the right blob entry.
-      const origClick = HTMLAnchorElement.prototype.click;
-      HTMLAnchorElement.prototype.click = function () {
-        if (this.download) {
-          const entry = win.__downloads.find(d => d.url === this.href);
-          if (entry) {
-            entry.name = this.download;
-          }
-          return;
-        }
-        return origClick.call(this);
-      };
-    });
+    await captureDownloads(page);
 
     await page.goto(server.url);
     if (await page.locator('dialog.onboarding').isVisible()) {
@@ -478,5 +539,31 @@ test.describe('web shell', () => {
     expect(csvDownload!.size).toBeGreaterThan(0);
     expect(csvDownload!.text).toContain('link,parent_joint');
     expect(csvDownload!.name).toMatch(/\.csv$/);
+  });
+
+  test('saving an edited xacro downloads expanded URDF under a .urdf name', async ({ page, browserName }) => {
+    test.skip(browserName !== 'chromium', 'webkitdirectory only on chromium.');
+    await captureDownloads(page);
+    await page.goto(server.url);
+    if (await page.locator('dialog.onboarding').isVisible()) {
+      await page.locator('[data-action="skip"]').click();
+    }
+    await page.setInputFiles('#file-input', FIXTURE_DIR);
+    await expect(page.locator('#file-select')).toBeEnabled({ timeout: 10_000 });
+    const targetValue = await page.locator('#file-select option').evaluateAll(options =>
+      options.map(option => (option as HTMLOptionElement).value).find(value => /(^|\/)model\.xacro$/.test(value)) ?? ''
+    );
+    await page.locator('#file-select').selectOption(targetValue);
+    await expect(page.locator('[data-joint-slider="fixture_joint"]')).toBeVisible({ timeout: 15_000 });
+
+    await page.locator('.tab[data-tab="source"]').click();
+    await page.locator('#panel-source .source-edit-toggle').click();
+    await page.locator('#panel-source .cm-content').click();
+    await page.keyboard.press('Control+s');
+
+    await page.waitForFunction(() => ((window as any).__downloads as Array<{ name?: string }>).some(d => d.name), null, { timeout: 5_000 });
+    const names = await page.evaluate(() => ((window as any).__downloads as Array<{ name?: string }>).map(d => d.name).filter(Boolean));
+    expect(names).toEqual(['model.urdf']);
+    await expect(page.locator('#topbar-status')).toContainText('URDF downloaded as model.urdf');
   });
 });

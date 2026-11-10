@@ -1,224 +1,1101 @@
-/* Workspace geometry is shared by the browser and VS Code preview. */
-#app .shell { grid-template-rows: auto minmax(0, 1fr); }
-#app .toolbar {
-  min-height: 44px;
-  padding: 7px 16px;
-  gap: 12px;
-  font-size: 12px;
-  background: var(--vscode-sideBar-background);
-  position: relative;
-  z-index: 12;
+/* ====================================================================
+ * Workbench — shared by the browser app and the VS Code preview.
+ *
+ * Only --vscode-* variables are used here: VS Code supplies them
+ * natively, and palette.css maps them onto the Studio tokens on the web.
+ * Local aliases below keep the rules readable.
+ * ==================================================================== */
+
+#app {
+  --wb-fg: var(--vscode-foreground);
+  --wb-muted: var(--vscode-descriptionForeground);
+  --wb-faint: color-mix(in srgb, var(--vscode-descriptionForeground) 72%, transparent);
+  --wb-border: var(--vscode-panel-border);
+  --wb-border-soft: color-mix(in srgb, var(--vscode-panel-border) 65%, transparent);
+  --wb-hover: var(--vscode-toolbar-hoverBackground);
+  --wb-accent: var(--vscode-button-background);
+  --wb-accent-fg: var(--vscode-button-foreground);
+  --wb-accent-hover: var(--vscode-button-hoverBackground);
+  --wb-link: var(--vscode-textLink-foreground);
+  --wb-input-bg: var(--vscode-input-background);
+  --wb-input-border: var(--vscode-input-border, var(--vscode-panel-border));
+  --wb-widget: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  --wb-side: var(--vscode-sideBar-background);
+  --wb-error: var(--vscode-errorForeground, #e5534b);
+  --wb-warning: var(--vscode-editorWarning-foreground, #c69026);
+  --wb-info: var(--vscode-editorInfo-foreground, #4a90d9);
+  --wb-success: var(--us-success, var(--vscode-testing-iconPassed, #3fb950));
+  --wb-mono: var(--us-font-mono, var(--vscode-editor-font-family, ui-monospace, monospace));
+  --wb-shadow: var(--us-shadow-md, 0 1px 2px #0000001a, 0 6px 16px -4px #00000026);
+  --wb-shadow-sm: var(--us-shadow-sm, 0 1px 2px #0000001a);
+  font-size: 13px;
 }
-#app .toolbar-group-end { border: 0; gap: 6px; padding: 0; }
-#app .toolbar .title { font: 12px var(--us-font-mono, monospace); }
-#app .toolbar #palette-toggle { color: var(--vscode-descriptionForeground); }
+
+/* ===== Shell geometry ================================================== */
+
+#app .shell { grid-template-rows: auto minmax(0, 1fr); }
+
 #app .workspace {
   grid-template-columns: minmax(0, 1fr) var(--panel-width, clamp(360px, 28vw, 440px));
 }
 #app .workspace.layout-source-fullscreen { grid-template-columns: 1fr; }
 #app .workspace.layout-split { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-#app .side { position: relative; grid-template-rows: 44px minmax(0, 1fr); }
-#app .tabs { grid-template-columns: .9fr 1.3fr 1fr .85fr 1fr .85fr; }
-#app .tab { height: auto; font-size: 12px; padding: 12px 4px; }
+#app .workspace.resizing { cursor: col-resize; user-select: none; }
+
+/* ===== Document toolbar ================================================ */
+
+#app .toolbar {
+  position: relative;
+  z-index: 12;
+  min-height: 40px;
+  padding: 0 12px 0 16px;
+  gap: 12px;
+  background: var(--wb-side);
+  border-bottom: 1px solid var(--wb-border);
+  font-size: 12.5px;
+}
+
+#app .toolbar .title {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  color: var(--wb-fg);
+  max-width: 40%;
+}
+
+#app .toolbar-group-end { gap: 4px; padding: 0; border: 0; }
+
+#app .toolbar-group-end > button,
+#app .toolbar-group-end > select,
+#app .toolbar-group-end > .workbench-menu > summary {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--wb-fg);
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 26px;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+#app .toolbar-group-end > button:hover,
+#app .toolbar-group-end > select:hover,
+#app .toolbar-group-end > .workbench-menu > summary:hover {
+  background: var(--wb-hover);
+}
+
+/* Save Pose is the document's one persistent action: outlined, not loud. */
+#app .toolbar #save-pose.primary {
+  border-color: var(--wb-input-border);
+  background: var(--wb-input-bg);
+  color: var(--wb-fg);
+}
+#app .toolbar #save-pose.primary:hover { background: var(--wb-hover); }
+
+
+#app .toolbar #palette-toggle { color: var(--wb-muted); }
+
+/* ===== Menus (details/summary popovers) =============================== */
+
+#app .workbench-menu { position: relative; margin: 0; border: 0; background: transparent; overflow: visible; }
+
+#app .workbench-menu > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+#app .workbench-menu > summary::-webkit-details-marker { display: none; }
+
+#app .workbench-menu > summary::after {
+  content: '';
+  width: 4px;
+  height: 4px;
+  margin: -2px 0 0 2px;
+  border-right: 1.5px solid var(--wb-muted);
+  border-bottom: 1.5px solid var(--wb-muted);
+  transform: rotate(45deg);
+}
+
+#app .workbench-menu[open] > summary { background: var(--wb-hover); }
+
+#app .menu-content,
+.settings-menu .settings-options {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  display: grid;
+  gap: 1px;
+  width: 224px;
+  padding: 4px;
+  border: 1px solid var(--wb-border, var(--vscode-panel-border));
+  border-radius: 8px;
+  background: var(--wb-widget, var(--vscode-editorWidget-background, var(--vscode-editor-background)));
+  box-shadow: var(--wb-shadow, 0 6px 20px #00000026);
+  font-size: 12.5px;
+}
+
+#app .menu-content label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 0 8px;
+  border-radius: 5px;
+  color: var(--wb-fg);
+  cursor: pointer;
+}
+
+#app .menu-content label:hover { background: var(--wb-hover); }
+#app .menu-content label:has(> select) { padding: 2px 4px; }
+#app .menu-content label:has(> select):hover { background: transparent; }
+
+#app .menu-content label select {
+  width: 100%;
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid var(--wb-input-border);
+  border-radius: 5px;
+  background: var(--wb-input-bg);
+  color: var(--wb-fg);
+  font-size: 12.5px;
+}
+
+#app .menu-content input[type='checkbox'] { margin: 0; }
+
+#app #export-menu .menu-content,
+#app #bookmarks-menu .menu-content { left: auto; right: 0; }
+
+/* Bookmarks: apply on click, delete on ×, name a new one inline. */
+#app .bookmark-options { width: 256px; }
+#app .bookmark-list { max-height: 240px; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
+#app .bookmark-list li { display: flex; align-items: center; border-radius: 5px; }
+#app .bookmark-list li:hover { background: var(--wb-hover); }
+
+#app .bookmark-apply {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  color: var(--wb-fg);
+  font-size: 12.5px;
+  text-align: left;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+#app .bookmark-delete {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  margin-right: 2px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--wb-muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+}
+
+#app .bookmark-list li:hover .bookmark-delete,
+#app .bookmark-delete:focus-visible { opacity: 1; }
+#app .bookmark-delete:hover { color: var(--wb-error); background: var(--wb-hover); }
+#app .bookmark-empty { padding: 6px 8px; font-size: 12px; line-height: 1.5; color: var(--wb-muted); }
+
+#app .bookmark-form {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 8px 2px 2px;
+  border-top: 1px solid var(--wb-border);
+}
+
+#app .bookmark-form input {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--wb-input-border);
+  border-radius: 5px;
+  background: var(--wb-input-bg);
+  color: var(--wb-fg);
+  font-size: 12.5px;
+}
+
+#app .bookmark-form input:focus { outline: none; border-color: var(--wb-accent); }
+
+#app .bookmark-form button {
+  height: 28px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 5px;
+  background: var(--wb-accent);
+  color: var(--wb-accent-fg);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+#app .bookmark-form button:hover { background: var(--wb-accent-hover); }
+
+#app .export-options button,
+.settings-options button,
+#app .settings-options button {
+  display: block;
+  width: 100%;
+  height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--vscode-foreground);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+#app .export-options button:hover,
+.settings-options button:hover,
+#app .settings-options button:hover { background: var(--vscode-toolbar-hoverBackground); }
+
+.settings-menu { position: relative; }
+.settings-menu > summary { list-style: none; cursor: pointer; }
+.settings-menu > summary::-webkit-details-marker { display: none; }
+#app .settings-menu > summary::after { content: none; }
+#app .settings-menu > summary { height: 28px; padding: 0 6px; }
+.settings-menu .settings-options { left: auto; right: 0; }
+.settings-options .menu-heading {
+  padding: 6px 8px 4px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--vscode-descriptionForeground);
+}
+.palette-check { display: none; float: right; }
+[aria-pressed='true'] .palette-check { display: inline; }
+
+/* ===== Viewport overlay controls ====================================== */
+
+#app .viewport-tools {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  z-index: 7;
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 6px;
+  pointer-events: none;
+  font-size: 12px;
+}
+
+#app .viewport-tools > * {
+  pointer-events: auto;
+  border: 1px solid var(--wb-border);
+  border-radius: 8px;
+  background: var(--wb-widget);
+  box-shadow: var(--wb-shadow-sm);
+}
+
+#app .viewport-tools .toolbar-group { gap: 1px; padding: 2px; border-left: 1px solid var(--wb-border); }
+
+#app .viewport-tools button,
+#app .viewport-tools select,
+#app .viewport-tools .workbench-menu > summary {
+  height: 26px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--wb-fg);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+#app .viewport-tools select {
+  appearance: none;
+  padding-right: 24px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--wb-muted) 50%),
+    linear-gradient(135deg, var(--wb-muted) 50%, transparent 50%);
+  background-position: calc(100% - 12px) 52%, calc(100% - 8px) 52%;
+  background-size: 4px 4px;
+  background-repeat: no-repeat;
+}
+
+#app .viewport-tools button:hover,
+#app .viewport-tools select:hover,
+#app .viewport-tools .workbench-menu > summary:hover { background: var(--wb-hover); }
+
+#app .viewport-tools #display-menu { padding: 2px; }
+#app #fit { font-weight: 600; }
+#app #render-mode { min-width: 92px; }
+
+/* HUD: a quiet caption, not a card. */
+#app .hud {
+  left: 12px;
+  bottom: 12px;
+  padding: 4px 8px;
+  border: 1px solid var(--wb-border-soft);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--wb-widget) 86%, transparent);
+  backdrop-filter: blur(8px);
+  color: var(--wb-muted);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  box-shadow: none;
+}
+
+#app .collide-hud { left: auto; right: 12px; }
+#app .collide-hud:empty { display: none; }
+
+/* ===== Side panel ====================================================== */
+
+#app .side {
+  position: relative;
+  grid-template-rows: 40px minmax(0, 1fr);
+  background: var(--wb-side);
+  border-left: 1px solid var(--wb-border);
+  container-type: inline-size;
+  container-name: side;
+}
+
 #panel-resize {
   position: absolute;
   left: -3px;
   top: 0;
   bottom: 0;
-  width: 8px;
   z-index: 10;
+  width: 6px;
   cursor: col-resize;
   touch-action: none;
+  transition: background-color 120ms ease;
 }
-#panel-resize:hover, #panel-resize:focus-visible, .resizing #panel-resize {
-  background: var(--vscode-button-background);
+
+#panel-resize:hover,
+#panel-resize:focus-visible,
+.resizing #panel-resize {
+  background: color-mix(in srgb, var(--vscode-button-background) 70%, transparent);
   outline: none;
 }
-#app .workspace.resizing { cursor: col-resize; user-select: none; }
+
 #app .layout-source-fullscreen #panel-resize,
 #app .layout-split #panel-resize,
 #app .layout-source-fullscreen .viewport-tools { display: none; }
-#app .viewport-tools {
-  position: absolute;
-  top: 16px;
-  left: 16px;
-  right: 16px;
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  flex-wrap: wrap;
-  z-index: 7;
-  pointer-events: none;
-  font-size: 12px;
+
+#app .tabs {
+  grid-template-columns: .9fr 1.3fr 1fr .85fr 1fr .85fr;
+  padding: 0 6px;
+  border-bottom: 1px solid var(--wb-border);
+  background: var(--wb-side);
 }
-#app .viewport-tools > * {
-  pointer-events: auto;
-  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
-  border: 1px solid var(--vscode-panel-border);
-  border-radius: 6px;
-}
-#app .viewport-tools .toolbar-group { padding: 4px; gap: 2px; }
-#app .viewport-tools button, #app .viewport-tools select {
-  height: 30px;
+
+#app .tab {
+  position: relative;
+  height: 40px;
+  padding: 0 4px;
   border: 0;
-  border-radius: 3px;
-  padding: 0 9px;
+  border-radius: 0;
   background: transparent;
-  color: var(--vscode-foreground);
+  color: var(--wb-muted);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 120ms ease;
+}
+
+#app .tab:hover { color: var(--wb-fg); background: transparent; }
+
+#app .tab.active {
+  color: var(--wb-fg);
+  background: transparent;
+  border-bottom: 0;
+}
+
+#app .tab.active::after {
+  content: '';
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--wb-accent);
+}
+
+@container side (max-width: 400px) {
+  #app .tab { font-size: 12px; padding: 0 2px; }
+  #app .tab.active::after { left: 4px; right: 4px; }
+}
+
+#app .panel { padding: 16px; }
+#app .panel h3 { margin: 0; }
+
+#app .panel-empty {
+  margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--wb-muted);
+}
+
+#app .muted { color: var(--wb-muted); }
+
+/* Shared panel controls. */
+#app .panel button {
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--wb-input-border);
+  border-radius: 6px;
+  background: var(--wb-input-bg);
+  color: var(--wb-fg);
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+#app .panel button:hover { background: var(--wb-hover); }
+
+#app .panel button.primary {
+  border-color: transparent;
+  background: var(--wb-accent);
+  color: var(--wb-accent-fg);
+}
+
+#app .panel button.primary:hover { background: var(--wb-accent-hover); }
+#app .panel button:disabled { opacity: 0.45; cursor: default; }
+#app .panel button:disabled:hover { background: var(--wb-input-bg); }
+
+#app .panel :is(input[type='number'], input[type='text'], input[type='search'], select) {
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--wb-input-border);
+  border-radius: 6px;
+  background: var(--wb-input-bg);
+  color: var(--wb-fg);
+  font-size: 12.5px;
+}
+
+#app .panel select {
+  appearance: none;
+  padding-right: 26px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--wb-muted) 50%),
+    linear-gradient(135deg, var(--wb-muted) 50%, transparent 50%);
+  background-position: calc(100% - 13px) 52%, calc(100% - 9px) 52%;
+  background-size: 4px 4px;
+  background-repeat: no-repeat;
+  text-overflow: ellipsis;
+}
+
+#app .panel :is(input[type='number'], input[type='text']) {
+  font-family: var(--wb-mono);
   font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
-#app .viewport-tools button:hover, #app .viewport-tools select:hover {
-  background: var(--vscode-toolbar-hoverBackground);
+
+#app .panel :is(input, select):focus {
+  outline: none;
+  border-color: var(--wb-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--wb-accent) 18%, transparent);
 }
-#app #fit { font-weight: 600; }
-#app #render-mode { min-width: 86px; }
-#app .workbench-menu { position: relative; margin: 0; overflow: visible; }
-#app .workbench-menu > summary {
-  list-style: none;
-  height: 38px;
+
+#app input[type='number'] { appearance: textfield; }
+#app input[type='number']::-webkit-inner-spin-button,
+#app input[type='number']::-webkit-outer-spin-button { appearance: none; margin: 0; }
+#app input[type='checkbox'] { accent-color: var(--wb-accent); }
+
+/* ----- Joints: overview ------------------------------------------------ */
+
+#app .overview {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 14px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--wb-border);
+}
+
+#app .overview-name {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--wb-mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--wb-fg);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+#app .summary {
+  display: flex;
+  flex: none;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+#app .summary .metric {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+#app .summary .metric b {
+  display: inline;
+  font-size: 12.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--wb-fg);
+}
+
+#app .summary .metric span {
+  font-size: 12px;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--wb-muted);
+}
+
+/* ----- Collapsible sections (xacro params, joint groups) --------------- */
+
+#app details {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+#app details:not(.workbench-menu) > summary {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 12px;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0;
+  list-style: none;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--wb-fg);
   cursor: pointer;
-  font-weight: 500;
-  font-size: 12px;
-  color: var(--vscode-foreground);
-  background: transparent;
+  user-select: none;
 }
-#app .workbench-menu > summary::-webkit-details-marker { display: none; }
-#app .workbench-menu > summary::after { content: '⌄'; color: var(--vscode-descriptionForeground); }
-#app .workbench-menu[open] > summary { background: var(--vscode-toolbar-hoverBackground); }
-#app .menu-content {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  width: 218px;
-  padding: 8px;
+
+#app details:not(.workbench-menu) > summary::-webkit-details-marker { display: none; }
+
+#app :is(.xacro-settings, #joint-groups > details, .checks-group) > summary::before {
+  content: '';
+  flex: none;
+  width: 5px;
+  height: 5px;
+  margin: 0 3px 0 1px;
+  border-right: 1.5px solid var(--wb-muted);
+  border-bottom: 1.5px solid var(--wb-muted);
+  transform: rotate(-45deg);
+  transition: transform 140ms ease;
+}
+
+#app :is(.xacro-settings, #joint-groups > details, .checks-group)[open] > summary::before { transform: rotate(45deg); }
+
+#app .xacro-settings { border-bottom: 1px solid var(--wb-border); }
+#app .parameter-count,
+#app .group-count {
+  margin-left: auto;
+  font-size: 11.5px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--wb-muted);
+}
+
+#app .xacro-args {
   display: grid;
   gap: 6px;
-  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
-  border: 1px solid var(--vscode-panel-border);
-  border-radius: 6px;
-  box-shadow: 0 6px 20px #00000018;
-  z-index: 20;
+  margin: 0;
+  padding: 2px 0 14px;
+  border: 0;
+  background: transparent;
 }
-#app .menu-content label { display: flex; align-items: center; gap: 8px; padding: 5px 6px; }
-#app .menu-content label select { width: 100%; }
-#app #export-menu { border: 1px solid var(--vscode-panel-border); border-radius: 4px; }
-#app #export-menu > summary { height: 30px; }
-#app #export-menu .menu-content { left: auto; right: 0; }
-#app .export-options button { height: 34px; text-align: left; border: 0; background: transparent; }
-#app .export-options button:hover { background: var(--vscode-toolbar-hoverBackground); }
-#app .panel { padding: 16px 18px; }
-#app .panel-heading, #app .joint-section-heading {
-  display: flex;
-  justify-content: space-between;
+
+#app .xacro-args label {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
   align-items: center;
+  gap: 10px;
+  font-family: var(--wb-mono);
+  font-size: 11.5px;
+  color: var(--wb-muted);
+}
+
+#app .xacro-args label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#app .xacro-args #apply-xacro { justify-self: start; margin-top: 6px; }
+
+/* ----- Joints: controls ------------------------------------------------ */
+
+#app .joint-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 8px;
-  margin: 2px 0 12px;
-  font-size: 11px;
+  margin: 18px 0 10px;
+  font-size: 12.5px;
   font-weight: 600;
+  color: var(--wb-fg);
 }
-#app .panel-heading { color: var(--vscode-descriptionForeground); }
-#app .joint-section-heading label { display: flex; gap: 5px; align-items: center; font-size: 11px; font-weight: 400; }
-#app .panel-empty { margin-top: 24px; font-size: 13px; line-height: 1.7; color: var(--vscode-descriptionForeground); }
-#app .summary { margin-bottom: 16px; }
-#app .summary .metric { padding: 6px 12px; }
-#app .summary .metric b { font-size: 24px; }
-#app .joint-filter { grid-template-columns: minmax(0, 1fr) auto; padding: 0; background: transparent; }
-#app .joint-filter > label { justify-content: flex-end; font-size: 11px; white-space: nowrap; }
-#app #joint-groups > details { border: 0; border-radius: 0; background: transparent; box-shadow: none; }
-#app #joint-groups > details > summary { padding: 10px 0; border-bottom: 1px solid var(--vscode-panel-border); font-size: 12px; }
-#app #joint-groups .detail-body { padding: 0; gap: 0; }
+
+#app .joint-section-heading label,
+#app .joint-filter > label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--wb-muted);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+#app .joint-filter {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 6px;
+  padding: 0;
+  background: transparent;
+}
+
+#app .joint-filter input[type='search'] { width: 100%; }
+
+#app #joint-groups > details > summary {
+  min-height: 34px;
+  border-bottom: 1px solid var(--wb-border);
+}
+
+#app .group-name { font-family: var(--wb-mono); font-size: 12px; }
+
+#app #joint-groups .detail-body { display: block; padding: 0; }
+#app .state-buttons { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 0 4px; }
+#app .state-buttons:not(:has(button)) { display: none; }
+
 #app .joint-row {
-  grid-template-columns: minmax(0, 1fr) 112px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   grid-template-areas: 'name value' 'slider slider';
-  gap: 4px 12px;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--vscode-panel-border);
+  align-items: center;
+  gap: 2px 12px;
+  padding: 8px 0 6px;
+  border-bottom: 1px solid var(--wb-border-soft);
+  font-size: 12px;
 }
-#app .joint-row .joint-name { grid-area: name; font: 12px var(--us-font-mono, monospace); }
-#app .joint-row input[type='range'] { grid-area: slider; width: 100%; height: 20px; margin: 2px 0 0; }
+
+#app .joint-row .joint-name {
+  grid-area: name;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--wb-mono);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--wb-fg);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 #app .joint-value {
   grid-area: value;
   display: flex;
   align-items: center;
-  gap: 5px;
-  font-size: 10px;
-  color: var(--vscode-descriptionForeground);
-}
-#app .joint-value input { flex: 1; min-width: 0; width: 78px; padding: 4px 7px; font-size: 12px; font-variant-numeric: tabular-nums; text-align: right; }
-#app .joint-value span { width: 20px; }
-#app .state-buttons:empty { display: none; }
-#app .checks-summary { display: block; padding: 4px 0 18px; margin-bottom: 12px; }
-#app .health-reading { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
-#app .health-score { font-size: 40px; line-height: 1.1; font-weight: 500; letter-spacing: -0.045em; }
-#app .health-label { font-size: 11px; line-height: 1.7; color: var(--vscode-descriptionForeground); }
-#app .checks-counts { gap: 8px; flex-wrap: wrap; }
-#app .checks-counts .count-pill { border-radius: 3px; padding: 4px 8px; font-variant-numeric: tabular-nums; }
-#app details.checks-group { border: 0; border-bottom: 1px solid var(--vscode-panel-border); border-radius: 0; background: transparent; box-shadow: none; }
-#app summary.checks-group-header { padding: 12px 0; font-size: 12px; line-height: 1.5; gap: 12px; }
-#app summary.checks-group-header > span:first-child { flex: 1; }
-#app summary.checks-group-header::before { content: '›'; }
-#app details.checks-group[open] > summary::before { content: '⌄'; }
-#app .checks-group-item { padding: 0 0 0 20px; border-top: 0; }
-#app .checks-group-item::before { left: 1px; top: 15px; width: 5px; height: 5px; }
-#app .check-message {
-  height: auto;
-  width: 100%;
-  padding: 10px 0;
-  border: 0;
-  text-align: left;
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--vscode-foreground);
-  background: transparent;
-}
-#app .check-message .check-line { display: block; margin: 4px 0 0; font: 10px var(--us-font-mono, monospace); }
-@media (max-width: 900px) {
-  #app .toolbar { padding: 6px 10px; }
-  #app .toolbar-group-end { flex-wrap: wrap; }
-  #app .viewport-tools { left: 10px; right: 10px; top: 10px; gap: 4px; }
-  #app .viewport-tools button { padding: 0 7px; }
+  gap: 4px;
+  font-size: 11px;
+  color: var(--wb-muted);
 }
 
-/* Settings stays in the host chrome on the web, and the preview on VS Code. */
-.settings-menu { position: relative; }
-.settings-menu > summary { list-style: none; cursor: pointer; }
-.settings-menu > summary::-webkit-details-marker { display: none; }
-#app .settings-menu > summary::after { content: none; }
-#app .settings-menu > summary { height: 32px; padding: 0 8px; }
-.settings-menu .settings-options {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  left: auto;
-  width: 218px;
-  padding: 8px;
-  display: grid;
-  gap: 6px;
-  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
-  border: 1px solid var(--vscode-panel-border);
-  border-radius: 6px;
-  box-shadow: 0 6px 20px #00000018;
-  z-index: 30;
-}
-.settings-options .menu-heading { padding: 5px 8px; font-size: 11px; color: var(--vscode-descriptionForeground); }
-.settings-options button, #app .settings-options button {
-  display: block;
-  width: 100%;
-  min-height: 34px;
-  padding: 7px 8px;
-  border: 0;
-  text-align: left;
-  font-size: 12px;
+#app .panel .joint-value input {
+  width: 72px;
+  height: 24px;
+  padding: 0 6px;
+  border-color: transparent;
   background: transparent;
-  color: var(--vscode-foreground);
+  text-align: right;
 }
-.settings-options button:hover, #app .settings-options button:hover { background: var(--vscode-toolbar-hoverBackground); }
-.palette-check { display: none; float: right; }
-[aria-pressed='true'] .palette-check { display: inline; }
-#topbar { z-index: 20; }
-#settings-menu { margin: 0; border: 0; background: transparent; }
-#settings-btn { padding: 0; }
+
+#app .panel .joint-value input:hover { border-color: var(--wb-input-border); background: var(--wb-input-bg); }
+#app .panel .joint-value input:focus { background: var(--wb-input-bg); }
+#app .joint-value span { width: 20px; }
+
+/* Range slider: thin track with a filled portion driven by --fill. */
+#app .joint-row input[type='range'] {
+  grid-area: slider;
+  width: 100%;
+  height: 16px;
+  margin: 0;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+  --track: color-mix(in srgb, var(--wb-fg) 14%, transparent);
+}
+
+#app .joint-row input[type='range']::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 2px;
+  background: linear-gradient(to right, var(--wb-accent) var(--fill, 50%), var(--track) var(--fill, 50%));
+}
+
+#app .joint-row input[type='range']::-moz-range-track {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--track);
+}
+
+#app .joint-row input[type='range']::-moz-range-progress {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--wb-accent);
+}
+
+#app .joint-row input[type='range']::-webkit-slider-thumb {
+  width: 13px;
+  height: 13px;
+  margin-top: -5px;
+  appearance: none;
+  border: 1.5px solid var(--wb-accent);
+  border-radius: 50%;
+  background: var(--vscode-editor-background);
+  box-shadow: 0 1px 2px #0000002e;
+  transition: transform 100ms ease;
+}
+
+#app .joint-row input[type='range']::-moz-range-thumb {
+  width: 11px;
+  height: 11px;
+  border: 1.5px solid var(--wb-accent);
+  border-radius: 50%;
+  background: var(--vscode-editor-background);
+}
+
+#app .joint-row input[type='range']:hover::-webkit-slider-thumb,
+#app .joint-row input[type='range']:active::-webkit-slider-thumb { transform: scale(1.15); }
+
+#app .joint-row input[type='range']:focus-visible { outline: none; }
+#app .joint-row input[type='range']:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--wb-accent) 25%, transparent);
+}
+
+/* ----- Inspector ------------------------------------------------------- */
+
+#app .inspector-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 14px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--wb-border);
+}
+
+#app .inspector-title {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--wb-mono);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+#app .inspector-kind {
+  flex: none;
+  padding: 1px 7px;
+  border: 1px solid var(--wb-border);
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--wb-muted);
+}
+
+#app .inspector-grid {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: 9px 12px;
+  font-size: 12px;
+}
+
+#app .inspector-grid b {
+  font-weight: 400;
+  color: var(--wb-muted);
+}
+
+#app .inspector-grid .value,
+#app .mesh-item .value {
+  font-family: var(--wb-mono);
+  font-size: 12px;
+  color: var(--wb-fg);
+  overflow-wrap: anywhere;
+}
+
+#app .value-line { display: block; }
+
+#app #panel-inspector h3 {
+  margin: 20px 0 10px;
+  padding-top: 16px;
+  border-top: 1px solid var(--wb-border);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+#app .mesh-list { display: grid; gap: 8px; }
+#app .mesh-item { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 12px; font-size: 12px; }
+#app .mesh-item b { font-weight: 400; color: var(--wb-muted); text-transform: capitalize; }
+#app .severity.error { color: var(--wb-error); font-family: inherit; font-size: 11px; font-weight: 600; text-transform: none; }
+
+/* ----- Links tree ------------------------------------------------------ */
+
+#app .panel.tree { padding: 10px 8px 16px; overflow-x: auto; }
+
+#app .tree ul { margin: 0; padding: 0; list-style: none; }
+#app .tree ul ul { margin-left: 11px; padding-left: 4px; border-left: 1px solid var(--wb-border-soft); }
+#app .tree li { margin: 0; min-width: 0; }
+
+#app .panel.tree button {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  height: auto;
+  min-height: 26px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--wb-fg);
+  font-weight: 400;
+  text-align: left;
+}
+
+#app .panel.tree button:hover { background: var(--vscode-list-hoverBackground); }
+
+#app .panel.tree button[aria-current='true'] {
+  background: var(--vscode-list-activeSelectionBackground);
+  color: var(--vscode-list-activeSelectionForeground, var(--wb-fg));
+}
+
+#app .tree-link {
+  flex: none;
+  font-family: var(--wb-mono);
+  font-size: 12px;
+}
+
+#app .tree-joint {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--wb-mono);
+  font-size: 11px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--wb-faint);
+  opacity: 0;
+  transition: opacity 100ms ease;
+}
+
+#app .panel.tree button:is(:hover, :focus-visible, [aria-current='true']) .tree-joint { opacity: 1; }
+
+/* ----- Checks ---------------------------------------------------------- */
+
+#app .checks-summary {
+  display: block;
+  margin: 0 0 4px;
+  padding: 0 0 16px;
+  border-bottom: 1px solid var(--wb-border);
+}
+
+#app .health-reading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+#app .health-label { font-size: 12.5px; font-weight: 600; color: var(--wb-fg); }
+#app .health-value { display: inline-flex; align-items: baseline; gap: 2px; }
+
+#app .health-score {
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--wb-fg);
+}
+
+#app .health-max { font-size: 12px; color: var(--wb-muted); font-variant-numeric: tabular-nums; }
+
+#app .health-meter {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--wb-fg) 10%, transparent);
+}
+
+#app .health-meter > span { display: block; height: 100%; border-radius: inherit; }
+#app .health-meter.health-good > span { background: var(--wb-success); }
+#app .health-meter.health-warn > span { background: var(--wb-warning); }
+#app .health-meter.health-poor > span { background: var(--wb-error); }
+#app .health-score.health-good,
+#app .health-score.health-warn,
+#app .health-score.health-poor { color: var(--wb-fg); }
+
+#app .checks-clean { margin: 12px 0 0; font-size: 12.5px; line-height: 1.55; color: var(--wb-muted); }
+
+#app .checks-counts { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 12px; font-size: 12px; }
+
+#app .checks-counts .count-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--wb-fg);
+  font-variant-numeric: tabular-nums;
+}
+
+#app .sev-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; }
+#app .sev-dot.sev-error { background: var(--wb-error); }
+#app .sev-dot.sev-warning { background: var(--wb-warning); }
+#app .sev-dot.sev-info { background: var(--wb-info); }
+
+#app details.checks-group { border-bottom: 1px solid var(--wb-border); }
+
+#app summary.checks-group-header {
+  justify-content: flex-start;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 0;
+  background: transparent;
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+#app .checks-group-title { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; flex: 1; min-width: 0; }
+#app .checks-group-title .sev-dot { align-self: center; }
+#app .checks-code { font-family: var(--wb-mono); font-size: 11px; font-weight: 500; color: var(--wb-muted); }
+#app .checks-group-count { font-size: 11.5px; font-variant-numeric: tabular-nums; color: var(--wb-muted); }
+
+#app .checks-group-list { margin: 0 0 8px; padding: 0; list-style: none; }
+
+#app .checks-group-item { padding: 0; border: 0; cursor: pointer; }
+#app .checks-group-item::before { content: none; }
+#app .checks-group-item:hover { background: transparent; }
+
+#app .panel .check-message {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  width: 100%;
+  height: auto;
+  padding: 7px 8px 7px 22px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--wb-muted);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+  text-align: left;
+  white-space: normal;
+}
+
+#app .panel .check-message:hover { background: var(--vscode-list-hoverBackground); color: var(--wb-fg); }
+#app .check-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+
+#app .check-message .check-line {
+  flex: none;
+  margin: 0;
+  font-family: var(--wb-mono);
+  font-size: 11px;
+  color: var(--wb-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ----- Tools ----------------------------------------------------------- */
+
+#app #panel-tools { padding-top: 0; }
+
+#app .tool-block {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 16px 0;
+  border: 0;
+  border-bottom: 1px solid var(--wb-border);
+  border-radius: 0;
+}
+
+#app .tool-block:last-child { border-bottom: 0; }
+#app .tool-block h3 { font-size: 13px; font-weight: 600; color: var(--wb-fg); }
+#app .tool-hint { margin: -6px 0 0; font-size: 12px; line-height: 1.5; }
+#app .tool-hint code { font-family: var(--wb-mono); font-size: 11px; }
+#app .tool-hint.error, #app .muted.error { color: var(--wb-error); }
+
+#app .tool-fields { display: grid; gap: 6px; }
+
+#app .tool-fields label {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--wb-muted);
+}
+
+#app .tool-fields :is(input, select) { width: 100%; }
+#app .tool-block .row-buttons { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+#app .tool-status { font-size: 12px; }
+#app .tool-block button { justify-self: auto; }
+#app .measure-readout { font-family: var(--wb-mono); font-size: 12px; }
+#app .measure-readout:empty { display: none; }
+#app #measure-toggle.active { background: var(--wb-accent-hover); }
+
+#app .srdf-results { max-height: 220px; overflow: auto; font-size: 12px; }
+#app .srdf-results:empty { display: none; }
+#app .srdf-results li { padding: 3px 0; }
+
+/* ===== Small screens: stack the panel under the viewport ============= */
+
+@media (max-width: 900px) {
+  #app .workspace,
+  #app .workspace.layout-split {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(240px, 1fr) minmax(280px, 46%);
+  }
+  #app .side { border-left: 0; border-top: 1px solid var(--wb-border); }
+  #panel-resize { display: none; }
+  #app .toolbar { padding: 0 8px 0 12px; }
+  #app .toolbar .title { max-width: 30%; }
+  #app .viewport-tools { top: 8px; left: 8px; right: 8px; gap: 4px; }
+  #app .viewport-tools button { padding: 0 7px; }
+}

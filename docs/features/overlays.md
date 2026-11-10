@@ -1,50 +1,47 @@
 ---
-title: Frames & inertia overlays
+title: Frames, labels and inertia
 order: 30
+summary: Show link coordinate frames, joint and link names, centres of mass and inertia ellipsoids in the 3D view.
 ---
 
-# Frames & inertia overlays
+# Frames, labels and inertia
 
-Two visualisation layers live in the subtoolbar (below the main toolbar).
+These overlays live in the **Display** menu of the 3D view. They help you
+check that a model is built the way you think it is.
 
-## TF frames
+## Coordinate frames
 
-A per-link XYZ axes helper. The `Frames` select offers three modes:
+**Frames** draws a small X/Y/Z axis (red/green/blue) at each link's origin:
 
-| Mode | Effect |
+| Setting | Draws frames on |
 |---|---|
-| `off` | No axes (default). |
-| `selected` | Axes are drawn only on the currently selected link. |
-| `all` | Axes are drawn on every link. |
+| off | Nothing (default) |
+| selected | The selected link only |
+| all | Every link |
 
-The helper is sized relative to the robot's bounding radius so it remains
-visible on both tiny grippers and full humanoid arms.
+Use it to check that joint origins sit where they should and that axes
+point the right way — for example, that a tool frame's Z points out of the
+flange. **selected** is the least cluttered: click a link, and its frame
+appears.
 
-Useful for:
+## Labels
 
-- Validating that joint origins point where you think they do.
-- Spotting accidental rotations between parent and child frames.
-- Authoring/debugging a custom end-effector mount.
+**Labels** writes names into the 3D view: joints, links, or both. Useful on
+an unfamiliar robot, or to find which link is which when names are long.
 
-## Inertia
+## Centre of mass and inertia
 
-Check **Inertia** in the subtoolbar to overlay:
+**Inertia** shows how mass is distributed:
 
-- An inertia ellipsoid on each link with a valid `<inertial>` block. The
-  ellipsoid axes are derived from the eigenvalues of the inertia tensor
-  (`I = R Λ Rᵀ`) and oriented along the eigenvectors. A larger ellipsoid
-  means more rotational inertia along that axis.
-- A small marker at each link's center of mass.
-- A larger marker at the robot's **total** CoM, weighted by mass.
+- A marker at each link's centre of mass.
+- An ellipsoid around it, shaped by the link's inertia. A long ellipsoid
+  means the link is harder to rotate around its short axes.
+- A larger marker at the centre of mass of the whole robot.
 
-The Inspector tab still shows the raw tensor components, mass, and origin
-of whichever link you have selected — see
-[Inspector & link tree](./inspector.html).
+Links without an `<inertial>` block are skipped. If an ellipsoid is huge,
+tiny, or far from its link, the inertia values are probably wrong —
+[Checks](./diagnostics.html) flags the clearest cases, such as zero mass or
+an impossible inertia tensor.
 
-## Diagnostics that interact with this layer
-
-If a link's inertia tensor is missing, has non-positive mass, or has a
-non-positive-definite tensor, the **Checks** panel surfaces it. The
-ellipsoid for such a link is skipped or rendered with a warning color so
-you can spot bad data visually. See
-[Diagnostics](./diagnostics.html#inertial).
+For the numbers themselves, select the link and open the
+[Inspector](./inspector.html).

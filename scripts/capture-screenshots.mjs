@@ -249,6 +249,10 @@ async function captureStatic(serverUrl, browser) {
   await page.waitForTimeout(400);
 
   // -- 02 editor split ------------------------------------------------------
+  // Select a link first so the editor scrolls to real URDF instead of the
+  // blank lines xacro expansion leaves at the top of the file.
+  await page.locator('.tab[data-tab="links"]').click();
+  await page.locator('button[data-link="fr3_link4"]').click();
   await page.locator('.tab[data-tab="source"]').click();
   await page.locator('#panel-source .cm-editor').waitFor({ timeout: 5000 });
   await page.waitForTimeout(700);

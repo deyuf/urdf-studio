@@ -570,3 +570,23 @@ a:hover {
 #docs-search input { width: 100%; padding: 10px; font: inherit; background: var(--us-bg); color: var(--us-fg); border: 1px solid var(--us-border); }
 #docs-search-results { padding-left: 20px; }
 #docs-search-results p { font-size: 14px; color: var(--us-fg-muted); }
+
+/* ===== Figures ===== */
+.docs-article img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 20px 0 8px;
+  border: 1px solid var(--us-border);
+  border-radius: var(--us-radius-lg, 10px);
+}
+.docs-article img + em,
+.docs-article p > img + em {
+  display: block;
+  margin-bottom: 20px;
+  font-size: 13px;
+  color: var(--us-fg-muted);
+}
+
+/* Short identifiers (rule codes, keys) never break mid-token. */
+.docs-article td code { white-space: nowrap; }

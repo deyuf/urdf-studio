@@ -24,24 +24,22 @@ export function propagateMimicValue(
   masterValue: number
 ): Array<{ joint: string; value: number }> {
   const result: Array<{ joint: string; value: number }> = [];
-  const visited = new Set<string>();
-
-  const walk = (jointName: string, value: number) => {
-    if (visited.has(jointName)) {
-      return;
-    }
-    visited.add(jointName);
-    const followers = graph.followers.get(jointName) ?? [];
-    for (const follower of followers) {
-      if (!follower.mimic) {
+  // The master is visited from the start, so a mimic cycle (or a joint that
+  // mimics itself) can never feed a value back into the joint being moved.
+  // Iterative so very long mimic chains cannot overflow the stack.
+  const visited = new Set<string>([master]);
+  const pending: Array<{ joint: string; value: number }> = [{ joint: master, value: masterValue }];
+  for (let index = 0; index < pending.length; index += 1) {
+    const { joint, value } = pending[index];
+    for (const follower of graph.followers.get(joint) ?? []) {
+      if (!follower.mimic || visited.has(follower.name)) {
         continue;
       }
+      visited.add(follower.name);
       const followerValue = value * follower.mimic.multiplier + follower.mimic.offset;
       result.push({ joint: follower.name, value: followerValue });
-      walk(follower.name, followerValue);
+      pending.push({ joint: follower.name, value: followerValue });
     }
-  };
-
-  walk(master, masterValue);
+  }
   return result;
 }

@@ -88,3 +88,11 @@ test('sanitizeXacroContent does not mistake a Python expression for rospack synt
   const out = sanitizeXacroContent(input, new Set(['broken']));
   assert.equal(out, 'plain $(literal_token and ');
 });
+
+test('sanitizeXacroContent matches whole terms only, never part of a longer name', () => {
+  // `w` failed; `width` is a different, valid property and must survive.
+  const input = '<a x="${w}" y="${width*2}" z="${w * 2}"/>';
+  assert.equal(sanitizeXacroContent(input, new Set(['w'])), '<a x="" y="${width*2}" z=""/>');
+  // Skipping u1 must not wipe u10..u19.
+  assert.equal(sanitizeXacroContent('${u1}${u10}${u19}', new Set(['u1'])), '${u10}${u19}');
+});

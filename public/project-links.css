@@ -1,18 +1,18 @@
 .project-footer {
   display: flex;
   justify-content: flex-end;
-  padding: 3px 16px;
+  padding: 2px 8px 2px 16px;
   border-top: 1px solid var(--us-border);
   color: var(--us-fg-muted);
   background: var(--us-bg);
 }
-.project-switcher { position: relative; z-index: 10; }
+.project-switcher { position: relative; z-index: 10; margin-left: auto; flex: none; }
 .project-switcher summary {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 32px;
-  padding: 4px 8px;
+  min-height: 24px;
+  padding: 2px 8px;
   border-radius: 4px;
   color: var(--us-fg-muted);
   font: 12px/1.5 var(--us-font-sans, system-ui);
