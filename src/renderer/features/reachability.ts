@@ -1,19 +1,22 @@
-// Reachability cloud: Monte-Carlo workspace samples for a chosen tip link.
+// Reachability / dexterity map for a chosen tip link.
 //
-// Extracted from renderer/main.ts so the sampling loop + visualisation
-// lifecycle (geometry / material / scene attachment / disposal) are not
-// tangled with the rest of the renderer's state.
-//
-// The loop itself still has to drive THREE's matrix updates and read the
-// link's world position, so we can't make it 100% pure — but the entry
-// points are narrow enough that a unit test can exercise the dispose +
-// snapshot paths with a fake scene, and the renderer-side integration
-// stays small.
+// Sampling runs forward kinematics on a pre-extracted chain (see
+// logic/reachMap.ts), so it never moves the robot and is fast enough for
+// hundreds of thousands of samples. The result is drawn as one point per
+// voxel, coloured by how many approach directions reached it.
 
 import * as THREE from 'three';
 import type { URDFRobot } from 'urdf-loader/src/URDFClasses';
-import type { JointInfo, RobotMetadata } from '../../core/types';
-import { jointRange } from '../logic/displayGroups';
+import type { RobotMetadata } from '../../core/types';
+import {
+  buildDexterityMap,
+  dexterityColor,
+  DIRECTION_BINS,
+  extractChain,
+  sampleChainRange,
+  type ChainSamples,
+  type DexterityMap
+} from '../logic/reachMap';
 
 export interface ReachabilityDeps {
   scene: THREE.Scene;
@@ -30,143 +33,161 @@ export interface ReachabilityOptions {
   metadata: RobotMetadata;
   tipLinkName: string;
   sampleCount: number;
-  /** Restored to the robot after sampling. */
-  poseBeforeSampling: Record<string, number>;
-  /** How the caller drives a single pose into the robot (mimic-aware). */
-  applyPose(pose: Record<string, number>): void;
-  /** Propagate mimic joints after a master joint is set by the sampler. */
-  propagateMimics(robot: URDFRobot, metadata: RobotMetadata): void;
+  /** Deterministic source for tests; Math.random by default. */
+  random?: () => number;
 }
 
 export interface ReachabilityResult {
   sampleCount: number;
-  bounds: { minX: number; maxX: number; minY: number; maxY: number; minZ: number; maxZ: number };
+  voxelCount: number;
+  voxelSize: number;
+  /** Highest share of approach directions reached by any voxel (0..1). */
+  maxDexterity: number;
+  elapsedMs: number;
+  bounds: DexterityMap['bounds'];
 }
+
+/** Time budget per chunk before yielding to the browser. */
+const FRAME_BUDGET_MS = 14;
 
 export class Reachability {
   private points: THREE.Points | undefined;
+  private map: DexterityMap | undefined;
+  private run = 0;
 
   constructor(private readonly deps: ReachabilityDeps) {}
 
-  /** Number of vertices currently in the visualised cloud (0 when disposed). */
+  /** Number of voxels currently drawn (0 when disposed). */
   pointCount(): number {
-    return this.points?.geometry.getAttribute('position')?.count ?? 0;
+    return this.points?.geometry.drawRange.count === Infinity
+      ? this.map?.count ?? 0
+      : this.points?.geometry.drawRange.count ?? 0;
   }
 
-  /** Has the cloud been rendered into the scene at least once? */
+  /** Has the cloud been rendered into the scene? */
   isVisible(): boolean {
     return this.points !== undefined;
   }
 
-  /** Wipe the cloud from the scene and clear the status line. */
+  /** Highest dexterity in the current map, or 0. */
+  maxDexterity(): number {
+    return this.map && this.map.count > 0 ? this.map.dexterity[0] : 0;
+  }
+
+  /** Wipe the cloud from the scene, cancel a running sweep and clear the status. */
   dispose(): void {
-    if (this.points) {
-      this.deps.scene.remove(this.points);
-      this.points.geometry.dispose();
-      (this.points.material as THREE.Material).dispose();
-      this.points = undefined;
-      this.deps.requestRedraw();
-    }
-    const status = document.getElementById('reach-status');
-    if (status) {
-      status.textContent = '';
-    }
+    this.run += 1;
+    this.removePoints();
+    this.setStatus('');
+    this.setLegend(undefined);
     this.deps.onStateChange?.();
   }
 
   /**
-   * Run the Monte-Carlo sweep. Streams the status text into #reach-status
-   * (no-op if absent) and yields to the event loop every 200 samples so
-   * the UI repaints during long sweeps.
+   * Show only voxels whose dexterity is at least `fraction` of the best
+   * voxel's. Voxels are stored best first, so this only changes the draw
+   * range — no rebuild.
+   */
+  setMinimumShare(fraction: number): void {
+    if (!this.points || !this.map) {
+      return;
+    }
+    const threshold = this.maxDexterity() * Math.max(0, Math.min(1, fraction)) - 1e-6;
+    let visible = 0;
+    while (visible < this.map.count && this.map.dexterity[visible] >= threshold) {
+      visible += 1;
+    }
+    this.points.geometry.setDrawRange(0, Math.max(1, visible));
+    this.deps.requestRedraw();
+    this.deps.onStateChange?.();
+  }
+
+  /**
+   * Run the sweep. Works in time-boxed chunks and reports progress in
+   * #reach-status, so even very large sample counts keep the UI responsive.
    */
   async sample(options: ReachabilityOptions): Promise<ReachabilityResult | undefined> {
-    const { robot, metadata, tipLinkName, sampleCount } = options;
-    const tipObject = robot.links?.[tipLinkName];
-    if (!tipObject) {
+    const { robot, metadata, tipLinkName } = options;
+    const sampleCount = Math.max(1, Math.floor(options.sampleCount));
+    if (!robot.links?.[tipLinkName]) {
       this.setStatus('Pick a valid tip link first.');
       return undefined;
     }
-    const movable = metadata.movableJointNames;
-    if (movable.length === 0) {
+    if (metadata.movableJointNames.length === 0) {
       this.setStatus('No movable joints to sample.');
       return undefined;
     }
+    const chain = extractChain(robot, metadata, tipLinkName);
+    if (!chain) {
+      this.setStatus(`"${tipLinkName}" is not attached to the robot.`);
+      return undefined;
+    }
 
-    this.setStatus(`Sampling ${sampleCount}…`);
     this.dispose();
-
-    const ranges = movable.map(name => jointRange(metadata.joints[name] as JointInfo | undefined));
-    const previousIgnoreLimits = this.bypassJointLimits(robot, metadata);
-
-    const positions = new Float32Array(sampleCount * 3);
-    const colors = new Float32Array(sampleCount * 3);
-    const tmp = new THREE.Vector3();
-    let minX = Infinity, minY = Infinity, minZ = Infinity;
-    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
-
-    for (let i = 0; i < sampleCount; i += 1) {
-      for (let j = 0; j < movable.length; j += 1) {
-        const [min, max] = ranges[j];
-        const value = min + Math.random() * (max - min);
-        robot.setJointValue(movable[j], value);
-      }
-      options.propagateMimics(robot, metadata);
-      robot.updateMatrixWorld(true);
-      tipObject.getWorldPosition(tmp);
-      positions[i * 3] = tmp.x;
-      positions[i * 3 + 1] = tmp.y;
-      positions[i * 3 + 2] = tmp.z;
-      if (tmp.x < minX) minX = tmp.x;
-      if (tmp.y < minY) minY = tmp.y;
-      if (tmp.z < minZ) minZ = tmp.z;
-      if (tmp.x > maxX) maxX = tmp.x;
-      if (tmp.y > maxY) maxY = tmp.y;
-      if (tmp.z > maxZ) maxZ = tmp.z;
-      if (i % 200 === 0 && i > 0) {
-        // Yield so the page can repaint mid-sweep.
+    const run = this.run;
+    const started = performance.now();
+    const samples: ChainSamples = {
+      count: sampleCount,
+      positions: new Float32Array(sampleCount * 3),
+      bins: new Uint8Array(sampleCount)
+    };
+    // Calibrate the chunk size on the first chunk, then keep each chunk
+    // inside one frame's budget.
+    let done = 0;
+    let chunk = 2000;
+    this.setStatus(`Sampling ${sampleCount.toLocaleString('en-US')}…`);
+    while (done < sampleCount) {
+      const end = Math.min(sampleCount, done + chunk);
+      const chunkStart = performance.now();
+      sampleChainRange(chain, samples, done, end, options.random);
+      const spent = performance.now() - chunkStart;
+      chunk = Math.max(500, Math.round(((end - done) * FRAME_BUDGET_MS) / Math.max(spent, 0.5)));
+      done = end;
+      if (done < sampleCount) {
+        this.setStatus(`Sampling… ${Math.round((done / sampleCount) * 100)}%`);
         await new Promise<void>(resolve => setTimeout(resolve, 0));
+        if (run !== this.run) {
+          return undefined; // cleared or restarted meanwhile
+        }
       }
     }
 
-    this.restoreJointLimits(robot, previousIgnoreLimits);
-
-    // Colour points by relative height — makes dense regions distinguishable
-    // from a uniform sphere.
-    const span = Math.max(1e-6, maxZ - minZ);
-    for (let i = 0; i < sampleCount; i += 1) {
-      const t = (positions[i * 3 + 2] - minZ) / span;
-      colors[i * 3] = 0.2 + 0.8 * t;
-      colors[i * 3 + 1] = 0.9 - 0.4 * t;
-      colors[i * 3 + 2] = 0.4 + 0.5 * (1 - t);
-    }
-
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    const reachExtent = Math.max(maxX - minX, maxY - minY, maxZ - minZ, 1e-3);
-    const pointSize = Math.max(0.01, reachExtent * 0.015);
-    const material = new THREE.PointsMaterial({ size: pointSize, sizeAttenuation: true, vertexColors: true });
-    this.points = new THREE.Points(geometry, material);
+    const map = buildDexterityMap(samples);
+    const elapsedMs = performance.now() - started;
+    this.map = map;
+    this.points = this.buildPoints(map);
     this.deps.scene.add(this.points);
 
-    options.applyPose(options.poseBeforeSampling);
-    const extentText = `X[${minX.toFixed(2)}, ${maxX.toFixed(2)}] Y[${minY.toFixed(2)}, ${maxY.toFixed(2)}] Z[${minZ.toFixed(2)}, ${maxZ.toFixed(2)}]`;
-    // A tip that no joint moves collapses to a single point, which is hidden
-    // inside the robot — say so instead of appearing to draw nothing.
-    this.setStatus(reachExtent < 0.005
-      ? `"${tipLinkName}" does not move with any joint, so every sample lands on the same spot. Choose a link further along the arm.`
-      : `${sampleCount} samples · ${extentText}.`);
+    const maxDexterity = this.maxDexterity();
+    if (map.extent < 0.005) {
+      // A tip that no joint moves collapses to a single voxel hidden inside
+      // the robot — say so instead of appearing to draw nothing.
+      this.setStatus(`"${tipLinkName}" does not move with any joint, so every sample lands on the same spot. Choose a link further along the arm.`);
+    } else {
+      const { minX, maxX, minY, maxY, minZ, maxZ } = map.bounds;
+      this.setStatus(
+        `${sampleCount.toLocaleString('en-US')} samples in ${formatSeconds(elapsedMs)} · ` +
+        `${map.count.toLocaleString('en-US')} voxels of ${formatLength(map.voxelSize)} · ` +
+        `X[${minX.toFixed(2)}, ${maxX.toFixed(2)}] Y[${minY.toFixed(2)}, ${maxY.toFixed(2)}] Z[${minZ.toFixed(2)}, ${maxZ.toFixed(2)}] m`
+      );
+    }
+    this.setLegend(maxDexterity);
 
-    // Refit camera so the cloud is in view alongside the robot.
-    const robotBox = new THREE.Box3().setFromObject(robot);
-    const cloudBox = new THREE.Box3().setFromObject(this.points);
-    this.deps.fitCameraToBox(robotBox.union(cloudBox));
-
+    const box = new THREE.Box3().setFromObject(robot as unknown as THREE.Object3D);
+    box.union(new THREE.Box3(
+      new THREE.Vector3(map.bounds.minX, map.bounds.minY, map.bounds.minZ),
+      new THREE.Vector3(map.bounds.maxX, map.bounds.maxY, map.bounds.maxZ)
+    ));
+    this.deps.fitCameraToBox(box);
     this.deps.requestRedraw();
     this.deps.onStateChange?.();
     return {
       sampleCount,
-      bounds: { minX, maxX, minY, maxY, minZ, maxZ }
+      voxelCount: map.count,
+      voxelSize: map.voxelSize,
+      maxDexterity,
+      elapsedMs,
+      bounds: map.bounds
     };
   }
 
@@ -174,36 +195,51 @@ export class Reachability {
   // Internals
   // -------------------------------------------------------------------------
 
-  /**
-   * URDFLoader clamps setJointValue to its own parsed limits — which can
-   * default to [0, 0] when <limit> is omitted. Bypass clamping during
-   * sampling so the cloud reflects our metadata's joint ranges, and
-   * return the previous flag values for restoration.
-   */
-  private bypassJointLimits(robot: URDFRobot, metadata: RobotMetadata): Record<string, boolean> {
-    const previous: Record<string, boolean> = {};
-    for (const name of metadata.movableJointNames) {
-      const joint = robot.joints?.[name];
-      if (joint) {
-        previous[name] = !!joint.ignoreLimits;
-        joint.ignoreLimits = true;
-      }
+  private buildPoints(map: DexterityMap): THREE.Points {
+    const colors = new Float32Array(map.count * 3);
+    const max = Math.max(map.count > 0 ? map.dexterity[0] : 0, 1 / DIRECTION_BINS);
+    const min = 1 / DIRECTION_BINS;
+    const rgb: [number, number, number] = [0, 0, 0];
+    for (let i = 0; i < map.count; i += 1) {
+      // Scale between one direction and the best voxel, so the full colour
+      // range is used whatever the robot's overall dexterity.
+      const t = max > min ? (map.dexterity[i] - min) / (max - min) : 1;
+      dexterityColor(t, rgb);
+      colors[i * 3] = rgb[0];
+      colors[i * 3 + 1] = rgb[1];
+      colors[i * 3 + 2] = rgb[2];
     }
-    for (const [name, info] of Object.entries(metadata.joints)) {
-      if (info.mimic && robot.joints?.[name]) {
-        previous[name] = !!robot.joints[name].ignoreLimits;
-        robot.joints[name].ignoreLimits = true;
-      }
-    }
-    return previous;
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(map.centers, 3));
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geometry.computeBoundingSphere();
+    // Points smaller than the voxel leave gaps, so dense cores stay visible
+    // through the low-dexterity shell around them.
+    const material = new THREE.PointsMaterial({
+      size: Math.max(map.voxelSize * 0.55, 0.002),
+      sizeAttenuation: true,
+      vertexColors: true,
+      map: discTexture(),
+      alphaTest: 0.5
+    });
+    const points = new THREE.Points(geometry, material);
+    points.name = 'reachability';
+    points.renderOrder = 1;
+    return points;
   }
 
-  private restoreJointLimits(robot: URDFRobot, previous: Record<string, boolean>): void {
-    for (const [name, value] of Object.entries(previous)) {
-      if (robot.joints?.[name]) {
-        robot.joints[name].ignoreLimits = value;
-      }
+  private removePoints(): void {
+    if (!this.points) {
+      return;
     }
+    this.deps.scene.remove(this.points);
+    this.points.geometry.dispose();
+    const material = this.points.material as THREE.PointsMaterial;
+    material.map?.dispose();
+    material.dispose();
+    this.points = undefined;
+    this.map = undefined;
+    this.deps.requestRedraw();
   }
 
   private setStatus(text: string): void {
@@ -212,4 +248,46 @@ export class Reachability {
       status.textContent = text;
     }
   }
+
+  private setLegend(maxDexterity: number | undefined): void {
+    const legend = document.getElementById('reach-legend');
+    if (!legend) {
+      return;
+    }
+    legend.hidden = maxDexterity === undefined;
+    const high = document.getElementById('reach-legend-max');
+    if (high && maxDexterity !== undefined) {
+      high.textContent = `${Math.round(maxDexterity * DIRECTION_BINS)} of ${DIRECTION_BINS}`;
+    }
+  }
+}
+
+/** Soft-edged round sprite so points read as dots, not squares. */
+function discTexture(): THREE.DataTexture {
+  const size = 32;
+  const data = new Uint8Array(size * size * 4);
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const dx = (x + 0.5) / size - 0.5;
+      const dy = (y + 0.5) / size - 0.5;
+      const inside = Math.hypot(dx, dy) <= 0.5;
+      const offset = (y * size + x) * 4;
+      data[offset] = 255;
+      data[offset + 1] = 255;
+      data[offset + 2] = 255;
+      data[offset + 3] = inside ? 255 : 0;
+    }
+  }
+  const texture = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+  texture.magFilter = THREE.LinearFilter;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+function formatSeconds(ms: number): string {
+  return ms < 1000 ? `${Math.max(1, Math.round(ms))} ms` : `${(ms / 1000).toFixed(1)} s`;
+}
+
+function formatLength(metres: number): string {
+  return metres < 0.1 ? `${(metres * 100).toFixed(1)} cm` : `${metres.toFixed(2)} m`;
 }

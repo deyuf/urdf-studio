@@ -46,6 +46,7 @@ import {
 } from './features/export';
 import { Measurement } from './features/measurement';
 import { Reachability } from './features/reachability';
+import { DEXTERITY_GRADIENT } from './logic/reachMap';
 import { InertiaVisualisation } from './features/inertia';
 import { FramesOverlay, type FramesMode } from './features/frames';
 import { SelfCollision } from './features/selfCollision';
@@ -1971,16 +1972,21 @@ function renderToolsPanel(): void {
     </section>
     <section class="tool-block">
       <h3>Reachability</h3>
-      <p class="tool-hint muted">Sample random joint configurations and plot where the tip link can reach.</p>
+      <p class="tool-hint muted">Sample random joint configurations and map where the tip link can reach, coloured by how many approach directions (its Z axis) get there.</p>
       <div class="tool-fields">
         <label><span>Tip link</span><select id="reach-tip">${tipLinks.map(name => html`<option value="${name}">${name}</option>`)}</select></label>
-        <label><span>Samples</span><input id="reach-samples" type="number" min="50" max="20000" step="50" value="1000"></label>
+        <label><span>Samples</span><input id="reach-samples" type="number" min="1000" max="1000000" step="10000" value="100000"></label>
       </div>
       <div class="row-buttons">
         <button id="reach-run" class="primary">Sample</button>
         <button id="reach-clear">Clear</button>
-        <span class="tool-status muted" id="reach-status"></span>
       </div>
+      <div class="reach-legend" id="reach-legend" hidden>
+        <div class="reach-legend-bar" id="reach-legend-bar"></div>
+        <div class="reach-legend-labels"><span>1 direction</span><span>Approach directions</span><span id="reach-legend-max"></span></div>
+        <label class="reach-filter"><span>Hide below</span><input id="reach-min" type="range" min="0" max="95" step="5" value="0"><output id="reach-min-value">0%</output></label>
+      </div>
+      <p class="tool-status muted" id="reach-status"></p>
     </section>
     <section class="tool-block">
       <h3>Collision pairs</h3>
@@ -2025,6 +2031,13 @@ function renderToolsPanel(): void {
   qs('#measure-clear').addEventListener('click', () => clearMeasurement());
   qs('#reach-run').addEventListener('click', () => void sampleReachability());
   qs('#reach-clear').addEventListener('click', () => disposeReachability());
+  // Set through the CSSOM: inline style attributes are blocked by the CSP.
+  qs('#reach-legend-bar').style.background = DEXTERITY_GRADIENT;
+  qs<HTMLInputElement>('#reach-min').addEventListener('input', event => {
+    const value = Number((event.target as HTMLInputElement).value) || 0;
+    qs('#reach-min-value').textContent = `${value}%`;
+    reachability?.setMinimumShare(value / 100);
+  });
   qs('#srdf-run').addEventListener('click', () => void analyzeCollisionPairs());
   qs('#srdf-write').addEventListener('click', () => writeCollisionPairs());
   qs('#export-bom').addEventListener('click', () => exportBom());
@@ -2229,25 +2242,25 @@ async function sampleReachability(): Promise<void> {
     return;
   }
   const tip = (document.getElementById('reach-tip') as HTMLSelectElement | null)?.value;
-  const sampleCount = Math.max(
-    1,
-    Math.min(
-      20000,
-      Number((document.getElementById('reach-samples') as HTMLInputElement | null)?.value ?? 1000) || 1000
-    )
-  );
+  const requested = Number((document.getElementById('reach-samples') as HTMLInputElement | null)?.value);
+  const sampleCount = Math.max(1, Math.min(1_000_000, Number.isFinite(requested) && requested > 0 ? requested : 100_000));
   if (!tip) {
     setStatus('Pick a valid tip link first.');
     return;
+  }
+  const filter = document.getElementById('reach-min') as HTMLInputElement | null;
+  if (filter) {
+    filter.value = '0';
+    const output = document.getElementById('reach-min-value');
+    if (output) {
+      output.textContent = '0%';
+    }
   }
   await ensureReachability().sample({
     robot,
     metadata: currentData.metadata,
     tipLinkName: tip,
-    sampleCount,
-    poseBeforeSampling: getPose(),
-    applyPose: pose => applyPose(pose),
-    propagateMimics: (r, m) => applyMimicValuesAfterSample(r, m)
+    sampleCount
   });
 }
 

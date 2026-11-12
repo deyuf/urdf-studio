@@ -331,15 +331,22 @@ test.describe('renderer feature integrations', () => {
     await loadFixtureWithMany(page);
     await page.locator('.tab[data-tab="tools"]').click();
     await page.locator('#reach-tip').selectOption('arm_link_19');
-    await page.locator('#reach-samples').fill('500');
+    await page.locator('#reach-samples').fill('20000');
 
     expect(await page.evaluate(() => (window as any).__urdfStudio?.reachabilityPointCount)).toBe(0);
 
     await page.locator('#reach-run').click();
+    await expect(page.locator('#reach-status')).toContainText('20,000 samples in', { timeout: 8000 });
+    const voxels = await page.evaluate(() => (window as any).__urdfStudio?.reachabilityPointCount ?? 0);
+    expect(voxels).toBeGreaterThan(10);
+    await expect(page.locator('#reach-legend')).toBeVisible();
+    await expect(page.locator('#reach-legend-max')).toHaveText(/of 24$/);
+
+    // The filter hides low-dexterity voxels without resampling.
+    await page.locator('#reach-min').fill('90');
     await expect.poll(async () =>
-      await page.evaluate(() => (window as any).__urdfStudio?.reachabilityPointCount ?? 0),
-      { timeout: 8000 }
-    ).toBe(500);
+      await page.evaluate(() => (window as any).__urdfStudio?.reachabilityPointCount ?? 0)
+    ).toBeLessThan(voxels);
 
     await page.locator('#reach-clear').click();
     expect(await page.evaluate(() => (window as any).__urdfStudio?.reachabilityPointCount)).toBe(0);
@@ -369,7 +376,8 @@ test.describe('renderer feature integrations', () => {
             <visual><origin xyz="0.1 0 0"/><geometry><box size="0.1 0.1 0.1"/></geometry></visual>
           </link>
           <joint name="${jointName}" type="revolute">
-            <parent link="${parent}"/><child link="${linkName}"/><axis xyz="0 0 1"/>
+            <parent link="${parent}"/><child link="${linkName}"/>
+            <origin xyz="${i === 0 ? 0 : 0.1} 0 0" rpy="${i % 2 ? 0.6 : 0} 0 0"/><axis xyz="0 0 1"/>
             <limit lower="-1" upper="1" effort="1" velocity="1"/>
           </joint>`;
         (links[parent] as any).childJoints.push(jointName);

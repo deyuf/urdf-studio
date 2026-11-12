@@ -2,310 +2,264 @@ import { strict as assert } from 'node:assert';
 import test from 'node:test';
 import { JSDOM } from 'jsdom';
 import * as THREE from 'three';
+import URDFLoader from 'urdf-loader';
+import type { URDFRobot } from 'urdf-loader/src/URDFClasses';
+import '../../src/core/io.node';
+import { analyzeUrdf } from '../../src/core/urdfAnalysis';
 import { Reachability, type ReachabilityDeps } from '../../src/renderer/features/reachability';
-import type { RobotMetadata } from '../../src/core/types';
+import {
+  buildDexterityMap,
+  directionBin,
+  DIRECTION_BINS,
+  extractChain,
+  sampleChainRange,
+  type ChainSamples
+} from '../../src/renderer/logic/reachMap';
 
-const dom = new JSDOM('<!doctype html><html><body><div id="reach-status"></div></body></html>');
-(globalThis as { document: Document }).document = dom.window.document;
-(globalThis as { window: Window }).window = dom.window as unknown as Window;
+const dom = new JSDOM('<!doctype html><html><body><div id="reach-status"></div><div id="reach-legend" hidden><span id="reach-legend-max"></span></div></body></html>');
+Object.assign(globalThis, {
+  document: dom.window.document,
+  window: dom.window,
+  DOMParser: dom.window.DOMParser,
+  Document: dom.window.Document,
+  Element: dom.window.Element
+});
 
-// Minimal URDFRobot-like fixture. The class extends THREE.Group so
-// Box3.setFromObject() can traverse it. We bolt on a `joints` map and a
-// `links` map onto the Group instance the way urdf-loader does.
-class FakeRobot extends THREE.Group {
-  joints: Record<string, { angle: number; ignoreLimits: boolean }> = {
-    joint1: { angle: 0, ignoreLimits: false },
-    joint2: { angle: 0, ignoreLimits: false }
-  };
-  links: Record<string, THREE.Object3D> = {};
-  lastJointValues: Record<string, number> = {};
+// A small arm exercising everything the fast kinematics must match:
+// rotated joint origins, a non-unit axis, continuous and prismatic joints,
+// a chained mimic joint, a fixed tool frame and a static sensor link.
+const ARM = `<robot name="arm">
+  <link name="base"/><link name="l1"/><link name="l2"/><link name="l3"/><link name="l4"/>
+  <link name="finger"/><link name="tcp"/><link name="camera"/>
+  <joint name="j1" type="revolute"><parent link="base"/><child link="l1"/>
+    <origin xyz="0 0 0.3" rpy="0 0 0.4"/><axis xyz="0 0 1"/><limit lower="-2.5" upper="2.5" effort="1" velocity="1"/></joint>
+  <joint name="j2" type="revolute"><parent link="l1"/><child link="l2"/>
+    <origin xyz="0.05 0 0.1" rpy="1.5708 0 0"/><axis xyz="0 2 0"/><limit lower="-1.5" upper="1.5" effort="1" velocity="1"/></joint>
+  <joint name="j3" type="continuous"><parent link="l2"/><child link="l3"/>
+    <origin xyz="0 0.4 0" rpy="0.2 -0.3 0.1"/><axis xyz="1 0 0"/></joint>
+  <joint name="slide" type="prismatic"><parent link="l3"/><child link="l4"/>
+    <origin xyz="0.3 0 0" rpy="0 0.5 0"/><axis xyz="1 0 0"/><limit lower="0" upper="0.2" effort="1" velocity="1"/></joint>
+  <joint name="wrist" type="revolute"><parent link="l4"/><child link="finger"/>
+    <origin xyz="0.1 0 0" rpy="0 0 0"/><axis xyz="0 1 0"/><limit lower="-1" upper="1" effort="1" velocity="1"/>
+    <mimic joint="j3" multiplier="0.5" offset="0.1"/></joint>
+  <joint name="tool" type="fixed"><parent link="finger"/><child link="tcp"/>
+    <origin xyz="0 0 0.12" rpy="0.3 0 0"/></joint>
+  <joint name="cam" type="fixed"><parent link="base"/><child link="camera"/>
+    <origin xyz="0.2 0 0.1" rpy="0 0 0"/></joint>
+</robot>`;
 
-  setJointValue(name: string, value: number): boolean {
-    this.lastJointValues[name] = value;
-    const j = this.joints[name];
-    if (j) {
-      j.angle = value;
-    }
-    return true;
+function loadArm(): { robot: URDFRobot; holder: THREE.Group } {
+  const loader = new URDFLoader();
+  const robot = loader.parse(ARM) as URDFRobot;
+  // Place the robot under a Z-up → Y-up wrapper, like the renderer does.
+  const holder = new THREE.Group();
+  holder.rotation.x = -Math.PI / 2;
+  holder.position.set(0.5, 0, -0.2);
+  holder.add(robot as unknown as THREE.Object3D);
+  holder.updateMatrixWorld(true);
+  return { robot, holder };
+}
+
+const metadata = analyzeUrdf(ARM, '/arm.urdf', {});
+
+function sequence(values: number[]): () => number {
+  let index = 0;
+  return () => values[index++ % values.length];
+}
+
+test('fast kinematics matches the robot scene graph, including mimic, prismatic and a placed robot', () => {
+  const { robot } = loadArm();
+  const chain = extractChain(robot, metadata, 'tcp');
+  assert.ok(chain);
+  assert.deepEqual(chain!.variables.map(v => v.name), ['j1', 'j2', 'j3', 'slide']);
+  // The sampler ignores limits on mimic followers, as the old sampler did.
+  Object.values(robot.joints).forEach(joint => { joint.ignoreLimits = true; });
+
+  for (let trial = 0; trial < 25; trial += 1) {
+    const draws = chain!.variables.map(() => Math.random());
+    const samples: ChainSamples = { count: 1, positions: new Float32Array(3), bins: new Uint8Array(1) };
+    sampleChainRange(chain!, samples, 0, 1, sequence(draws));
+
+    chain!.variables.forEach((variable, i) => {
+      robot.setJointValue(variable.name, variable.lower + draws[i] * (variable.upper - variable.lower));
+    });
+    (robot as unknown as THREE.Object3D).updateMatrixWorld(true);
+    const tcp = robot.links.tcp;
+    const expected = tcp.getWorldPosition(new THREE.Vector3());
+    const z = new THREE.Vector3(0, 0, 1).transformDirection(tcp.matrixWorld);
+
+    assert.ok(Math.abs(samples.positions[0] - expected.x) < 1e-5, `x ${samples.positions[0]} vs ${expected.x}`);
+    assert.ok(Math.abs(samples.positions[1] - expected.y) < 1e-5, `y ${samples.positions[1]} vs ${expected.y}`);
+    assert.ok(Math.abs(samples.positions[2] - expected.z) < 1e-5, `z ${samples.positions[2]} vs ${expected.z}`);
+    assert.equal(samples.bins[0], directionBin(z.x, z.y, z.z));
   }
-}
+});
 
-function fakeRobot(opts: { tipName?: string; tipWorld?: [number, number, number] } = {}): FakeRobot {
-  const tipName = opts.tipName ?? 'tip';
-  const robot = new FakeRobot();
-  // Add a small mesh so the robot's bounding box is non-empty; otherwise
-  // Box3.setFromObject() returns an empty box and the fit-camera code path
-  // is skipped.
-  const body = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.1));
-  robot.add(body);
-  const tip = new THREE.Object3D();
-  if (opts.tipWorld) {
-    tip.position.set(...opts.tipWorld);
+test('extractChain treats a link no joint moves as a fixed point', () => {
+  const { robot } = loadArm();
+  const chain = extractChain(robot, metadata, 'camera');
+  assert.ok(chain);
+  assert.equal(chain!.steps.length, 0);
+  assert.equal(extractChain(robot, metadata, 'nope'), undefined);
+});
+
+test('directionBin uses every bin and separates opposite directions', () => {
+  const seen = new Set<number>();
+  const n = 2000;
+  for (let i = 0; i < n; i += 1) {
+    // Fibonacci sphere
+    const y = 1 - (2 * (i + 0.5)) / n;
+    const r = Math.sqrt(1 - y * y);
+    const phi = i * Math.PI * (3 - Math.sqrt(5));
+    const x = Math.cos(phi) * r;
+    const z = Math.sin(phi) * r;
+    const bin = directionBin(x, y, z);
+    assert.ok(bin >= 0 && bin < DIRECTION_BINS);
+    assert.notEqual(bin, directionBin(-x, -y, -z));
+    seen.add(bin);
   }
-  robot.add(tip);
-  robot.links[tipName] = tip;
-  return robot;
-}
+  assert.equal(seen.size, DIRECTION_BINS);
+});
 
-function fakeMetadata(): RobotMetadata {
-  return {
-    robotName: 'rob',
-    counts: { links: 2, joints: 2, movableJoints: 2, visualMeshes: 0, collisionMeshes: 0 },
-    links: {
-      base: { name: 'base', childJoints: ['joint1'] },
-      tip: { name: 'tip', parentJoint: 'joint2', childJoints: [] }
-    },
-    joints: {
-      joint1: { name: 'joint1', type: 'revolute', parent: 'base', child: 'middle', axis: [0, 0, 1], limit: { lower: -1, upper: 1 } },
-      joint2: { name: 'joint2', type: 'revolute', parent: 'middle', child: 'tip', axis: [0, 1, 0], limit: { lower: -0.5, upper: 0.5 } }
-    },
-    meshes: [],
-    rootLinks: ['base'],
-    movableJointNames: ['joint1', 'joint2'],
-    tree: [],
-    totalMass: 0,
-    diagnostics: []
-  };
-}
+test('buildDexterityMap counts distinct directions per voxel and sorts best first', () => {
+  // Voxel A (near origin) is reached from every direction bin; voxel B (1 m
+  // away) only ever from bin 3, however many samples land there.
+  const count = DIRECTION_BINS + 50;
+  const samples: ChainSamples = { count, positions: new Float32Array(count * 3), bins: new Uint8Array(count) };
+  for (let i = 0; i < DIRECTION_BINS; i += 1) {
+    samples.bins[i] = i;
+  }
+  for (let i = DIRECTION_BINS; i < count; i += 1) {
+    samples.positions.set([1, 0, 0], i * 3);
+    samples.bins[i] = 3;
+  }
+  const map = buildDexterityMap(samples, 8);
+  assert.equal(map.count, 2);
+  assert.equal(map.dexterity[0], 1);
+  assert.ok(Math.abs(map.dexterity[1] - 1 / DIRECTION_BINS) < 1e-6);
+  assert.ok(map.centers[0] < 0.2, 'best voxel is the one at the origin');
+  assert.ok(map.centers[3] > 0.8);
+  assert.ok(Math.abs(map.voxelSize - 1 / 8) < 1e-9);
+});
+
+// =============================================================================
+// Reachability feature
+// =============================================================================
 
 function makeReachability(overrides: Partial<ReachabilityDeps> = {}) {
   const scene = new THREE.Scene();
   let redraws = 0;
-  let stateChanges = 0;
   let lastFitBox: THREE.Box3 | undefined;
   const r = new Reachability({
     scene,
     fitCameraToBox: box => { lastFitBox = box; },
     requestRedraw: () => { redraws++; },
-    onStateChange: () => { stateChanges++; },
     ...overrides
   });
   return {
     r, scene,
     get redraws() { return redraws; },
-    get stateChanges() { return stateChanges; },
     get lastFitBox() { return lastFitBox; }
   };
 }
 
-// =============================================================================
-// Idle state / dispose
-// =============================================================================
+function pointsIn(scene: THREE.Scene): THREE.Points[] {
+  const found: THREE.Points[] = [];
+  scene.traverse(obj => { if ((obj as THREE.Points).isPoints) found.push(obj as THREE.Points); });
+  return found;
+}
 
-test('Reachability starts with no rendered points', () => {
-  const { r } = makeReachability();
-  assert.equal(r.isVisible(), false);
-  assert.equal(r.pointCount(), 0);
-});
+const status = () => document.getElementById('reach-status')!.textContent ?? '';
 
-test('dispose() on an empty cloud is a no-op (no throw, no redraw)', () => {
-  const { r, redraws } = makeReachability();
-  r.dispose();
-  assert.equal(redraws, 0, 'must not request a redraw when there is nothing to dispose');
-});
-
-test('sample() rejects an unknown tip link with a status message', async () => {
-  const { r } = makeReachability();
-  const fake = fakeRobot({ tipName: 'tip' });
-  const result = await r.sample({
-    robot: fake as never,
-    metadata: fakeMetadata(),
-    tipLinkName: 'no_such_tip',
-    sampleCount: 10,
-    poseBeforeSampling: {},
-    applyPose: () => {},
-    propagateMimics: () => {}
-  });
-  assert.equal(result, undefined);
-  const status = document.getElementById('reach-status');
-  assert.match(status?.textContent ?? '', /Pick a valid tip link/);
-  assert.equal(r.pointCount(), 0);
-});
-
-test('sample() rejects when there are no movable joints', async () => {
-  const { r } = makeReachability();
-  const fake = fakeRobot({ tipName: 'tip' });
-  const meta = fakeMetadata();
-  meta.movableJointNames = [];
-  const result = await r.sample({
-    robot: fake as never,
-    metadata: meta,
-    tipLinkName: 'tip',
-    sampleCount: 10,
-    poseBeforeSampling: {},
-    applyPose: () => {},
-    propagateMimics: () => {}
-  });
-  assert.equal(result, undefined);
-  const status = document.getElementById('reach-status');
-  assert.match(status?.textContent ?? '', /No movable joints/);
-});
-
-// =============================================================================
-// Successful sampling
-// =============================================================================
-
-test('sample() produces the requested number of points in the scene', async () => {
-  const { r, scene } = makeReachability();
-  const fake = fakeRobot({ tipName: 'tip', tipWorld: [0.1, 0.2, 0.3] });
-  const result = await r.sample({
-    robot: fake as never,
-    metadata: fakeMetadata(),
-    tipLinkName: 'tip',
-    sampleCount: 50,
-    poseBeforeSampling: { joint1: 0, joint2: 0 },
-    applyPose: () => {},
-    propagateMimics: () => {}
-  });
-  assert.ok(result, 'sample should resolve with a non-null result');
-  assert.equal(result!.sampleCount, 50);
-  assert.equal(r.pointCount(), 50);
-  // The scene should contain exactly one Points object.
-  const points: THREE.Points[] = [];
-  scene.traverse(obj => {
-    if ((obj as THREE.Points).isPoints) points.push(obj as THREE.Points);
-  });
-  assert.equal(points.length, 1);
-});
-
-test('sample() restores the pose-before-sampling on completion', async () => {
-  const restored: Record<string, number>[] = [];
-  const { r } = makeReachability();
-  const fake = fakeRobot();
-  const beforePose = { joint1: 0.3, joint2: -0.2 };
-  await r.sample({
-    robot: fake as never,
-    metadata: fakeMetadata(),
-    tipLinkName: 'tip',
-    sampleCount: 10,
-    poseBeforeSampling: beforePose,
-    applyPose: pose => { restored.push({ ...pose }); },
-    propagateMimics: () => {}
-  });
-  assert.deepEqual(restored.at(-1), beforePose);
-});
-
-test('sample() bypasses URDFLoader joint limits during the loop and restores them after', async () => {
-  // joint1 starts with ignoreLimits=false. The sampler must flip it to true
-  // during the loop and restore the original `false` once done.
-  const fake = fakeRobot();
-  fake.joints.joint1.ignoreLimits = false;
-  let observedDuringLoop = false;
-  const originalSet = fake.setJointValue.bind(fake);
-  fake.setJointValue = function (name: string, value: number) {
-    if (name === 'joint1' && this.joints.joint1.ignoreLimits === true) {
-      observedDuringLoop = true;
-    }
-    return originalSet(name, value);
-  };
-  const { r } = makeReachability();
-  await r.sample({
-    robot: fake as never,
-    metadata: fakeMetadata(),
-    tipLinkName: 'tip',
-    sampleCount: 5,
-    poseBeforeSampling: {},
-    applyPose: () => {},
-    propagateMimics: () => {}
-  });
-  assert.equal(observedDuringLoop, true, 'ignoreLimits should have been toggled true during the loop');
-  assert.equal(fake.joints.joint1.ignoreLimits, false, 'ignoreLimits should be restored after the loop');
-});
-
-test('sample() requests a camera refit + redraw on success', async () => {
+test('Reachability starts empty and dispose() on an empty cloud does not redraw', () => {
   const ctx = makeReachability();
-  const fake = fakeRobot({ tipName: 'tip' });
-  await ctx.r.sample({
-    robot: fake as never,
-    metadata: fakeMetadata(),
-    tipLinkName: 'tip',
-    sampleCount: 10,
-    poseBeforeSampling: {},
-    applyPose: () => {},
-    propagateMimics: () => {}
-  });
-  assert.ok(ctx.lastFitBox, 'fitCameraToBox must be invoked with a non-null box');
-  assert.ok(ctx.redraws > 0, 'must request a redraw on success');
+  assert.equal(ctx.r.isVisible(), false);
+  assert.equal(ctx.r.pointCount(), 0);
+  ctx.r.dispose();
+  assert.equal(ctx.redraws, 0);
 });
 
-test('sample() invokes propagateMimics once per iteration', async () => {
-  let mimicCalls = 0;
+test('sample() rejects an unknown tip link and a robot without movable joints', async () => {
   const { r } = makeReachability();
-  const fake = fakeRobot();
-  await r.sample({
-    robot: fake as never,
-    metadata: fakeMetadata(),
-    tipLinkName: 'tip',
-    sampleCount: 7,
-    poseBeforeSampling: {},
-    applyPose: () => {},
-    propagateMimics: () => { mimicCalls++; }
-  });
-  assert.equal(mimicCalls, 7, `expected 7 propagateMimics calls, got ${mimicCalls}`);
+  const { robot } = loadArm();
+  assert.equal(await r.sample({ robot, metadata, tipLinkName: 'no_such_tip', sampleCount: 10 }), undefined);
+  assert.match(status(), /Pick a valid tip link/);
+  const still = { ...metadata, movableJointNames: [] };
+  assert.equal(await r.sample({ robot, metadata: still, tipLinkName: 'tcp', sampleCount: 10 }), undefined);
+  assert.match(status(), /No movable joints/);
 });
 
-// =============================================================================
-// Repeated dispose / re-sample
-// =============================================================================
-
-test('Calling sample() twice replaces the prior cloud', async () => {
-  const { r, scene } = makeReachability();
-  const fake = fakeRobot();
-  await r.sample({
-    robot: fake as never,
-    metadata: fakeMetadata(),
-    tipLinkName: 'tip',
-    sampleCount: 20,
-    poseBeforeSampling: {},
-    applyPose: () => {},
-    propagateMimics: () => {}
-  });
-  await r.sample({
-    robot: fake as never,
-    metadata: fakeMetadata(),
-    tipLinkName: 'tip',
-    sampleCount: 35,
-    poseBeforeSampling: {},
-    applyPose: () => {},
-    propagateMimics: () => {}
-  });
-  assert.equal(r.pointCount(), 35);
-  let pointsObjs = 0;
-  scene.traverse(obj => { if ((obj as THREE.Points).isPoints) pointsObjs++; });
-  assert.equal(pointsObjs, 1, 'only the latest cloud should remain in the scene');
+test('sample() draws a dexterity map without moving the robot', async () => {
+  const ctx = makeReachability();
+  const { robot } = loadArm();
+  robot.setJointValue('j1', 0.7);
+  const before = robot.links.tcp.getWorldPosition(new THREE.Vector3());
+  const result = await ctx.r.sample({ robot, metadata, tipLinkName: 'tcp', sampleCount: 20000 });
+  assert.ok(result);
+  assert.equal(result!.sampleCount, 20000);
+  assert.ok(result!.voxelCount > 50, `expected many voxels, got ${result!.voxelCount}`);
+  assert.ok(result!.maxDexterity > 0.3, 'some voxels are reached from many directions');
+  assert.equal(ctx.r.pointCount(), result!.voxelCount);
+  assert.equal(pointsIn(ctx.scene).length, 1);
+  assert.equal(robot.joints.j1.angle, 0.7, 'joint values untouched');
+  (robot as unknown as THREE.Object3D).updateMatrixWorld(true);
+  assert.ok(robot.links.tcp.getWorldPosition(new THREE.Vector3()).distanceTo(before) < 1e-9);
+  assert.match(status(), /20,000 samples in .* voxels of/);
+  assert.equal(document.getElementById('reach-legend')!.hidden, false);
+  assert.match(document.getElementById('reach-legend-max')!.textContent ?? '', new RegExp(`of ${DIRECTION_BINS}$`));
+  assert.ok(ctx.lastFitBox && !ctx.lastFitBox.isEmpty());
 });
 
-test('dispose() after a successful sample removes the cloud from the scene', async () => {
+test('setMinimumShare() hides low-dexterity voxels by draw range only', async () => {
+  const { r } = makeReachability();
+  const { robot } = loadArm();
+  const result = await r.sample({ robot, metadata, tipLinkName: 'tcp', sampleCount: 20000 });
+  const all = r.pointCount();
+  r.setMinimumShare(0.9);
+  const few = r.pointCount();
+  assert.ok(few >= 1 && few < all, `${few} of ${all}`);
+  r.setMinimumShare(0);
+  assert.equal(r.pointCount(), result!.voxelCount);
+});
+
+test('sampling again replaces the map, and dispose() removes it', async () => {
   const { r, scene } = makeReachability();
-  const fake = fakeRobot();
-  await r.sample({
-    robot: fake as never,
-    metadata: fakeMetadata(),
-    tipLinkName: 'tip',
-    sampleCount: 20,
-    poseBeforeSampling: {},
-    applyPose: () => {},
-    propagateMimics: () => {}
-  });
+  const { robot } = loadArm();
+  await r.sample({ robot, metadata, tipLinkName: 'tcp', sampleCount: 5000 });
+  await r.sample({ robot, metadata, tipLinkName: 'l2', sampleCount: 5000 });
+  assert.equal(pointsIn(scene).length, 1);
   r.dispose();
+  assert.equal(pointsIn(scene).length, 0);
   assert.equal(r.pointCount(), 0);
-  let pointsObjs = 0;
-  scene.traverse(obj => { if ((obj as THREE.Points).isPoints) pointsObjs++; });
-  assert.equal(pointsObjs, 0);
+  assert.equal(status(), '');
+  assert.equal(document.getElementById('reach-legend')!.hidden, true);
 });
 
-test('sample() explains a tip that no joint moves instead of drawing an invisible point', async () => {
+test('dispose() during a sweep cancels it', async () => {
+  const { r, scene } = makeReachability();
+  const { robot } = loadArm();
+  const pending = r.sample({ robot, metadata, tipLinkName: 'tcp', sampleCount: 1_000_000 });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  r.dispose();
+  assert.equal(await pending, undefined);
+  assert.equal(pointsIn(scene).length, 0);
+});
+
+test('sample() explains a tip that no joint moves', async () => {
   const { r } = makeReachability();
-  // The fake robot ignores joint values, so the tip never moves.
-  const fake = fakeRobot({ tipName: 'tip', tipWorld: [0.1, 0.2, 0.3] });
-  await r.sample({
-    robot: fake as never,
-    metadata: fakeMetadata(),
-    tipLinkName: 'tip',
-    sampleCount: 20,
-    poseBeforeSampling: { joint1: 0, joint2: 0 },
-    applyPose: () => {},
-    propagateMimics: () => {}
-  });
-  assert.match(document.getElementById('reach-status')!.textContent ?? '', /"tip" does not move with any joint/);
+  const { robot } = loadArm();
+  await r.sample({ robot, metadata, tipLinkName: 'camera', sampleCount: 200 });
+  assert.match(status(), /"camera" does not move with any joint/);
+});
+
+test('sampling is fast: 200k samples of a 4-joint chain well under a second of compute', () => {
+  const { robot } = loadArm();
+  const chain = extractChain(robot, metadata, 'tcp')!;
+  const count = 200_000;
+  const samples: ChainSamples = { count, positions: new Float32Array(count * 3), bins: new Uint8Array(count) };
+  const start = performance.now();
+  sampleChainRange(chain, samples, 0, count);
+  buildDexterityMap(samples);
+  const elapsed = performance.now() - start;
+  assert.ok(elapsed < 1500, `took ${elapsed.toFixed(0)} ms`);
 });
