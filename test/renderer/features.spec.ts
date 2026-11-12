@@ -352,6 +352,59 @@ test.describe('renderer feature integrations', () => {
     expect(await page.evaluate(() => (window as any).__urdfStudio?.reachabilityPointCount)).toBe(0);
   });
 
+  test('reset returns one joint or every joint to zero', async ({ page }) => {
+    await loadFixtureWithMany(page);
+    const move = (joint: string, value: string) => page.evaluate(([j, v]) => {
+      const slider = document.querySelector<HTMLInputElement>(`[data-joint-slider="${j}"]`)!;
+      slider.value = v;
+      slider.dispatchEvent(new Event('input'));
+    }, [joint, value]);
+    const angle = (joint: string) => page.evaluate(j => Number(document.querySelector<HTMLInputElement>(`[data-joint-number="${j}"]`)!.value), joint);
+
+    await expect(page.locator('.joint-row.is-modified')).toHaveCount(0);
+    await move('arm_joint_3', '0.5');
+    await move('arm_joint_7', '-0.4');
+    await expect(page.locator('.joint-row.is-modified')).toHaveCount(2);
+    await expect(page.locator('[data-joint-reset="arm_joint_3"]')).toBeVisible();
+    await expect(page.locator('[data-joint-reset="arm_joint_1"]')).toBeHidden();
+
+    await page.locator('[data-joint-reset="arm_joint_3"]').click();
+    expect(await angle('arm_joint_3')).toBe(0);
+    expect(await angle('arm_joint_7')).toBeCloseTo(-0.4);
+
+    await move('arm_joint_3', '0.9');
+    await page.locator('[data-joint-slider="arm_joint_3"]').dblclick();
+    expect(await angle('arm_joint_3')).toBe(0);
+
+    await page.locator('#reset-joints').click();
+    expect(await angle('arm_joint_7')).toBe(0);
+    await expect(page.locator('.joint-row.is-modified')).toHaveCount(0);
+  });
+
+  test('reachability report and data are offered once a map exists', async ({ page }) => {
+    await loadFixtureWithMany(page);
+    await page.locator('.tab[data-tab="tools"]').click();
+    await expect(page.locator('#reach-save')).toBeHidden();
+    await page.locator('#reach-tip').selectOption('arm_link_19');
+    await page.locator('#reach-samples').fill('20000');
+    await page.locator('#reach-run').click();
+    await expect(page.locator('#reach-save')).toBeVisible({ timeout: 8000 });
+
+    await page.locator('#reach-csv').click();
+    await page.locator('#reach-report').click();
+    await expect(page.locator('#reach-status')).toHaveText('Report ready.', { timeout: 15000 });
+    const saved = await page.evaluate(() => (window as any).__messages
+      .filter((m: any) => m.type === 'requestSaveBom' || m.type === 'requestSaveReport')
+      .map((m: any) => ({ type: m.type, filename: m.filename, label: m.label, head: (m.csv ?? m.base64).slice(0, 40) })));
+    expect(saved).toEqual([
+      { type: 'requestSaveBom', filename: 'arm-reachability.csv', label: 'reachability data', head: expect.stringMatching(/^x_m,y_m,z_m,/) },
+      { type: 'requestSaveReport', filename: 'arm-reachability.pdf', label: undefined, head: expect.stringMatching(/^JVBERi0/) }
+    ]);
+
+    await page.locator('#reach-clear').click();
+    await expect(page.locator('#reach-save')).toBeHidden();
+  });
+
   async function loadFixtureWithMany(page: Page): Promise<void> {
     await page.goto(`${server.url}/test/renderer/harness.html`);
     await page.waitForFunction(

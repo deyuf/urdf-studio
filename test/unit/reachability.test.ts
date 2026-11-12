@@ -84,9 +84,13 @@ test('fast kinematics matches the robot scene graph, including mimic, prismatic 
       robot.setJointValue(variable.name, variable.lower + draws[i] * (variable.upper - variable.lower));
     });
     (robot as unknown as THREE.Object3D).updateMatrixWorld(true);
+    // Samples are in the robot's base frame; the placement maps them to the scene.
     const tcp = robot.links.tcp;
-    const expected = tcp.getWorldPosition(new THREE.Vector3());
-    const z = new THREE.Vector3(0, 0, 1).transformDirection(tcp.matrixWorld);
+    const toBase = (robot as unknown as THREE.Object3D).matrixWorld.clone().invert();
+    const tcpInBase = toBase.clone().multiply(tcp.matrixWorld);
+    const expected = new THREE.Vector3().setFromMatrixPosition(tcpInBase);
+    const z = new THREE.Vector3(0, 0, 1).transformDirection(tcpInBase);
+    assert.ok(expected.clone().applyMatrix4(chain!.placement).distanceTo(tcp.getWorldPosition(new THREE.Vector3())) < 1e-9);
 
     assert.ok(Math.abs(samples.positions[0] - expected.x) < 1e-5, `x ${samples.positions[0]} vs ${expected.x}`);
     assert.ok(Math.abs(samples.positions[1] - expected.y) < 1e-5, `y ${samples.positions[1]} vs ${expected.y}`);

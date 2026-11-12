@@ -34,8 +34,13 @@ interface MotionStep {
 }
 
 export interface KinematicChain {
-  /** World transform of the chain's root (includes the robot's own placement). */
+  /**
+   * Transform of the chain's root. Identity: samples are in the robot's base
+   * (root link) frame, so reports quote URDF coordinates.
+   */
   base: Mat34;
+  /** Robot base → scene, for drawing the map where the robot is. */
+  placement: THREE.Matrix4;
   steps: MotionStep[];
   /** Static transform from the last moving joint to the tip link. */
   post: Mat34;
@@ -123,7 +128,8 @@ export function extractChain(robot: URDFRobot, metadata: RobotMetadata, tipLinkN
   }
 
   return {
-    base: fromMatrix4((robot as unknown as THREE.Object3D).matrixWorld),
+    base: identity(),
+    placement: (robot as unknown as THREE.Object3D).matrixWorld.clone(),
     steps,
     post: pending,
     variables

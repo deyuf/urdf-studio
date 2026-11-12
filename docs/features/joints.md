@@ -23,6 +23,18 @@ from −π to π.
 
 Fixed joints are not listed because they can't move.
 
+## Reset
+
+- **Reset** next to *Joints* moves every joint back to zero. Mimic joints
+  follow.
+- A joint you have moved shows a reset button beside its value; click it to
+  reset just that joint. Double-clicking the slider does the same.
+
+When zero is outside a joint's limits — the Franka FR3's fourth joint, for
+example, only bends between −3.08 and −0.12 rad — reset moves it to the
+nearest limit instead. Such a joint shows as moved when a robot first opens,
+because it starts at an invalid 0.
+
 ## Find a joint
 
 On robots with many joints:
@@ -30,7 +42,7 @@ On robots with many joints:
 - Type in **Filter joints** to show only joints whose name contains that
   text.
 - Tick **Modified only** to show only joints you have moved away from
-  zero.
+  zero (or from the nearest limit, see [Reset](#reset)).
 
 ## Go past the limits
 

@@ -65,6 +65,32 @@ counted, which suits grippers and most tools.
 If your tool frame's approach axis is not Z, pick a link whose Z axis
 points along the tool, or add a fixed tool-point link to the model.
 
+### Save a report
+
+Once a map is drawn, two buttons appear under it:
+
+- **Save report (PDF)** — a two-page A4 report to share or print:
+  - *Summary*: tip link, sample count, reached volume, reach from the base
+    axis and from the base origin, height range, best dexterity, how the
+    volume splits by dexterity, and the 3D view.
+  - *Drawing*: the map in **front, side and top view**, laid out like an
+    engineering drawing — the views share one scale and line up with each
+    other, with a scale bar, overall dimensions, centre lines through the
+    robot base, the horizontal reach as a circle in the top view and the
+    robot's outline in its current pose.
+- **Save data (CSV)** — every reached cube with its centre (`x_m`, `y_m`,
+  `z_m`) and dexterity, for your own analysis or plots.
+
+All coordinates are in the robot's base frame, in metres. In the drawing,
+each square shows the best cube along the line of sight — so the top view
+answers "is there a height above this spot where the tool has this much
+freedom?". The views follow the **Up axis** setting.
+
+| Where | What the buttons do |
+|---|---|
+| Browser | Download `<robot>-reachability.pdf` / `.csv` |
+| VS Code | Ask where to save, next to the robot file by default |
+
 ## Collision pairs
 
 MoveIt and other planners skip checking link pairs listed under

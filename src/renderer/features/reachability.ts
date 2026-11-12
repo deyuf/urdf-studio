@@ -53,6 +53,7 @@ const FRAME_BUDGET_MS = 14;
 export class Reachability {
   private points: THREE.Points | undefined;
   private map: DexterityMap | undefined;
+  private lastRun: { tipLinkName: string; sampleCount: number; elapsedMs: number } | undefined;
   private run = 0;
 
   constructor(private readonly deps: ReachabilityDeps) {}
@@ -67,6 +68,18 @@ export class Reachability {
   /** Has the cloud been rendered into the scene? */
   isVisible(): boolean {
     return this.points !== undefined;
+  }
+
+  /** The current map and how it was made, for reports; undefined when cleared. */
+  current(): { map: DexterityMap; tipLinkName: string; sampleCount: number; elapsedMs: number } | undefined {
+    return this.map && this.lastRun ? { map: this.map, ...this.lastRun } : undefined;
+  }
+
+  /** Show or hide the cloud without discarding it (used for report renders). */
+  setCloudVisible(visible: boolean): void {
+    if (this.points) {
+      this.points.visible = visible;
+    }
   }
 
   /** Highest dexterity in the current map, or 0. */
@@ -156,7 +169,12 @@ export class Reachability {
     const elapsedMs = performance.now() - started;
     this.map = map;
     this.points = this.buildPoints(map);
+    // Map coordinates are in the robot's base frame; place the cloud with it.
+    this.points.matrixAutoUpdate = false;
+    this.points.matrix.copy(chain.placement);
+    this.points.updateMatrixWorld(true);
     this.deps.scene.add(this.points);
+    this.lastRun = { tipLinkName, sampleCount, elapsedMs };
 
     const maxDexterity = this.maxDexterity();
     if (map.extent < 0.005) {
@@ -177,7 +195,7 @@ export class Reachability {
     box.union(new THREE.Box3(
       new THREE.Vector3(map.bounds.minX, map.bounds.minY, map.bounds.minZ),
       new THREE.Vector3(map.bounds.maxX, map.bounds.maxY, map.bounds.maxZ)
-    ));
+    ).applyMatrix4(chain.placement));
     this.deps.fitCameraToBox(box);
     this.deps.requestRedraw();
     this.deps.onStateChange?.();
@@ -239,6 +257,7 @@ export class Reachability {
     material.dispose();
     this.points = undefined;
     this.map = undefined;
+    this.lastRun = undefined;
     this.deps.requestRedraw();
   }
 

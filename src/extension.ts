@@ -164,7 +164,7 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
           await this.saveScreenshot(document.uri, message.dataUrl);
           break;
         case 'requestSaveBom':
-          await this.saveBom(document.uri, message.csv, message.filename);
+          await this.saveBom(document.uri, message.csv, message.filename, message.label);
           break;
         case 'requestSaveReport':
           await this.saveReport(document.uri, message.base64, message.filename);
@@ -587,16 +587,18 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
     void vscode.window.showInformationMessage(`URDF Studio screenshot saved: ${vscode.workspace.asRelativePath(out)}`);
   }
 
-  private async saveBom(uri: vscode.Uri, csv: unknown, filenameHint: unknown): Promise<void> {
+  private async saveBom(uri: vscode.Uri, csv: unknown, filenameHint: unknown, labelHint?: unknown): Promise<void> {
     if (typeof csv !== 'string') {
       return;
     }
+    // The same message saves the BOM and the reachability data.
+    const label = typeof labelHint === 'string' && labelHint ? labelHint : 'BOM';
     const baseName = typeof filenameHint === 'string' && filenameHint
       ? filenameHint
       : `${path.basename(uri.fsPath)}-bom.csv`;
     const defaultUri = vscode.Uri.file(path.join(path.dirname(uri.fsPath), baseName));
     const target = await vscode.window.showSaveDialog({
-      title: 'Save BOM',
+      title: `Save ${label}`,
       defaultUri,
       filters: { CSV: ['csv'] }
     });
@@ -605,10 +607,10 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
     }
     try {
       await vscode.workspace.fs.writeFile(target, Buffer.from(csv, 'utf8'));
-      void vscode.window.showInformationMessage(`URDF Studio BOM saved: ${vscode.workspace.asRelativePath(target)}`);
+      void vscode.window.showInformationMessage(`URDF Studio ${label} saved: ${vscode.workspace.asRelativePath(target)}`);
     } catch (error) {
       log(`saveBom failed: ${String(error)}`);
-      void vscode.window.showErrorMessage(`URDF Studio: could not write BOM (${error instanceof Error ? error.message : String(error)}).`);
+      void vscode.window.showErrorMessage(`URDF Studio: could not write ${label} (${error instanceof Error ? error.message : String(error)}).`);
     }
   }
 
@@ -622,7 +624,7 @@ class UrdfStudioProvider implements vscode.CustomReadonlyEditorProvider<UrdfDocu
       : `${path.basename(uri.fsPath)}-report.pdf`;
     const defaultUri = vscode.Uri.file(path.join(path.dirname(uri.fsPath), baseName));
     const target = await vscode.window.showSaveDialog({
-      title: 'Save Report',
+      title: 'Save PDF report',
       defaultUri,
       filters: { PDF: ['pdf'] }
     });

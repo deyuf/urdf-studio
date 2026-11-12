@@ -353,7 +353,11 @@ export class WebHost {
         break;
       case 'requestSaveBom':
         if (typeof message.csv === 'string') {
-          this.downloadBom(message.csv, typeof message.filename === 'string' ? message.filename : undefined);
+          this.downloadBom(
+            message.csv,
+            typeof message.filename === 'string' ? message.filename : undefined,
+            typeof message.label === 'string' ? message.label : undefined
+          );
         }
         break;
       case 'requestSaveReport':
@@ -501,13 +505,13 @@ export class WebHost {
     link.remove();
   }
 
-  private downloadBom(csv: string, filename?: string): void {
+  private downloadBom(csv: string, filename?: string, label = 'BOM'): void {
     if (!this.active) {
       return;
     }
     const name = filename || `${posixPath.basename(this.active.path)}-bom.csv`;
     triggerDownload(new Blob([csv], { type: 'text/csv' }), name);
-    this.setStatus({ type: 'info', message: `BOM downloaded: ${name}` });
+    this.setStatus({ type: 'info', message: `${label.charAt(0).toUpperCase()}${label.slice(1)} downloaded: ${name}` });
   }
 
   private downloadSource(text: string): void {

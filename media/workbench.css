@@ -703,8 +703,8 @@
 
 #app .joint-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-areas: 'name value' 'slider slider';
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-areas: 'name reset value' 'slider slider slider';
   align-items: center;
   gap: 2px 12px;
   padding: 8px 0 6px;
@@ -1123,3 +1123,33 @@
 #app .reach-filter output { text-align: right; font-variant-numeric: tabular-nums; }
 #app p.tool-status { margin: 0; line-height: 1.5; overflow-wrap: anywhere; }
 #app p.tool-status:empty { display: none; }
+
+/* Joint reset: a heading button for all joints, and a per-row button that
+   only appears once the joint has moved away from zero. */
+#app .joint-heading-actions { display: inline-flex; align-items: center; gap: 12px; }
+#app .joint-section-heading .joint-reset-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 400;
+}
+#app .panel .joint-reset {
+  grid-area: reset;
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--wb-muted);
+  visibility: hidden;
+}
+#app .panel .joint-row.is-modified .joint-reset { visibility: visible; }
+#app .panel .joint-reset:hover { background: var(--wb-hover, color-mix(in srgb, var(--wb-fg) 10%, transparent)); color: var(--wb-fg); }
+#app .panel .joint-reset:focus-visible { visibility: visible; }
+#app .reach-save[hidden] { display: none; }
