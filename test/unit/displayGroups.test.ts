@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import test from 'node:test';
-import { buildDisplayGroups, jointRange } from '../../src/renderer/logic/displayGroups';
+import { buildDisplayGroups, isModified, jointRange, restValue } from '../../src/renderer/logic/displayGroups';
 import type { JointInfo, RobotMetadata, SemanticMetadata } from '../../src/core/types';
 
 function meta(movable: string[]): Pick<RobotMetadata, 'movableJointNames'> {
@@ -121,4 +121,18 @@ test('jointRange handles "only lower defined" by falling back to ±π', () => {
 
 test('jointRange returns ±π for undefined joint', () => {
   assert.deepEqual(jointRange(undefined), [-Math.PI, Math.PI]);
+});
+
+test('restValue is zero, moved into range when zero is outside the limits', () => {
+  const joint = (lower: number, upper: number, type = 'revolute') =>
+    ({ name: 'j', type, axis: [0, 0, 1], limit: { lower, upper } }) as JointInfo;
+  assert.equal(restValue(joint(-1, 1)), 0);
+  // FR3 joint4: [-3.077, -0.117]
+  assert.equal(restValue(joint(-3.077, -0.117)), -0.117);
+  assert.equal(restValue(joint(0.5, 4.5)), 0.5);
+  assert.equal(restValue(undefined), 0);
+  assert.equal(isModified(joint(-1, 1), 0), false);
+  assert.equal(isModified(joint(-1, 1), 0.2), true);
+  assert.equal(isModified(joint(-3.077, -0.117), 0), true, 'sitting outside the range counts as moved');
+  assert.equal(isModified(joint(-3.077, -0.117), -0.117), false);
 });

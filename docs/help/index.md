@@ -70,8 +70,9 @@ they are needed.
 
 Make sure the **Tip link** is a link the arm moves, such as the tool point or
 hand. If the status says the link *does not move with any joint*, every sample
-landed on the same spot; pick a link further along the arm. The cloud appears
-around the robot after **Sample**; **Clear** removes it.
+landed on the same spot; pick a link further along the arm. The map appears
+around the robot after **Sample**; **Clear** removes it. If you moved
+**Hide below** up, set it back to 0% to see every cube.
 
 ## Saved poses or bookmarks disappeared (browser)
 

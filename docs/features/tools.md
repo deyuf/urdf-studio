@@ -23,23 +23,73 @@ robot, not to empty space.
 
 ## See how far the robot reaches
 
-Reachability samples many random joint positions and marks where one link
-ends up each time. The resulting point cloud is a picture of the robot's
-workspace.
+Reachability samples many random joint positions and records where one link
+ends up each time, and which way it points. The result is a map of the
+robot's workspace that also shows how freely the tip can be oriented at
+each spot.
 
 1. Choose the **Tip link**. The list shows links at the end of a chain
    that the joints actually move, with tool points (`tcp`, `tool`, `ee`,
    `flange`…) and the end of the longest moving chain first — so the default
    is normally right.
-2. Set the number of **Samples**. 1,000 gives a quick outline; 10,000 or
-   more fills the volume in.
-3. Click **Sample**. The robot returns to its current pose afterwards.
+2. Set the number of **Samples**. The default of 1,000,000 takes about a
+   second on a typical arm. More samples give smaller cubes and steadier
+   colours; up to 5,000,000 are allowed.
+3. Click **Sample**. The robot does not move while sampling.
 
-Points are coloured by height, and the Tools tab shows the X, Y and Z
-extent of the cloud. **Clear** removes it. Samples stay within joint
-limits. Useful for
-comparing robot variants, checking a limit change, or seeing whether a
-fixture is within reach.
+### Reading the map
+
+Space is divided into small cubes, and each dot is one cube the tip reached.
+The colour shows from how many directions it got there: the tip link's
+**Z axis** (the approach direction of a ROS tool frame) is sorted into 24
+directions spread evenly around a sphere.
+
+| Colour | Meaning |
+|---|---|
+| Purple | Reached from only one or a few directions — usually the edge of the workspace |
+| Green | Reached from many directions |
+| Yellow | The best spots for this robot |
+
+The legend gives the best count, for example *17 of 24*. Places with high
+dexterity are where the robot can approach a part from above, from the
+side, or at an angle — a good place for a fixture or a workpiece.
+
+The low-dexterity shell hides the interior. Drag **Hide below** to show only
+cubes reaching at least that share of the best one, and the core appears.
+
+The status line gives the sample time, cube size and the X, Y and Z extent
+of the map. **Clear** removes it. Samples stay within joint limits; mimic
+joints follow the joint they copy. Rotation *around* the tip's Z axis is not
+counted, which suits grippers and most tools.
+
+If your tool frame's approach axis is not Z, pick a link whose Z axis
+points along the tool, or add a fixed tool-point link to the model.
+
+### Save a report
+
+Once a map is drawn, two buttons appear under it:
+
+- **Save report (PDF)** — a two-page A4 report to share or print:
+  - *Summary*: tip link, sample count, reached volume, reach from the base
+    axis and from the base origin, height range, best dexterity, how the
+    volume splits by dexterity, and the 3D view.
+  - *Drawing*: the map in **front, side and top view**, laid out like an
+    engineering drawing — the views share one scale and line up with each
+    other, with a scale bar, overall dimensions, centre lines through the
+    robot base, the horizontal reach as a circle in the top view and the
+    robot's outline in its current pose.
+- **Save data (CSV)** — every reached cube with its centre (`x_m`, `y_m`,
+  `z_m`) and dexterity, for your own analysis or plots.
+
+All coordinates are in the robot's base frame, in metres. In the drawing,
+each square shows the best cube along the line of sight — so the top view
+answers "is there a height above this spot where the tool has this much
+freedom?". The views follow the **Up axis** setting.
+
+| Where | What the buttons do |
+|---|---|
+| Browser | Download `<robot>-reachability.pdf` / `.csv` |
+| VS Code | Ask where to save, next to the robot file by default |
 
 ## Collision pairs
 

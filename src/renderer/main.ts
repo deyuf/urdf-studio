@@ -26,7 +26,7 @@ import type {
 } from '../core/types';
 import { buildMimicGraph, propagateMimicValue, type MimicGraph } from '../core/mimic';
 import { LabelsOverlay, type LabelsMode } from './labels';
-import { buildDisplayGroups as buildDisplayGroupsPure, jointRange as jointRangePure } from './logic/displayGroups';
+import { buildDisplayGroups as buildDisplayGroupsPure, isModified, jointRange as jointRangePure, restValue } from './logic/displayGroups';
 import {
   canonicalPair as canonicalPairPure,
   isAdjacent as isAdjacentPure
@@ -38,7 +38,7 @@ import { buildChecksReport, RULE_REGISTRY, type LintReport } from '../core/lintR
 import { makeRenderable } from '../core/renderable';
 import { createLivePreview, type LivePreviewHandle } from '../editor/livePreview';
 import type { CompletionContextProvider } from '../editor/completion';
-import { html, setInnerHtml } from './html';
+import { html, raw, setInnerHtml } from './html';
 import {
   exportBom as exportBomFeature,
   exportPdfReport as exportPdfReportFeature,
@@ -46,6 +46,9 @@ import {
 } from './features/export';
 import { Measurement } from './features/measurement';
 import { Reachability } from './features/reachability';
+import { DEXTERITY_GRADIENT } from './logic/reachMap';
+import { buildReachCsv, planViewRects, reportViews, type ViewKey, type ViewRect, type ViewSpec } from './logic/reachReport';
+import { saveReachabilityReport } from './features/reachReport';
 import { InertiaVisualisation } from './features/inertia';
 import { FramesOverlay, type FramesMode } from './features/frames';
 import { SelfCollision } from './features/selfCollision';
@@ -960,7 +963,13 @@ function renderSummary(data: LoadRobotMessage): void {
       </div>
     </div>
     <div id="xacro-args-host"></div>
-    <div class="joint-section-heading"><span>Joints</span><label><input id="ignore-limits" type="checkbox"> Ignore limits</label></div>
+    <div class="joint-section-heading">
+      <span>Joints</span>
+      <div class="joint-heading-actions">
+        <label><input id="ignore-limits" type="checkbox"> Ignore limits</label>
+        <button id="reset-joints" type="button" class="joint-reset-all" title="Move every joint back to zero">${raw(icon('restart_alt', { size: 14 }))}Reset</button>
+      </div>
+    </div>
     <div class="joint-filter">
       <input id="joint-search" type="search" placeholder="Filter joints" aria-label="Filter joints">
       <label><input id="joint-modified-only" type="checkbox"> Modified only</label>
@@ -977,6 +986,7 @@ function renderSummary(data: LoadRobotMessage): void {
       }
     }
   });
+  qs('#reset-joints').addEventListener('click', () => resetJoints());
   qs<HTMLInputElement>('#joint-search').addEventListener('input', () => applyJointFilter());
   qs<HTMLInputElement>('#joint-modified-only').addEventListener('change', () => applyJointFilter());
 }
@@ -1036,6 +1046,11 @@ function renderJointPanel(data: LoadRobotMessage): void {
       paintSlider(slider);
       setJointValue(slider.dataset.jointSlider!, Number(slider.value), true);
     });
+    // Double-click a slider to send that joint back to zero.
+    slider.addEventListener('dblclick', () => resetJoint(slider.dataset.jointSlider!));
+  });
+  qsa<HTMLButtonElement>('[data-joint-reset]').forEach(button => {
+    button.addEventListener('click', () => resetJoint(button.dataset.jointReset!));
   });
   qsa<HTMLInputElement>('[data-joint-number]').forEach(input => {
     input.addEventListener('change', () => setJointValue(input.dataset.jointNumber!, Number(input.value), true));
@@ -1060,8 +1075,9 @@ function renderJointRow(jointName: string, joint: JointInfo | undefined): Return
   const value = Number(robot?.joints?.[jointName]?.angle ?? 0);
   const [min, max] = jointRange(joint);
   return html`
-    <div class="joint-row" data-joint-row="${jointName}">
+    <div class="joint-row${isModified(joint, value) ? ' is-modified' : ''}" data-joint-row="${jointName}">
       <span class="joint-name" title="${jointName}">${jointName}</span>
+      <button type="button" class="joint-reset" data-joint-reset="${jointName}" title="Reset ${jointName} to ${restValue(joint)}" aria-label="Reset ${jointName}">${raw(icon('restart_alt', { size: 14 }))}</button>
       <input data-joint-slider="${jointName}" type="range" aria-label="${jointName} position" min="${min}" max="${max}" step="0.001" value="${value}">
       <label class="joint-value">
         <input aria-label="${jointName} value" data-joint-number="${jointName}" type="number" min="${min}" max="${max}" step="0.001" value="${value.toFixed(3)}">
@@ -1085,7 +1101,7 @@ function applyJointFilter(): void {
     let matchesModified = true;
     if (modifiedOnly) {
       const value = Number(robot?.joints?.[name]?.angle ?? 0);
-      matchesModified = Math.abs(value) > 1e-6;
+      matchesModified = isModified(currentData?.metadata.joints[name], value);
     }
     row.style.display = matchesTerm && matchesModified ? '' : 'none';
   });
@@ -1132,6 +1148,8 @@ function setJointValue(jointName: string, value: number, notify: boolean): void 
 }
 
 function syncJointInputs(jointName: string, value: number): void {
+  document.querySelector(`[data-joint-row="${cssEscape(jointName)}"]`)
+    ?.classList.toggle('is-modified', isModified(currentData?.metadata.joints[jointName], value));
   qsa<HTMLInputElement>(`[data-joint-slider="${cssEscape(jointName)}"], [data-joint-number="${cssEscape(jointName)}"]`).forEach(input => {
     input.value = input.type === 'number' ? value.toFixed(3) : String(value);
     if (input.type === 'range') {
@@ -1154,6 +1172,27 @@ function applyPose(pose: Record<string, number>): void {
   for (const [joint, value] of Object.entries(pose)) {
     setJointValue(joint, Number(value), false);
   }
+  dirty = true;
+}
+
+/** Return one joint (and its mimic followers) to its rest value. */
+function resetJoint(jointName: string): void {
+  setJointValue(jointName, restValue(currentData?.metadata.joints[jointName]), true);
+  applyJointFilter();
+}
+
+/** Return every independent joint to its rest value; mimic joints follow. */
+function resetJoints(): void {
+  const metadata = currentData?.metadata;
+  if (!metadata) {
+    return;
+  }
+  for (const name of metadata.movableJointNames) {
+    if (!metadata.joints[name]?.mimic) {
+      setJointValue(name, restValue(metadata.joints[name]), false);
+    }
+  }
+  applyJointFilter();
   dirty = true;
 }
 
@@ -1971,15 +2010,24 @@ function renderToolsPanel(): void {
     </section>
     <section class="tool-block">
       <h3>Reachability</h3>
-      <p class="tool-hint muted">Sample random joint configurations and plot where the tip link can reach.</p>
+      <p class="tool-hint muted">Sample random joint configurations and map where the tip link can reach, coloured by how many approach directions (its Z axis) get there.</p>
       <div class="tool-fields">
         <label><span>Tip link</span><select id="reach-tip">${tipLinks.map(name => html`<option value="${name}">${name}</option>`)}</select></label>
-        <label><span>Samples</span><input id="reach-samples" type="number" min="50" max="20000" step="50" value="1000"></label>
+        <label><span>Samples</span><input id="reach-samples" type="number" min="10000" max="5000000" step="100000" value="1000000"></label>
       </div>
       <div class="row-buttons">
         <button id="reach-run" class="primary">Sample</button>
         <button id="reach-clear">Clear</button>
-        <span class="tool-status muted" id="reach-status"></span>
+      </div>
+      <div class="reach-legend" id="reach-legend" hidden>
+        <div class="reach-legend-bar" id="reach-legend-bar"></div>
+        <div class="reach-legend-labels"><span>1 direction</span><span>Approach directions</span><span id="reach-legend-max"></span></div>
+        <label class="reach-filter"><span>Hide below</span><input id="reach-min" type="range" min="0" max="95" step="5" value="0"><output id="reach-min-value">0%</output></label>
+      </div>
+      <p class="tool-status muted" id="reach-status"></p>
+      <div class="row-buttons reach-save" id="reach-save" hidden>
+        <button id="reach-report" title="Summary and front, side and top views as a PDF">Save report (PDF)</button>
+        <button id="reach-csv" title="Every reached cube with its position and dexterity">Save data (CSV)</button>
       </div>
     </section>
     <section class="tool-block">
@@ -2025,6 +2073,15 @@ function renderToolsPanel(): void {
   qs('#measure-clear').addEventListener('click', () => clearMeasurement());
   qs('#reach-run').addEventListener('click', () => void sampleReachability());
   qs('#reach-clear').addEventListener('click', () => disposeReachability());
+  qs('#reach-report').addEventListener('click', () => void saveReachReport());
+  qs('#reach-csv').addEventListener('click', () => saveReachCsv());
+  // Set through the CSSOM: inline style attributes are blocked by the CSP.
+  qs('#reach-legend-bar').style.background = DEXTERITY_GRADIENT;
+  qs<HTMLInputElement>('#reach-min').addEventListener('input', event => {
+    const value = Number((event.target as HTMLInputElement).value) || 0;
+    qs('#reach-min-value').textContent = `${value}%`;
+    reachability?.setMinimumShare(value / 100);
+  });
   qs('#srdf-run').addEventListener('click', () => void analyzeCollisionPairs());
   qs('#srdf-write').addEventListener('click', () => writeCollisionPairs());
   qs('#export-bom').addEventListener('click', () => exportBom());
@@ -2218,10 +2275,170 @@ function ensureReachability(): Reachability {
       scene,
       fitCameraToBox: box => fitCameraToBox(box),
       requestRedraw: () => { dirty = true; },
-      onStateChange: () => publishTestState()
+      onStateChange: () => {
+        const save = document.getElementById('reach-save');
+        if (save) {
+          save.hidden = !reachability?.current();
+        }
+        publishTestState();
+      }
     });
   }
   return reachability;
+}
+
+function reachFileBase(): string {
+  return (currentData?.fileName ?? 'robot').replace(/\.(urdf\.xacro|xacro|urdf|xml|mjcf)$/i, '') || 'robot';
+}
+
+function saveReachCsv(): void {
+  const current = reachability?.current();
+  if (!current) {
+    return;
+  }
+  vscode.postMessage({
+    type: 'requestSaveBom',
+    csv: buildReachCsv(current.map),
+    filename: `${reachFileBase()}-reachability.csv`,
+    label: 'reachability data'
+  });
+}
+
+async function saveReachReport(): Promise<void> {
+  const current = reachability?.current();
+  if (!current || !currentData || !robot) {
+    return;
+  }
+  const status = (text: string) => {
+    const element = document.getElementById('reach-status');
+    if (element) {
+      element.textContent = text;
+    }
+  };
+  const up = currentData.renderSettings.upAxis;
+  const views = reportViews(up);
+  const robotObject = robot as unknown as THREE.Object3D;
+  robotObject.updateMatrixWorld(true);
+  const placement = robotObject.matrixWorld.clone();
+  const toBase = placement.clone().invert();
+  const robotBox = new THREE.Box3().setFromObject(robotObject).applyMatrix4(toBase);
+  const rects = planViewRects(current.map, robotBox.isEmpty() ? undefined : {
+    min: robotBox.min.toArray() as [number, number, number],
+    max: robotBox.max.toArray() as [number, number, number]
+  }, views);
+  dirty = true;
+  renderNow();
+  const canvas = renderer.domElement;
+  await saveReachabilityReport({
+    robotName: currentData.metadata.robotName || currentData.fileName,
+    sourcePath: currentData.sourcePath,
+    tipLinkName: current.tipLinkName,
+    sampleCount: current.sampleCount,
+    elapsedMs: current.elapsedMs,
+    up,
+    map: current.map,
+    rects,
+    silhouettes: renderSilhouettes(views, rects, placement),
+    perspectivePng: canvas.toDataURL('image/png'),
+    perspectiveAspect: canvas.width / Math.max(1, canvas.height)
+  }, reachFileBase(), { postMessage: message => vscode.postMessage(message), reportStatus: status });
+}
+
+/**
+ * Orthographic renders of the robot alone, one per report view, as grey
+ * see-through PNGs covering exactly that view's rectangle.
+ */
+function renderSilhouettes(views: ViewSpec[], rects: Record<ViewKey, ViewRect>, placement: THREE.Matrix4): Partial<Record<ViewKey, string>> {
+  const result: Partial<Record<ViewKey, string>> = {};
+  if (!robot) {
+    return result;
+  }
+  const robotObject = robot as unknown as THREE.Object3D;
+  const hidden: THREE.Object3D[] = [];
+  for (const child of scene.children) {
+    if (child !== robotObject && !(child as THREE.Light).isLight && child.visible) {
+      child.visible = false;
+      hidden.push(child);
+    }
+  }
+  const background = scene.background;
+  const clearColor = renderer.getClearColor(new THREE.Color());
+  const clearAlpha = renderer.getClearAlpha();
+  scene.background = null;
+  renderer.setClearColor(0x000000, 0);
+  try {
+    for (const view of views) {
+      const rect = rects[view.key];
+      const widthM = rect.hMax - rect.hMin;
+      const heightM = rect.vMax - rect.vMin;
+      const pxPerM = 1400 / Math.max(widthM, heightM, 1e-3);
+      const width = Math.max(1, Math.round(widthM * pxPerM));
+      const height = Math.max(1, Math.round(heightM * pxPerM));
+      const axis = (index: number) => new THREE.Vector3(index === 0 ? 1 : 0, index === 1 ? 1 : 0, index === 2 ? 1 : 0);
+      const right = axis(view.h);
+      const up = axis(view.v);
+      const toward = new THREE.Vector3().crossVectors(right, up);
+      const center = new THREE.Vector3()
+        .addScaledVector(right, (rect.hMin + rect.hMax) / 2)
+        .addScaledVector(up, (rect.vMin + rect.vMax) / 2);
+      const distance = Math.max(widthM, heightM) * 4 + 10;
+      const camera = new THREE.OrthographicCamera(-widthM / 2, widthM / 2, heightM / 2, -heightM / 2, 0.01, distance * 2);
+      camera.position.copy(center).addScaledVector(toward, distance).applyMatrix4(placement);
+      camera.up.copy(up).transformDirection(placement);
+      camera.lookAt(center.clone().applyMatrix4(placement));
+      camera.updateMatrixWorld(true);
+
+      const target = new THREE.WebGLRenderTarget(width, height, { samples: 4 });
+      renderer.setRenderTarget(target);
+      renderer.clear();
+      renderer.render(scene, camera);
+      const pixels = new Uint8Array(width * height * 4);
+      renderer.readRenderTargetPixels(target, 0, 0, width, height, pixels);
+      renderer.setRenderTarget(null);
+      target.dispose();
+
+      const output = document.createElement('canvas');
+      output.width = width;
+      output.height = height;
+      const context = output.getContext('2d');
+      if (!context) {
+        continue;
+      }
+      const image = context.createImageData(width, height);
+      for (let row = 0; row < height; row += 1) {
+        // WebGL rows run bottom-up.
+        const source = (height - 1 - row) * width * 4;
+        const dest = row * width * 4;
+        for (let column = 0; column < width * 4; column += 4) {
+          const alpha = pixels[source + column + 3];
+          if (alpha === 0) {
+            continue;
+          }
+          // Linear light → perceptual grey, kept dark so the robot stands out
+          // against the bright end of the colour scale.
+          const linear = (0.2126 * pixels[source + column] + 0.7152 * pixels[source + column + 1] + 0.0722 * pixels[source + column + 2]) / 255;
+          const grey = Math.round(35 + 95 * Math.pow(linear, 1 / 2.2));
+          image.data[dest + column] = grey;
+          image.data[dest + column + 1] = grey;
+          image.data[dest + column + 2] = grey;
+          image.data[dest + column + 3] = Math.round(alpha * 0.8);
+        }
+      }
+      context.putImageData(image, 0, 0);
+      result[view.key] = output.toDataURL('image/png');
+    }
+  } catch (error) {
+    console.warn('[urdf] reach report: silhouette render failed', error);
+  } finally {
+    renderer.setRenderTarget(null);
+    for (const child of hidden) {
+      child.visible = true;
+    }
+    scene.background = background;
+    renderer.setClearColor(clearColor, clearAlpha);
+    dirty = true;
+  }
+  return result;
 }
 
 async function sampleReachability(): Promise<void> {
@@ -2229,25 +2446,25 @@ async function sampleReachability(): Promise<void> {
     return;
   }
   const tip = (document.getElementById('reach-tip') as HTMLSelectElement | null)?.value;
-  const sampleCount = Math.max(
-    1,
-    Math.min(
-      20000,
-      Number((document.getElementById('reach-samples') as HTMLInputElement | null)?.value ?? 1000) || 1000
-    )
-  );
+  const requested = Number((document.getElementById('reach-samples') as HTMLInputElement | null)?.value);
+  const sampleCount = Math.max(1, Math.min(5_000_000, Number.isFinite(requested) && requested > 0 ? requested : 1_000_000));
   if (!tip) {
     setStatus('Pick a valid tip link first.');
     return;
+  }
+  const filter = document.getElementById('reach-min') as HTMLInputElement | null;
+  if (filter) {
+    filter.value = '0';
+    const output = document.getElementById('reach-min-value');
+    if (output) {
+      output.textContent = '0%';
+    }
   }
   await ensureReachability().sample({
     robot,
     metadata: currentData.metadata,
     tipLinkName: tip,
-    sampleCount,
-    poseBeforeSampling: getPose(),
-    applyPose: pose => applyPose(pose),
-    propagateMimics: (r, m) => applyMimicValuesAfterSample(r, m)
+    sampleCount
   });
 }
 

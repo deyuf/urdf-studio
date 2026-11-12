@@ -61,3 +61,17 @@ export function jointRange(joint: JointInfo | undefined): [number, number] {
   }
   return joint.type === 'prismatic' ? [-1, 1] : [-Math.PI, Math.PI];
 }
+
+/**
+ * The value Reset returns a joint to: zero (the pose the URDF describes),
+ * moved inside the joint's range when zero is outside it.
+ */
+export function restValue(joint: JointInfo | undefined): number {
+  const [min, max] = jointRange(joint);
+  return Math.min(max, Math.max(min, 0));
+}
+
+/** Has the joint been moved away from its rest value? */
+export function isModified(joint: JointInfo | undefined, value: number): boolean {
+  return Math.abs(value - restValue(joint)) > 1e-6;
+}

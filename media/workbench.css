@@ -703,8 +703,8 @@
 
 #app .joint-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-areas: 'name value' 'slider slider';
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-areas: 'name reset value' 'slider slider slider';
   align-items: center;
   gap: 2px 12px;
   padding: 8px 0 6px;
@@ -1099,3 +1099,57 @@
   #app .viewport-tools { top: 8px; left: 8px; right: 8px; gap: 4px; }
   #app .viewport-tools button { padding: 0 7px; }
 }
+
+/* Reachability legend: colour bar, scale labels, density filter. */
+#app .reach-legend { display: grid; gap: 6px; }
+#app .reach-legend[hidden] { display: none; }
+#app .reach-legend-bar { height: 8px; border-radius: 4px; }
+#app .reach-legend-labels {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--wb-muted);
+  font-variant-numeric: tabular-nums;
+}
+#app .reach-filter {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr) 40px;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--wb-muted);
+}
+#app .reach-filter output { text-align: right; font-variant-numeric: tabular-nums; }
+#app p.tool-status { margin: 0; line-height: 1.5; overflow-wrap: anywhere; }
+#app p.tool-status:empty { display: none; }
+
+/* Joint reset: a heading button for all joints, and a per-row button that
+   only appears once the joint has moved away from zero. */
+#app .joint-heading-actions { display: inline-flex; align-items: center; gap: 12px; }
+#app .joint-section-heading .joint-reset-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 400;
+}
+#app .panel .joint-reset {
+  grid-area: reset;
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--wb-muted);
+  visibility: hidden;
+}
+#app .panel .joint-row.is-modified .joint-reset { visibility: visible; }
+#app .panel .joint-reset:hover { background: var(--wb-hover, color-mix(in srgb, var(--wb-fg) 10%, transparent)); color: var(--wb-fg); }
+#app .panel .joint-reset:focus-visible { visibility: visible; }
+#app .reach-save[hidden] { display: none; }
