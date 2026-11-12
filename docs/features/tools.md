@@ -32,8 +32,9 @@ each spot.
    that the joints actually move, with tool points (`tcp`, `tool`, `ee`,
    `flange`…) and the end of the longest moving chain first — so the default
    is normally right.
-2. Set the number of **Samples**. The default of 100,000 takes well under a
-   second on a typical arm; up to 1,000,000 gives a finer map.
+2. Set the number of **Samples**. The default of 1,000,000 takes about a
+   second on a typical arm. More samples give smaller cubes and steadier
+   colours; up to 5,000,000 are allowed.
 3. Click **Sample**. The robot does not move while sampling.
 
 ### Reading the map

@@ -257,9 +257,14 @@ export interface DexterityMap {
   extent: number;
 }
 
-/** Voxels along the longest side, scaled so busy voxels get enough samples. */
+/**
+ * Voxels along the longest side. Telling 24 directions apart needs well over
+ * 24 samples per voxel (random joint samples are far from uniform in
+ * orientation), so aim for ~150 samples per grid cell; fewer makes the
+ * colours noisy rather than showing the workspace's structure.
+ */
 export function voxelDivisions(sampleCount: number): number {
-  return Math.max(8, Math.min(40, Math.round(Math.cbrt(sampleCount / 25))));
+  return Math.max(6, Math.min(40, Math.round(Math.cbrt(sampleCount / 150))));
 }
 
 export function buildDexterityMap(samples: ChainSamples, divisions = voxelDivisions(samples.count)): DexterityMap {

@@ -194,9 +194,9 @@ test('sample() draws a dexterity map without moving the robot', async () => {
   const { robot } = loadArm();
   robot.setJointValue('j1', 0.7);
   const before = robot.links.tcp.getWorldPosition(new THREE.Vector3());
-  const result = await ctx.r.sample({ robot, metadata, tipLinkName: 'tcp', sampleCount: 20000 });
+  const result = await ctx.r.sample({ robot, metadata, tipLinkName: 'tcp', sampleCount: 200000 });
   assert.ok(result);
-  assert.equal(result!.sampleCount, 20000);
+  assert.equal(result!.sampleCount, 200000);
   assert.ok(result!.voxelCount > 50, `expected many voxels, got ${result!.voxelCount}`);
   assert.ok(result!.maxDexterity > 0.3, 'some voxels are reached from many directions');
   assert.equal(ctx.r.pointCount(), result!.voxelCount);
@@ -204,7 +204,7 @@ test('sample() draws a dexterity map without moving the robot', async () => {
   assert.equal(robot.joints.j1.angle, 0.7, 'joint values untouched');
   (robot as unknown as THREE.Object3D).updateMatrixWorld(true);
   assert.ok(robot.links.tcp.getWorldPosition(new THREE.Vector3()).distanceTo(before) < 1e-9);
-  assert.match(status(), /20,000 samples in .* voxels of/);
+  assert.match(status(), /200,000 samples in .* voxels of/);
   assert.equal(document.getElementById('reach-legend')!.hidden, false);
   assert.match(document.getElementById('reach-legend-max')!.textContent ?? '', new RegExp(`of ${DIRECTION_BINS}$`));
   assert.ok(ctx.lastFitBox && !ctx.lastFitBox.isEmpty());
@@ -213,7 +213,7 @@ test('sample() draws a dexterity map without moving the robot', async () => {
 test('setMinimumShare() hides low-dexterity voxels by draw range only', async () => {
   const { r } = makeReachability();
   const { robot } = loadArm();
-  const result = await r.sample({ robot, metadata, tipLinkName: 'tcp', sampleCount: 20000 });
+  const result = await r.sample({ robot, metadata, tipLinkName: 'tcp', sampleCount: 200000 });
   const all = r.pointCount();
   r.setMinimumShare(0.9);
   const few = r.pointCount();

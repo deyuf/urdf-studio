@@ -1975,7 +1975,7 @@ function renderToolsPanel(): void {
       <p class="tool-hint muted">Sample random joint configurations and map where the tip link can reach, coloured by how many approach directions (its Z axis) get there.</p>
       <div class="tool-fields">
         <label><span>Tip link</span><select id="reach-tip">${tipLinks.map(name => html`<option value="${name}">${name}</option>`)}</select></label>
-        <label><span>Samples</span><input id="reach-samples" type="number" min="1000" max="1000000" step="10000" value="100000"></label>
+        <label><span>Samples</span><input id="reach-samples" type="number" min="10000" max="5000000" step="100000" value="1000000"></label>
       </div>
       <div class="row-buttons">
         <button id="reach-run" class="primary">Sample</button>
@@ -2243,7 +2243,7 @@ async function sampleReachability(): Promise<void> {
   }
   const tip = (document.getElementById('reach-tip') as HTMLSelectElement | null)?.value;
   const requested = Number((document.getElementById('reach-samples') as HTMLInputElement | null)?.value);
-  const sampleCount = Math.max(1, Math.min(1_000_000, Number.isFinite(requested) && requested > 0 ? requested : 100_000));
+  const sampleCount = Math.max(1, Math.min(5_000_000, Number.isFinite(requested) && requested > 0 ? requested : 1_000_000));
   if (!tip) {
     setStatus('Pick a valid tip link first.');
     return;
